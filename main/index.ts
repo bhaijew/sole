@@ -7,6 +7,7 @@ import { startServer, stopServer, getLocalIP, isServerRunning } from './server';
 import { startKdsServer, stopKdsServer, getKdsPort, isKdsServerRunning } from './kds-server';
 import { initPrinter, printReceipt, printKOT } from './printers/thermal';
 import { registerIpcHandlers } from './ipc';
+import { initCloudSync, stopRealtimeOrderListener } from './services/cloud-sync';
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
 
@@ -102,20 +103,20 @@ function setupAutoUpdater(): void {
 }
 
 function checkForUpdates(): void {
-  if (!isDev) {
-    autoUpdater.checkForUpdates().catch((err) => {
-      console.error('[Update] Check failed:', err);
-    });
-  } else {
-    log.debug('[Update] Skipping update check in dev mode');
-    mainWindow?.webContents.send('update-status', { status: 'dev-mode' });
-  }
+  if (isDev) return;
+  autoUpdater.checkForUpdates().catch((err) => {
+    console.error('[Update] Check failed:', err);
+  });
 }
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let bonjour: Bonjour | null = null;
 let isQuitting = false;
+
+export function getMainWindow(): BrowserWindow | null {
+  return mainWindow;
+}
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -126,7 +127,7 @@ function createWindow(): void {
     height: 900,
     minWidth: 1024,
     minHeight: 768,
-    title: 'Flo',
+    title: 'Sole-What',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -138,8 +139,6 @@ function createWindow(): void {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
-    // Open DevTools to debug logo issue
-    mainWindow?.webContents.openDevTools();
   });
 
   // Always load from the embedded Express server (serves static Next.js export).
@@ -158,7 +157,7 @@ function createWindow(): void {
         overrideBrowserWindowOptions: {
           width: 1280,
           height: 800,
-          title: 'Flo - Kitchen Display',
+          title: 'Sole-What - Kitchen Display',
           webPreferences: {
             contextIsolation: true,
             nodeIntegration: false,
@@ -398,9 +397,12 @@ async function initialize(): Promise<void> {
     createMenu();
     setupAutoUpdater();
 
-    setTimeout(() => checkForUpdates(), 5000);
+    if (!isDev) {
+      setTimeout(() => checkForUpdates(), 5000);
+    }
 
     console.log('[Flo] Ready!');
+    await initCloudSync();
   } catch (error) {
     console.error('[Flo] Initialization error:', error);
     dialog.showErrorBox('Initialization Error', `Failed to start Flo: ${error}`);
@@ -430,6 +432,7 @@ app.on('before-quit', () => {
 
 app.on('quit', () => {
   console.log('[Flo] Shutting down...');
+  stopRealtimeOrderListener();
   stopMdns();
   stopKdsServer();
   stopServer();

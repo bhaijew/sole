@@ -10,6 +10,12 @@ router.get('/', (req: Request, res: Response) => {
     let query = 'SELECT * FROM products WHERE deleted_at IS NULL';
     const params: any[] = [];
 
+    const activeShop = (req.query.shop_id as string) || (db.prepare("SELECT value FROM settings WHERE key = 'cloud_shop_id'").get() as any)?.value;
+    if (activeShop) {
+      query += ' AND shop_id = ?';
+      params.push(parseInt(activeShop, 10));
+    }
+
     if (req.query.category_id) {
       query += ' AND category_id = ?';
       params.push(req.query.category_id);

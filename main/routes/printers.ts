@@ -220,21 +220,41 @@ router.post('/print-bill', async (req: Request, res: Response) => {
       bill = db.prepare('SELECT b.* FROM bills b WHERE b.order_id = ?').get(orderId);
     }
 
-    if (!bill) {
-      console.log('[Print Bill] Error: Bill not found');
-      return res.status(404).json({ error: 'Bill not found' });
+    let order: any;
+    if (bill) {
+      order = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id);
+    } else if (orderId) {
+      order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
     }
-    console.log('[Print Bill] Bill:', bill.bill_number, 'Total:', bill.total);
 
-    const order: any = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id);
     if (!order) {
       console.log('[Print Bill] Error: Order not found');
       return res.status(404).json({ error: 'Order not found' });
     }
+
+    // If order has no bill row yet (e.g. online order from menu), create synthetic bill object
+    if (!bill) {
+      bill = {
+        id: `auto_${order.id}`,
+        order_id: order.id,
+        bill_number: order.order_number,
+        subtotal: order.subtotal || order.total,
+        total: order.total,
+        tax_amount: order.tax_amount || 0,
+        discount_amount: order.discount_amount || 0,
+        delivery_charge: order.delivery_charge || order.delivery_fee || 0,
+        balance: 0,
+        paid_amount: order.total,
+        payment_status: 'paid',
+        payment_details: [{ method: order.order_source === 'online' ? 'Online' : 'Cash', amount: order.total }],
+        created_at: order.created_at,
+      };
+    }
+    console.log('[Print Bill] Bill:', bill.bill_number, 'Total:', bill.total);
     console.log('[Print Bill] Order:', order.order_number);
 
     // Fetch order items
-    const items: any[] = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(bill.order_id);
+    const items: any[] = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
     order.items = items;
     console.log('[Print Bill] Items count:', items.length);
 
@@ -323,6 +343,96 @@ router.post('/print-kot', async (req: Request, res: Response) => {
     }
   } catch (error: any) {
     console.error('[Print KOT] Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/printers/print-order — one-click print for order (receipt, KOT, or both)
+router.post('/print-order', async (req: Request, res: Response) => {
+  try {
+    const { orderId, printType = 'bill' } = req.body;
+    if (!orderId) {
+      return res.status(400).json({ error: 'orderId is required' });
+    }
+
+    const db = getDatabase();
+    const printer = db.prepare('SELECT * FROM printers WHERE is_default = 1').get();
+    if (!printer) {
+      return res.status(400).json({ error: 'No default printer configured. Please configure a printer in Settings.' });
+    }
+
+    const order: any = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const items: any[] = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId);
+    order.items = items;
+
+    if (order.table_id) {
+      const table: any = db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id);
+      if (table) order.table = { name: table.number };
+    }
+
+    let billSuccess = false;
+    let kotSuccess = false;
+
+    // 1. If bill / receipt requested
+    if (printType === 'bill' || printType === 'receipt' || printType === 'both') {
+      let bill = db.prepare('SELECT b.* FROM bills b WHERE b.order_id = ?').get(orderId) as any;
+      if (!bill) {
+        bill = {
+          id: `auto_${order.id}`,
+          order_id: order.id,
+          bill_number: order.order_number,
+          subtotal: order.subtotal || order.total,
+          total: order.total,
+          tax_amount: order.tax_amount || 0,
+          discount_amount: order.discount_amount || 0,
+          delivery_charge: order.delivery_charge || order.delivery_fee || 0,
+          balance: 0,
+          paid_amount: order.total,
+          payment_status: 'paid',
+          payment_details: [{ method: order.order_source === 'online' ? 'Online' : 'Cash', amount: order.total }],
+          created_at: order.created_at,
+        };
+      }
+
+      const businessName = db.prepare("SELECT value FROM settings WHERE key = 'business_name'").get() as any;
+      const businessAddress = db.prepare("SELECT value FROM settings WHERE key = 'address'").get() as any;
+      const businessPhone = db.prepare("SELECT value FROM settings WHERE key = 'phone'").get() as any;
+      const gstin = db.prepare("SELECT value FROM settings WHERE key = 'gstin'").get() as any;
+      const billTemplate = db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as any;
+
+      const business = {
+        name: businessName?.value || 'Store',
+        address: businessAddress?.value || '',
+        phone: businessPhone?.value || '',
+        gstin: gstin?.value || '',
+      };
+
+      billSuccess = await printReceipt(order, bill, business, billTemplate?.value || 'compact');
+    }
+
+    // 2. If KOT requested
+    if (printType === 'kot' || printType === 'both') {
+      const station = order.order_source === 'online' ? 'Kitchen (Online)' : 'Kitchen';
+      kotSuccess = await printKOT(order, items, station);
+    }
+
+    const overallSuccess = printType === 'both' ? (billSuccess || kotSuccess) : (billSuccess || kotSuccess);
+    if (overallSuccess) {
+      res.json({
+        success: true,
+        billSuccess,
+        kotSuccess,
+        message: printType === 'kot' ? 'KOT sent to printer' : (printType === 'both' ? 'Receipt and KOT sent to printer' : 'Receipt sent to printer')
+      });
+    } else {
+      res.status(502).json({ error: 'Print failed. Check printer connection and cable/network.' });
+    }
+  } catch (error: any) {
+    console.error('[Print Order] Error:', error);
     res.status(500).json({ error: error.message });
   }
 });

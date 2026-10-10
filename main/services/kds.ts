@@ -299,6 +299,22 @@ function broadcastOrderUpdate(): void {
   });
 }
 
+/** Broadcast a structured WebSocket event to all connected clients (KDS displays, POS screens) */
+export function broadcastWsEvent(event: { type: string; payload?: any }): void {
+  const msg = JSON.stringify(event);
+  clients.forEach((client) => {
+    if (client.ws.readyState === WebSocket.OPEN) {
+      try {
+        client.ws.send(msg);
+      } catch (e) {
+        console.warn('[KDS] Failed to send ws event to client:', e);
+      }
+    }
+  });
+}
+
 export function notifyKdsUpdate(): void {
   broadcastOrderUpdate();
+  broadcastWsEvent({ type: 'orders_updated', payload: { timestamp: new Date().toISOString() } });
 }
+

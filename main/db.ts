@@ -5,17 +5,17 @@ import * as fs from 'fs';
 import * as bcrypt from 'bcryptjs';
 
 // Bump this whenever the schema changes incompatibly
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 11;
 
 let db: Database.Database;
 
 export function getDbPath(): string {
-  const userDataPath = app.isPackaged ? app.getPath('userData') : path.join(__dirname, '../../');
+  const userDataPath = app?.isPackaged ? app.getPath('userData') : path.join(__dirname, '../../');
   return path.join(userDataPath, 'flo.db');
 }
 
 function getBackupDir(): string {
-  const userDataPath = app.getPath('userData');
+  const userDataPath = app?.getPath ? app.getPath('userData') : path.join(__dirname, '../../');
   return path.join(userDataPath, 'backups');
 }
 
@@ -75,6 +75,15 @@ function getCurrentSchemaVersion(): number {
     return row ? parseInt(row.value, 10) : 0;
   } catch {
     return 0;
+  }
+}
+
+function columnExists(table: string, column: string): boolean {
+  try {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as any[];
+    return cols.some(c => c.name === column);
+  } catch {
+    return false;
   }
 }
 
@@ -151,17 +160,150 @@ function runIncrementalMigrations(fromVersion: number): void {
     }
   }
 
+  // Migration from version 8 to 9 (Supabase Hybrid Cloud Sync)
+  if (fromVersion < 9) {
+    console.log('[DB] Running migration to v9 (Supabase Hybrid Cloud Sync)...');
+
+    if (!columnExists('categories', 'cloud_id')) {
+      db.exec(`ALTER TABLE categories ADD COLUMN cloud_id TEXT`);
+    }
+    if (!columnExists('products', 'cloud_id')) {
+      db.exec(`ALTER TABLE products ADD COLUMN cloud_id TEXT`);
+    }
+    if (!columnExists('products', 'slug')) {
+      db.exec(`ALTER TABLE products ADD COLUMN slug TEXT`);
+    }
+    if (!columnExists('orders', 'cloud_order_id')) {
+      db.exec(`ALTER TABLE orders ADD COLUMN cloud_order_id TEXT`);
+    }
+    if (!columnExists('orders', 'order_source')) {
+      db.exec(`ALTER TABLE orders ADD COLUMN order_source TEXT DEFAULT 'pos'`);
+    }
+    if (!columnExists('orders', 'delivery_address')) {
+      db.exec(`ALTER TABLE orders ADD COLUMN delivery_address TEXT`);
+    }
+    if (!columnExists('orders', 'delivery_fee')) {
+      db.exec(`ALTER TABLE orders ADD COLUMN delivery_fee REAL DEFAULT 0`);
+    }
+    if (!columnExists('orders', 'is_synced')) {
+      db.exec(`ALTER TABLE orders ADD COLUMN is_synced INTEGER DEFAULT 0`);
+    }
+
+    insert('supabase_url', 'https://uadrrjrlhfttithjmdye.supabase.co');
+    insert('supabase_key', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhZHJyanJsaGZ0dGl0aGptZHllIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MDYwNTg2OCwiZXhwIjoyMTA2MTgxODY4fQ.NuC74GhFlUEiaRR2BXPooYj7iahzrXXKCxMQYDUnfIg');
+    insert('cloud_sync_enabled', '1');
+    insert('cloud_auto_print_kot', '1');
+    insert('cloud_last_sync', '');
+
+    // Purge legacy dummy/fake users so ONLY real staff from Super Admin exists
+    db.exec("DELETE FROM users WHERE id IN ('user-1', 'user-2', 'user-3', 'user-4') OR email LIKE '%@flo.local';");
+    console.log('[DB] Cleaned up legacy dummy accounts. Staff synced exclusively from Pizza System Super Admin.');
+  }
+  // Migration from version 9 to 10 (Multi-Tenant Branch & Pizza Menu Isolation)
+  if (fromVersion < 10) {
+    console.log('[DB] Running migration to v10 (Multi-Tenant Branch & Pizza Menu Isolation)...');
+
+    if (!columnExists('products', 'shop_id')) {
+      db.exec(`ALTER TABLE products ADD COLUMN shop_id INTEGER`);
+    }
+    if (!columnExists('categories', 'shop_id')) {
+      db.exec(`ALTER TABLE categories ADD COLUMN shop_id INTEGER`);
+    }
+    if (!columnExists('users', 'shop_id')) {
+      db.exec(`ALTER TABLE users ADD COLUMN shop_id INTEGER`);
+    }
+    if (!columnExists('orders', 'shop_id')) {
+      db.exec(`ALTER TABLE orders ADD COLUMN shop_id INTEGER`);
+    }
+
+    insert('cloud_shop_id', '4');
+    insert('cloud_shop_name', 'papa pizza');
+    insert('cloud_shop_slug', 'papa-pizza-346');
+
+    // Purge legacy offline dummy food items and dummy categories so only real pizza management products appear
+    db.exec(`
+      DELETE FROM products WHERE id IN ('prod-1', 'prod-2', 'prod-3', 'prod-4', 'prod-5', 'prod-6', 'prod-7', 'prod-8', 'prod-9', 'prod-10') OR (cloud_id IS NULL AND id LIKE 'prod-%');
+      DELETE FROM categories WHERE id IN ('cat-1', 'cat-2', 'cat-3') OR (cloud_id IS NULL AND id LIKE 'cat-%');
+    `);
+    console.log('[DB] Purged dummy placeholder items. POS menu dedicated exclusively to Pizza Management System.');
+  }
+
+  // Migration from version 10 to 11 (Multi-Branch Recipe & Raw Material Inventory Isolation)
+  if (fromVersion < 11) {
+    console.log('[DB] Running migration to v11 (Multi-Branch Recipe & Inventory Isolation)...');
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS raw_ingredients (
+        id TEXT PRIMARY KEY,
+        cloud_id TEXT,
+        shop_id INTEGER,
+        name TEXT NOT NULL,
+        category TEXT DEFAULT 'meat',
+        unit TEXT DEFAULT 'kg',
+        current_stock REAL DEFAULT 0,
+        low_stock_threshold REAL DEFAULT 1,
+        cost_per_unit REAL DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS product_recipes (
+        id TEXT PRIMARY KEY,
+        cloud_id TEXT,
+        shop_id INTEGER,
+        product_id TEXT NOT NULL,
+        variation_name TEXT,
+        ingredient_id TEXT NOT NULL,
+        quantity_required REAL DEFAULT 0,
+        notes TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS ingredient_wastage_logs (
+        id TEXT PRIMARY KEY,
+        cloud_id TEXT,
+        shop_id INTEGER,
+        ingredient_id TEXT NOT NULL,
+        quantity_wasted REAL DEFAULT 0,
+        reason TEXT NOT NULL,
+        reported_by TEXT DEFAULT 'Chef',
+        cost_loss REAL DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS ingredient_stock_logs (
+        id TEXT PRIMARY KEY,
+        cloud_id TEXT,
+        shop_id INTEGER,
+        ingredient_id TEXT NOT NULL,
+        change_type TEXT NOT NULL,
+        quantity_change REAL NOT NULL,
+        previous_stock REAL NOT NULL,
+        new_stock REAL NOT NULL,
+        reference_id TEXT,
+        notes TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    console.log('[DB] Multi-Branch Recipe & Inventory tables initialized.');
+  }
+
+
   // Update schema version
-  insert('schema_version', String(SCHEMA_VERSION));
-  console.log('[DB] Incremental migration complete');
+  db.prepare(`
+    INSERT INTO settings (key, value, updated_at) VALUES ('schema_version', ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `).run(String(SCHEMA_VERSION));
+  console.log('[DB] Incremental migration complete (version ' + SCHEMA_VERSION + ')');
 }
 
 function createSchema(): void {
   db.exec(`
     -- ── Master data tables ──────────────────────────────────────────────
 
-    CREATE TABLE categories (
+    CREATE TABLE IF NOT EXISTS categories (
       id TEXT PRIMARY KEY,
+      cloud_id TEXT,
       name TEXT NOT NULL,
       description TEXT,
       image_url TEXT,
@@ -176,10 +318,12 @@ function createSchema(): void {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
-    CREATE TABLE products (
+    CREATE TABLE IF NOT EXISTS products (
       id TEXT PRIMARY KEY,
+      cloud_id TEXT,
       category_id TEXT,
       name TEXT NOT NULL,
+      slug TEXT,
       description TEXT,
       price REAL NOT NULL DEFAULT 0,
       cost REAL DEFAULT 0,
@@ -201,7 +345,7 @@ function createSchema(): void {
       FOREIGN KEY (category_id) REFERENCES categories(id)
     );
 
-    CREATE TABLE addon_groups (
+    CREATE TABLE IF NOT EXISTS addon_groups (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       description TEXT,
@@ -214,7 +358,7 @@ function createSchema(): void {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
-    CREATE TABLE addons (
+    CREATE TABLE IF NOT EXISTS addons (
       id TEXT PRIMARY KEY,
       addon_group_id TEXT NOT NULL,
       name TEXT NOT NULL,
@@ -226,13 +370,13 @@ function createSchema(): void {
       FOREIGN KEY (addon_group_id) REFERENCES addon_groups(id)
     );
 
-    CREATE TABLE addon_group_product (
+    CREATE TABLE IF NOT EXISTS addon_group_product (
       product_id TEXT NOT NULL,
       addon_group_id TEXT NOT NULL,
       PRIMARY KEY (product_id, addon_group_id)
     );
 
-    CREATE TABLE kitchen_stations (
+    CREATE TABLE IF NOT EXISTS kitchen_stations (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       description TEXT,
@@ -246,7 +390,7 @@ function createSchema(): void {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
-    CREATE TABLE tables (
+    CREATE TABLE IF NOT EXISTS tables (
       id TEXT PRIMARY KEY,
       number TEXT NOT NULL UNIQUE,
       capacity INTEGER DEFAULT 4,
@@ -260,7 +404,7 @@ function createSchema(): void {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
-    CREATE TABLE customers (
+    CREATE TABLE IF NOT EXISTS customers (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       email TEXT,
@@ -278,7 +422,7 @@ function createSchema(): void {
     -- Roles: owner, manager, cashier, waiter, chef
     -- KDS is operated by the chef role.
 
-    CREATE TABLE users (
+    CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       email TEXT UNIQUE,
@@ -294,9 +438,14 @@ function createSchema(): void {
 
     -- ── Transactional tables ─────────────────────────────────────────────
 
-    CREATE TABLE orders (
+    CREATE TABLE IF NOT EXISTS orders (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       order_number TEXT UNIQUE NOT NULL,
+      cloud_order_id TEXT,
+      order_source TEXT DEFAULT 'pos',
+      delivery_address TEXT,
+      delivery_fee REAL DEFAULT 0,
+      is_synced INTEGER DEFAULT 0,
       table_id TEXT,
       customer_id TEXT,
       user_id TEXT,
@@ -326,7 +475,7 @@ function createSchema(): void {
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
 
-    CREATE TABLE order_items (
+    CREATE TABLE IF NOT EXISTS order_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       order_id INTEGER NOT NULL,
       product_id TEXT NOT NULL,
@@ -350,7 +499,7 @@ function createSchema(): void {
       FOREIGN KEY (order_id) REFERENCES orders(id)
     );
 
-    CREATE TABLE bills (
+    CREATE TABLE IF NOT EXISTS bills (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       bill_number TEXT UNIQUE NOT NULL,
       order_id INTEGER NOT NULL,
@@ -377,7 +526,7 @@ function createSchema(): void {
       FOREIGN KEY (order_id) REFERENCES orders(id)
     );
 
-    CREATE TABLE loyalty_ledger (
+    CREATE TABLE IF NOT EXISTS loyalty_ledger (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       customer_id TEXT NOT NULL,
       bill_id INTEGER,
@@ -389,15 +538,69 @@ function createSchema(): void {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- ── Recipe & Inventory tables (per shop isolation) ───────────────────
+
+    CREATE TABLE IF NOT EXISTS raw_ingredients (
+      id TEXT PRIMARY KEY,
+      cloud_id TEXT,
+      shop_id INTEGER,
+      name TEXT NOT NULL,
+      category TEXT DEFAULT 'meat',
+      unit TEXT DEFAULT 'kg',
+      current_stock REAL DEFAULT 0,
+      low_stock_threshold REAL DEFAULT 1,
+      cost_per_unit REAL DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS product_recipes (
+      id TEXT PRIMARY KEY,
+      cloud_id TEXT,
+      shop_id INTEGER,
+      product_id TEXT NOT NULL,
+      variation_name TEXT,
+      ingredient_id TEXT NOT NULL,
+      quantity_required REAL DEFAULT 0,
+      notes TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS ingredient_wastage_logs (
+      id TEXT PRIMARY KEY,
+      cloud_id TEXT,
+      shop_id INTEGER,
+      ingredient_id TEXT NOT NULL,
+      quantity_wasted REAL DEFAULT 0,
+      reason TEXT NOT NULL,
+      reported_by TEXT DEFAULT 'Chef',
+      cost_loss REAL DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS ingredient_stock_logs (
+      id TEXT PRIMARY KEY,
+      cloud_id TEXT,
+      shop_id INTEGER,
+      ingredient_id TEXT NOT NULL,
+      change_type TEXT NOT NULL,
+      quantity_change REAL NOT NULL,
+      previous_stock REAL NOT NULL,
+      new_stock REAL NOT NULL,
+      reference_id TEXT,
+      notes TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
     -- ── Config tables ────────────────────────────────────────────────────
 
-    CREATE TABLE settings (
+    CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
-    CREATE TABLE kds_pairing_tokens (
+    CREATE TABLE IF NOT EXISTS kds_pairing_tokens (
       id TEXT PRIMARY KEY,
       token TEXT UNIQUE NOT NULL,
       station_id TEXT,
@@ -405,7 +608,7 @@ function createSchema(): void {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
-    CREATE TABLE printers (
+    CREATE TABLE IF NOT EXISTS printers (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       connection_type TEXT NOT NULL CHECK (connection_type IN ('network', 'usb', 'webusb')),
@@ -435,11 +638,11 @@ function seedData(): void {
     db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run(key, value);
 
   insert('schema_version',      String(SCHEMA_VERSION));
-  insert('business_name',       'Shop');
-  insert('country',             'IN');
-  insert('currency',            'INR');
-  insert('currency_symbol',     '₹');
-  insert('timezone',            'Asia/Kolkata');
+  insert('business_name',       'Sole-What');
+  insert('country',             'PK');
+  insert('currency',            'PKR');
+  insert('currency_symbol',     'Rs');
+  insert('timezone',            'Asia/Karachi');
   insert('address',             '');
   insert('phone',               '');
   insert('email',               '');
@@ -451,25 +654,15 @@ function seedData(): void {
   insert('loyalty_expiry_days', '365');
   insert('cloud_server_url',    '');
   insert('cloud_connected',     'false');
+  insert('supabase_url',        'https://uadrrjrlhfttithjmdye.supabase.co');
+  insert('supabase_key',        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhZHJyanJsaGZ0dGl0aGptZHllIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MDYwNTg2OCwiZXhwIjoyMTA2MTgxODY4fQ.NuC74GhFlUEiaRR2BXPooYj7iahzrXXKCxMQYDUnfIg');
+  insert('cloud_sync_enabled',  '1');
+  insert('cloud_auto_print_kot','1');
+  insert('cloud_last_sync',     '');
+  insert('pizza_system_mode',   'integrated');
 
-  // Default owner account
-  const hashedPassword = bcrypt.hashSync('admin123', 10);
-  db.prepare(`
-    INSERT OR IGNORE INTO users (id, name, email, password, role)
-    VALUES (?, ?, ?, ?, ?)
-  `).run('user-1', 'Owner', 'admin@flo.local', hashedPassword, 'owner');
-
-  // Default KDS/Chef accounts
-  const chefPassword = bcrypt.hashSync('chef123', 10);
-  db.prepare(`
-    INSERT OR IGNORE INTO users (id, name, email, password, role)
-    VALUES (?, ?, ?, ?, ?)
-  `).run('user-2', 'Chef', 'chef@flo.local', chefPassword, 'chef');
-
-  db.prepare(`
-    INSERT OR IGNORE INTO users (id, name, email, password, role)
-    VALUES (?, ?, ?, ?, ?)
-  `).run('user-3', 'Kitchen Manager', 'kitchen@flo.local', chefPassword, 'manager');
+  // Note: All POS staff accounts are synchronized from Pizza Management Super Admin (Supabase pos_staff)
+  db.exec("DELETE FROM users WHERE id IN ('user-1', 'user-2', 'user-3', 'user-4') OR email LIKE '%@flo.local';");
 
   // Default printer (will be detected on first run)
   db.prepare(`

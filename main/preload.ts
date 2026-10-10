@@ -41,5 +41,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     });
   },
 
+  onCloudSyncEvent: (callback: (data: any) => void) => {
+    ipcRenderer.on('cloud-sync-event', (_event: any, data: any) => callback(data));
+  },
+
   platform: process.platform,
-});
+});

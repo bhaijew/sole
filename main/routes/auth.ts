@@ -19,14 +19,14 @@ function buildLocalTenant(db: ReturnType<typeof getDatabase>, userRole: string) 
 
   return {
     id: 1,
-    business_name:  s.business_name  || 'Shop',
+    business_name:  s.business_name  || 'Sole-What',
     slug:           'local',
     database_name:  'local',
     business_type:  s.business_type  || 'restaurant',
-    country:        s.country        || 'IN',
-    currency:       s.currency       || 'INR',
-    currency_symbol: s.currency_symbol || '₹',
-    timezone:       s.timezone       || 'Asia/Kolkata',
+    country:        s.country        || 'PK',
+    currency:       s.currency       || 'PKR',
+    currency_symbol: s.currency_symbol || 'Rs',
+    timezone:       s.timezone       || 'Asia/Karachi',
     plan:           'desktop',
     status:         'active',
     role:           userRole,  // user's role — AuthGuard uses this for routing
@@ -35,18 +35,38 @@ function buildLocalTenant(db: ReturnType<typeof getDatabase>, userRole: string) 
 
 // ── POST /api/auth/login ──────────────────────────────────────────────────────
 
-router.post('/login', (req: Request, res: Response) => {
+router.post('/login', async (req: Request, res: Response) => {
   try {
-    const { email, password } = req.body;
+    const { email, username, password } = req.body;
+    const identifier = (email || username || '').trim();
 
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password required' });
+    if (!identifier || !password) {
+      return res.status(400).json({ error: 'Email/Username and password are required' });
     }
 
     const db = getDatabase();
-    const user = db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email) as any;
+    let user = db.prepare('SELECT * FROM users WHERE (email = ? OR name = ?) AND is_active = 1').get(identifier, identifier) as any;
 
-    if (!user || !bcrypt.compareSync(password, user.password)) {
+    // If not found locally, try live staff sync from Pizza System Supabase
+    if (!user) {
+      try {
+        const { syncStaffFromCloud } = await import('../services/cloud-sync');
+        await syncStaffFromCloud();
+        user = db.prepare('SELECT * FROM users WHERE (email = ? OR name = ?) AND is_active = 1').get(identifier, identifier) as any;
+      } catch (e) {
+        console.warn('[Auth] Live cloud sync fallback error on login:', e);
+      }
+    }
+
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials or user deactivated' });
+    }
+
+    const passwordMatches = bcrypt.compareSync(password, user.password) ||
+      (user.pin && String(user.pin) === String(password)) ||
+      user.password === password;
+
+    if (!passwordMatches) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
@@ -69,11 +89,168 @@ router.post('/login', (req: Request, res: Response) => {
         role: user.role,
         category_ids: user.category_ids ? JSON.parse(user.category_ids) : [],
       },
-      // Single tenant — frontend auto-selects when tenants.length === 1
       tenants: [tenant],
     });
   } catch (error: any) {
     console.error('[Auth] Login error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ── POST /api/auth/pin-login ──────────────────────────────────────────────────
+// Quick 4-digit PIN authentication for counter cashiers, waiters, chefs, and owners
+
+router.post('/pin-login', async (req: Request, res: Response) => {
+  try {
+    const { pin, userId } = req.body;
+    if (!pin) {
+      return res.status(400).json({ error: 'PIN is required' });
+    }
+
+    const db = getDatabase();
+    let user: any = null;
+
+    if (userId) {
+      user = db.prepare('SELECT * FROM users WHERE id = ? AND pin = ? AND is_active = 1').get(String(userId), String(pin));
+    }
+    if (!user) {
+      user = db.prepare('SELECT * FROM users WHERE pin = ? AND is_active = 1').get(String(pin)) as any;
+    }
+
+    // If not found locally, trigger live cloud sync from Supabase in case newly created in Super Admin
+    if (!user) {
+      try {
+        const { syncStaffFromCloud } = await import('../services/cloud-sync');
+        await syncStaffFromCloud();
+        if (userId) {
+          user = db.prepare('SELECT * FROM users WHERE id = ? AND pin = ? AND is_active = 1').get(String(userId), String(pin));
+        }
+        if (!user) {
+          user = db.prepare('SELECT * FROM users WHERE pin = ? AND is_active = 1').get(String(pin)) as any;
+        }
+      } catch (syncErr) {
+        console.warn('[Auth] Live staff sync on PIN fallback error:', syncErr);
+      }
+    }
+
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid PIN or user is deactivated' });
+    }
+
+    const token = jwt.sign(
+      { userId: user.id, email: user.email, role: user.role },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
+    );
+
+    const tenant = buildLocalTenant(db, user.role);
+
+    res.json({
+      access_token: token,
+      token_type: 'bearer',
+      expires_in: 86400,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        category_ids: user.category_ids ? JSON.parse(user.category_ids) : [],
+      },
+      tenants: [tenant],
+    });
+  } catch (error: any) {
+    console.error('[Auth] PIN login error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ── GET /api/auth/staff-pins ──────────────────────────────────────────────────
+// Returns active staff members for quick login selection
+
+router.get('/staff-pins', async (_req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+
+    // Proactively pull latest staff from cloud in background so login screen has latest updates
+    try {
+      const { syncStaffFromCloud } = await import('../services/cloud-sync');
+      syncStaffFromCloud().catch(() => {});
+    } catch {}
+
+    const staff = db.prepare(
+      "SELECT id, name, role, email, (pin IS NOT NULL AND pin != '') as has_pin FROM users WHERE is_active = 1 ORDER BY role, name"
+    ).all();
+    res.json({ staff });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ── POST /api/auth/register ───────────────────────────────────────────────────
+
+router.post('/register', (req: Request, res: Response) => {
+  try {
+    const { name, email, password, business_name, business_type, country } = req.body;
+
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: 'Name, email, and password are required' });
+    }
+
+    const db = getDatabase();
+
+    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+    if (existing) {
+      return res.status(400).json({ error: 'A user with this email already exists' });
+    }
+
+    const userId = uuidv4();
+    const hashedPassword = bcrypt.hashSync(password, 10);
+
+    const countRow = db.prepare('SELECT COUNT(*) as c FROM users').get() as any;
+    const role = countRow.c === 0 ? 'owner' : 'cashier';
+
+    db.prepare(`
+      INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))
+    `).run(userId, name, email, hashedPassword, role);
+
+    if (business_name) {
+      db.prepare(`
+        INSERT INTO settings (key, value, updated_at) VALUES ('business_name', ?, datetime('now'))
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      `).run(business_name);
+    }
+    if (business_type) {
+      db.prepare(`
+        INSERT INTO settings (key, value, updated_at) VALUES ('business_type', ?, datetime('now'))
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      `).run(business_type);
+    }
+    if (country) {
+      db.prepare(`
+        INSERT INTO settings (key, value, updated_at) VALUES ('country', ?, datetime('now'))
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      `).run(country);
+    }
+
+    const token = jwt.sign(
+      { userId, email, role },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
+    );
+
+    const tenant = buildLocalTenant(db, role);
+
+    res.json({
+      token,
+      access_token: token,
+      token_type: 'bearer',
+      user: { id: userId, name, email, role },
+      tenant,
+      tenants: [tenant],
+    });
+  } catch (error: any) {
+    console.error('[Auth] Register error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -269,14 +446,14 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
 
     const tenant = {
       id: 1,
-      business_name: business_name || 'My Store',
+      business_name: business_name || 'Sole-What',
       slug: 'local',
       database_name: 'local',
       business_type,
-      country: 'IN',
-      currency: business_type === 'retail' ? 'INR' : (business_type === 'restaurant' ? 'INR' : 'INR'),
-      currency_symbol: '₹',
-      timezone: 'Asia/Kolkata',
+      country: 'PK',
+      currency: 'PKR',
+      currency_symbol: 'Rs',
+      timezone: 'Asia/Karachi',
       plan: 'desktop',
       status: 'active',
       role: 'owner',

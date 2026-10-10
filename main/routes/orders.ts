@@ -5,8 +5,16 @@ import { notifyKdsUpdate } from '../services/kds';
 
 const router = Router();
 
-router.get('/', (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
   try {
+    // Auto-sync latest online orders from Pizza System cloud unless disabled
+    if (req.query.sync !== '0') {
+      try {
+        const { pullOnlineOrdersFromCloud } = require('../services/cloud-sync');
+        await pullOnlineOrdersFromCloud();
+      } catch {}
+    }
+
     const db = getDatabase();
     let query = 'SELECT * FROM orders WHERE 1=1';
     const params: any[] = [];
@@ -71,7 +79,7 @@ router.get('/:id', (req: Request, res: Response) => {
   }
 });
 
-router.post('/', (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
   try {
     const { table_id, customer_id, user_id, type, guest_count, special_instructions, packaging_charge, items } = req.body;
 
@@ -193,6 +201,12 @@ router.post('/', (req: Request, res: Response) => {
 
     notifyKdsUpdate();
 
+    // Push POS order up to Pizza Management cloud (Supabase) in background
+    try {
+      const { pushOrderToCloud } = await import('../services/cloud-sync');
+      pushOrderToCloud(order, orderItems).catch(() => {});
+    } catch {}
+
     res.status(201).json({ order: Object.assign({}, order, { items: orderItems }) });
   } catch (error: any) {
     console.error('[Orders] Create error:', error);
@@ -305,7 +319,7 @@ router.post('/:id/items', (req: Request, res: Response) => {
   }
 });
 
-router.patch('/:id/status', (req: Request, res: Response) => {
+router.patch('/:id/status', async (req: Request, res: Response) => {
   try {
     const { status, reason } = req.body;
 
@@ -321,62 +335,78 @@ router.patch('/:id/status', (req: Request, res: Response) => {
     // reason is optional for cancellation
 
     const db = getDatabase();
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
-    if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
+    let order = db.prepare('SELECT * FROM orders WHERE id = ? OR cloud_order_id = ? OR order_number = ?')
+      .get(req.params.id, String(req.params.id), String(req.params.id)) as any;
 
     const nowStr = now();
+    const cloudTargetId = order?.cloud_order_id || req.params.id;
 
-    switch (status) {
-      case 'preparing':
-        db.prepare('UPDATE orders SET status = ?, cooking_started_at = ?, updated_at = ? WHERE id = ?')
-          .run(status, nowStr, nowStr, req.params.id);
-        break;
+    if (order) {
+      const targetId = order.id;
 
-      case 'ready':
-        db.prepare('UPDATE orders SET status = ?, ready_at = ?, updated_at = ? WHERE id = ?')
-          .run(status, nowStr, nowStr, req.params.id);
-        break;
+      switch (status) {
+        case 'preparing':
+          db.prepare('UPDATE orders SET status = ?, cooking_started_at = ?, updated_at = ? WHERE id = ?')
+            .run(status, nowStr, nowStr, targetId);
+          break;
 
-      case 'served':
-        db.prepare('UPDATE orders SET status = ?, served_at = ?, updated_at = ? WHERE id = ?')
-          .run(status, nowStr, nowStr, req.params.id);
-        break;
+        case 'ready':
+          db.prepare('UPDATE orders SET status = ?, ready_at = ?, updated_at = ? WHERE id = ?')
+            .run(status, nowStr, nowStr, targetId);
+          break;
 
-      case 'completed':
-        db.prepare('UPDATE orders SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?')
-          .run(status, nowStr, nowStr, req.params.id);
-        // Free table
-        if ((order as any).table_id) {
-          db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
-            .run(nowStr, (order as any).table_id);
-        }
-        break;
+        case 'served':
+          db.prepare('UPDATE orders SET status = ?, served_at = ?, updated_at = ? WHERE id = ?')
+            .run(status, nowStr, nowStr, targetId);
+          break;
 
-      case 'cancelled':
-        // Restore stock
-        const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id) as any[];
-        for (const item of items) {
-          const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
-          if (product && product.track_inventory) {
-            db.prepare('UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = ? WHERE id = ?')
-              .run(item.quantity, nowStr, product.id);
+        case 'completed':
+          db.prepare('UPDATE orders SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?')
+            .run(status, nowStr, nowStr, targetId);
+          // Free table
+          if (order.table_id) {
+            db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
+              .run(nowStr, order.table_id);
           }
-        }
-        db.prepare('UPDATE orders SET status = ?, cancelled_at = ?, cancellation_reason = ?, updated_at = ? WHERE id = ?')
-          .run(status, nowStr, reason, nowStr, req.params.id);
-        // Free table
-        if ((order as any).table_id) {
-          db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
-            .run(nowStr, (order as any).table_id);
-        }
-        break;
+          break;
+
+        case 'cancelled':
+          // Restore stock
+          const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(targetId) as any[];
+          for (const item of items) {
+            const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
+            if (product && product.track_inventory) {
+              db.prepare('UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = ? WHERE id = ?')
+                .run(item.quantity, nowStr, product.id);
+            }
+          }
+          db.prepare('UPDATE orders SET status = ?, cancelled_at = ?, cancellation_reason = ?, updated_at = ? WHERE id = ?')
+            .run(status, nowStr, reason, nowStr, targetId);
+          // Free table
+          if (order.table_id) {
+            db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
+              .run(nowStr, order.table_id);
+          }
+          break;
+      }
     }
 
-    const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
-    const orderItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson);
-    const tableRow2 = updatedOrder.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(updatedOrder.table_id) as any : null;
+    // Real-time notification to local KDS displays
+    notifyKdsUpdate();
+
+    // Real-time synchronization of order status to Pizza System Cloud (Supabase)
+    try {
+      const { updateCloudOrderStatus } = await import('../services/cloud-sync');
+      updateCloudOrderStatus(cloudTargetId, status, { notes: reason || undefined }).catch(() => {});
+    } catch {}
+
+    const updatedOrder = order
+      ? db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id) as any
+      : { id: req.params.id, status };
+    const orderItems = order
+      ? db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson)
+      : [];
+    const tableRow2 = updatedOrder?.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(updatedOrder.table_id) as any : null;
     const table = tableRow2 ? { ...tableRow2, name: tableRow2.number } : null;
 
     res.json({ order: Object.assign({}, updatedOrder, { items: orderItems, table }) });

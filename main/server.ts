@@ -67,9 +67,20 @@ export function startServer(): Promise<void> {
       console.log(`[Server] Serving frontend from: ${frontendDir}`);
       app.use(express.static(frontendDir));
 
-      // SPA fallback: any unknown path returns index.html so Next.js
-      // client-side routing works. Exclude /api (API routes) and /kds.
-      app.get(/^(?!\/api|\/kds).*$/, (_req: Request, res: Response) => {
+      // Smart static page serving for static export:
+      // Checks for <dir>/<path>/index.html or <dir>/<path>.html before falling back.
+      app.get(/^(?!\/api|\/kds).*$/, (req: Request, res: Response) => {
+        const cleanPath = req.path.replace(/^\/+|\/+$/g, '');
+        if (cleanPath) {
+          const nestedHtml = path.join(frontendDir, cleanPath, 'index.html');
+          if (fs.existsSync(nestedHtml)) {
+            return res.sendFile(nestedHtml);
+          }
+          const directHtml = path.join(frontendDir, `${cleanPath}.html`);
+          if (fs.existsSync(directHtml)) {
+            return res.sendFile(directHtml);
+          }
+        }
         res.sendFile(path.join(frontendDir, 'index.html'));
       });
     } else {

@@ -16,7 +16,7 @@ const router = Router();
 router.get('/', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    let query = 'SELECT id, name, email, role, pin, is_active, created_at, updated_at FROM users WHERE 1=1';
+    let query = "SELECT id, name, email, role, pin, is_active, created_at, updated_at FROM users WHERE 1=1 AND (email IS NULL OR email NOT LIKE '%@flo.local') AND id NOT IN ('user-1', 'user-2', 'user-3', 'user-4')";
     const params: any[] = [];
 
     if (req.query.role) {
@@ -70,13 +70,13 @@ router.post('/', (req: Request, res: Response) => {
   try {
     const { name, email, password, role, pin } = req.body;
 
-    if (!name || !password || !role) {
-      return res.status(400).json({ error: 'name, password, and role are required' });
+    if (!name || !role) {
+      return res.status(400).json({ error: 'Name and role are required' });
     }
 
     const validRoles = ['owner', 'manager', 'cashier', 'waiter', 'chef'];
     if (!validRoles.includes(role)) {
-      return res.status(400).json({ error: `role must be one of: ${validRoles.join(', ')}` });
+      return res.status(400).json({ error: `Role must be one of: ${validRoles.join(', ')}` });
     }
 
     const db = getDatabase();
@@ -88,13 +88,21 @@ router.post('/', (req: Request, res: Response) => {
       }
     }
 
+    if (pin) {
+      const existingPin = db.prepare('SELECT id, name FROM users WHERE pin = ? AND is_active = 1').get(String(pin)) as any;
+      if (existingPin) {
+        return res.status(400).json({ error: `PIN already assigned to ${existingPin.name}` });
+      }
+    }
+
     const id = uuidv4();
-    const hashedPassword = bcrypt.hashSync(password, 10);
+    const effectivePassword = password || (pin ? String(pin) : '123456');
+    const hashedPassword = bcrypt.hashSync(effectivePassword, 10);
 
     db.prepare(`
       INSERT INTO users (id, name, email, password, role, pin, is_active, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
-    `).run(id, name, email || null, hashedPassword, role, pin || null, now(), now());
+    `).run(id, name, email || null, hashedPassword, role, pin ? String(pin) : null, now(), now());
 
     const member = db.prepare(
       'SELECT id, name, email, role, pin, is_active, created_at, updated_at FROM users WHERE id = ?'
@@ -121,7 +129,7 @@ router.put('/:id', (req: Request, res: Response) => {
     if (role) {
       const validRoles = ['owner', 'manager', 'cashier', 'waiter', 'chef'];
       if (!validRoles.includes(role)) {
-        return res.status(400).json({ error: `role must be one of: ${validRoles.join(', ')}` });
+        return res.status(400).json({ error: `Role must be one of: ${validRoles.join(', ')}` });
       }
     }
 
@@ -129,6 +137,13 @@ router.put('/:id', (req: Request, res: Response) => {
       const existing = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email, req.params.id);
       if (existing) {
         return res.status(400).json({ error: 'Email already in use' });
+      }
+    }
+
+    if (pin && pin !== member.pin) {
+      const existingPin = db.prepare('SELECT id, name FROM users WHERE pin = ? AND id != ? AND is_active = 1').get(String(pin), req.params.id) as any;
+      if (existingPin) {
+        return res.status(400).json({ error: `PIN already assigned to ${existingPin.name}` });
       }
     }
 

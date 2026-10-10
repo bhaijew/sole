@@ -171,7 +171,7 @@ router.get('/display', (req: Request, res: Response) => {
   }
 });
 
-router.patch('/items/:id/status', (req: Request, res: Response) => {
+router.patch('/items/:id/status', async (req: Request, res: Response) => {
   try {
     const { status } = req.body;
 
@@ -197,7 +197,34 @@ router.patch('/items/:id/status', (req: Request, res: Response) => {
       WHERE id = ?
     `).run(status, nowStr, req.params.id);
 
-    const updatedItem = db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.id);
+    const updatedItem = db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.id) as any;
+
+    // Real-time notification to KDS displays
+    try {
+      const { notifyKdsUpdate } = await import('../services/kds');
+      notifyKdsUpdate();
+    } catch {}
+
+    // If item changed, check if parent order status should auto-advance & sync to cloud
+    if (updatedItem && updatedItem.order_id) {
+      try {
+        const { updateCloudOrderStatus } = await import('../services/cloud-sync');
+        if (status === 'preparing') {
+          db.prepare("UPDATE orders SET status = 'preparing', cooking_started_at = COALESCE(cooking_started_at, ?), updated_at = ? WHERE id = ? AND status = 'pending'")
+            .run(nowStr, nowStr, updatedItem.order_id);
+          updateCloudOrderStatus(updatedItem.order_id, 'preparing').catch(() => {});
+        } else if (status === 'ready') {
+          const remaining = db.prepare("SELECT COUNT(*) as count FROM order_items WHERE order_id = ? AND status NOT IN ('ready', 'served', 'completed')")
+            .get(updatedItem.order_id) as any;
+          if (remaining && remaining.count === 0) {
+            db.prepare("UPDATE orders SET status = 'ready', ready_at = ?, updated_at = ? WHERE id = ?")
+              .run(nowStr, nowStr, updatedItem.order_id);
+            updateCloudOrderStatus(updatedItem.order_id, 'ready').catch(() => {});
+          }
+        }
+      } catch {}
+    }
+
     res.json({ item: updatedItem });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

@@ -1,21 +1,22 @@
 {
   "name": "flo-desktop",
-  "version": "1.5.5",
+  "version": "1.5.6",
   "description": "Flo - Self-hosted Point of Sale System",
   "main": "dist/index.js",
   "scripts": {
     "dev": "npm run build:frontend && npm run build && electron .",
+    "dev:fast": "npm run build && electron .",
     "dev:frontend": "cd frontend && npm run dev",
     "build": "tsc",
-    "build:frontend": "cd frontend && npm ci && NEXT_BUILD_MODE=desktop NEXT_PUBLIC_API_URL=http://localhost:3001/api npm run build",
+    "build:frontend": "cd frontend && npx cross-env NEXT_BUILD_MODE=desktop NEXT_PUBLIC_API_URL=http://localhost:3001/api npm run build",
     "build:all-platforms": "npm run build:frontend && npm run build && electron-builder --win --mac --linux",
-    "postinstall": "git submodule update --init --recursive",
+    "postinstall": "echo Submodules ready",
     "build:win": "npm run build:frontend && npm run build && electron-builder --win",
     "build:mac": "npm run build:frontend && npm run build && electron-builder --mac",
     "build:linux": "npm run build:frontend && npm run build && electron-builder --linux",
     "pack": "electron-builder --dir",
     "start": "electron .",
-    "rebuild": "HOME=~/.electron-gyp node-gyp rebuild --target=$(node -p \"require('./node_modules/electron/package.json').version\") --arch=$(node -p \"process.arch\") --dist-url=https://electronjs.org/headers --runtime=electron --directory node_modules/better-sqlite3"
+    "rebuild": "electron-rebuild -f -o better-sqlite3"
   },
   "author": {
     "name": "Flo",
@@ -35,11 +36,13 @@
     "@types/qrcode": "^1.5.6",
     "@types/uuid": "^9.0.8",
     "@types/ws": "^8.5.10",
+    "cross-env": "^10.1.0",
     "electron": "^31.1.0",
     "electron-builder": "^24.13.3",
     "typescript": "^5.4.5"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.117.3",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^11.10.0",
     "bonjour-service": "^1.2.1",
@@ -50,6 +53,7 @@
     "jsonwebtoken": "^9.0.2",
     "node-thermal-printer": "^4.2.1",
     "pg": "^8.20.0",
+    "pizza-system": "file:../pizza-main",
     "qrcode": "^1.5.3",
     "uuid": "^9.0.1",
     "ws": "^8.17.0"

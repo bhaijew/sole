@@ -103,7 +103,7 @@ router.post('/generate', (req: Request, res: Response) => {
   }
 });
 
-router.post('/:id/payment', (req: Request, res: Response) => {
+router.post('/:id/payment', async (req: Request, res: Response) => {
   try {
     const { method, amount, transaction_id, notes } = req.body;
 
@@ -181,6 +181,12 @@ router.post('/:id/payment', (req: Request, res: Response) => {
           .run(now(), order.table_id);
       }
       notifyKdsUpdate();
+
+      // Real-time synchronization of paid/completed status to Pizza System Cloud (Supabase)
+      try {
+        const { updateCloudOrderStatus } = await import('../services/cloud-sync');
+        updateCloudOrderStatus(bill.order_id, 'completed', { notes: `Paid via ${method} (Bill #${bill.bill_number})` }).catch(() => {});
+      } catch {}
     }
 
     const updatedBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id);
