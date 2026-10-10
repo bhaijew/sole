@@ -184,13 +184,13 @@ function LoginContent() {
           {/* Top Brand & Status Bar */}
           <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-500 text-lg shadow-sm">
-                🍕
+              <div className="h-10 w-10 rounded-xl overflow-hidden border border-slate-700/50 flex items-center justify-center bg-slate-900 shadow-sm">
+                <img src="/icon-64.png" alt="Sole What" className="h-8 w-8 rounded-lg" />
               </div>
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <h1 className="text-sm font-black tracking-tight text-white leading-tight">
-                    Flo POS Terminal
+                    Sole What POS
                   </h1>
                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />

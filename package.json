@@ -1,7 +1,7 @@
 {
-  "name": "flo-desktop",
+  "name": "sole-what-pos",
   "version": "1.5.6",
-  "description": "Flo - Self-hosted Point of Sale System",
+  "description": "Sole What - Smart Point of Sale System",
   "main": "dist/index.js",
   "scripts": {
     "dev": "npm run build:frontend && npm run build && electron .",
@@ -59,8 +59,8 @@
     "ws": "^8.17.0"
   },
   "build": {
-    "appId": "com.flo.desktop",
-    "productName": "Flo",
+    "appId": "com.solewhat.pos",
+    "productName": "Sole What",
     "asar": true,
     "asarUnpack": "**/node_modules/better-sqlite3/**/*",
     "directories": {

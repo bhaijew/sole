@@ -70,12 +70,12 @@ export default function AppSidebar() {
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
               <a href={homeHref}>
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-white">
-                  <img src="/logo.svg" alt="Flo" width={20} height={20} />
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg overflow-hidden bg-slate-900 border border-slate-700/50 shadow-sm">
+                  <img src="/icon-32.png" alt="Sole What" width={24} height={24} className="rounded" />
                 </div>
                 <div className="flex flex-col gap-0.5 leading-none">
                   <span className="font-semibold truncate">
-                    {currentTenant?.business_name || 'Sole-What'}
+                    {currentTenant?.business_name || 'Sole What'}
                   </span>
                   <span className="text-xs text-muted-foreground truncate">
                     Point of Sale

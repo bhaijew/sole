@@ -14,13 +14,13 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sole-What",
-  description: "Sole-What - Smart Point of Sale System",
+  title: "Sole What",
+  description: "Sole What - Smart Point of Sale System",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Sole-What",
+    title: "Sole What",
   },
   icons: {
     icon: [

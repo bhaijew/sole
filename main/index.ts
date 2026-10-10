@@ -43,7 +43,7 @@ function setupAutoUpdater(): void {
     dialog.showMessageBox({
       type: 'info',
       title: 'Update Available',
-      message: `Flo ${info.version} is available!`,
+      message: `Sole What ${info.version} is available!`,
       detail: `Release date: ${info.releaseDate}\n\nWould you like to download it now?`,
       buttons: ['Download', 'Later'],
       defaultId: 0,
@@ -223,12 +223,12 @@ function createTray(): void {
     tray = new Tray(icon.resize({ width: 16, height: 16 }));
 
     const contextMenu = Menu.buildFromTemplate([
-      { label: 'Open Flo', click: () => mainWindow?.show() },
+      { label: 'Open Sole What', click: () => mainWindow?.show() },
       { type: 'separator' },
       { label: 'Quit', click: () => { isQuitting = true; app.quit(); } },
     ]);
 
-    tray.setToolTip('Flo');
+    tray.setToolTip('Sole What POS');
     tray.setContextMenu(contextMenu);
     tray.on('double-click', () => mainWindow?.show());
   } catch {
@@ -302,7 +302,7 @@ function createMenu(): void {
     {
       label: 'Help',
       submenu: [
-        { label: 'About Flo', click: () => showAbout() },
+        { label: 'About Sole What', click: () => showAbout() },
         { label: 'Check for Updates', click: () => checkForUpdates() },
       ],
     },
@@ -327,8 +327,8 @@ function showAbout(): void {
   const kdsPort = getKdsPort();
   dialog.showMessageBox({
     type: 'info',
-    title: 'About Flo',
-    message: 'Flo Desktop',
+    title: 'About Sole What',
+    message: 'Sole What POS',
     detail: [
       `Version: ${app.getVersion()}`,
       `Electron: ${process.versions.electron}`,

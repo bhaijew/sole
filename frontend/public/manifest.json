@@ -1,7 +1,7 @@
 {
-  "name": "Flo",
-  "short_name": "Flo",
-  "description": "Smart Point of Sale for restaurants, salons, and retail",
+  "name": "Sole What",
+  "short_name": "Sole What",
+  "description": "Sole What - Smart Point of Sale System",
   "start_url": "/dashboard",
   "display": "standalone",
   "background_color": "#ffffff",
