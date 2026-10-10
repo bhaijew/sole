@@ -430,6 +430,7 @@ function createSchema(): void {
       role TEXT NOT NULL DEFAULT 'cashier'
         CHECK (role IN ('owner', 'manager', 'cashier', 'waiter', 'chef')),
       pin TEXT,
+      shop_id INTEGER,
       category_ids TEXT,
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,

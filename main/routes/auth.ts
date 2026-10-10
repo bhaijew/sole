@@ -19,8 +19,8 @@ function buildLocalTenant(db: ReturnType<typeof getDatabase>, userRole: string) 
 
   return {
     id: 1,
-    business_name:  s.business_name  || 'Sole-What',
-    slug:           'local',
+    business_name:  s.business_name  || s.cloud_shop_name || 'Sole-What',
+    slug:           s.cloud_shop_slug || 'local',
     database_name:  'local',
     business_type:  s.business_type  || 'restaurant',
     country:        s.country        || 'PK',
@@ -70,6 +70,19 @@ router.post('/login', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    // Auto-switch branch if user belongs to another branch
+    const currentShopRow = db.prepare("SELECT value FROM settings WHERE key = 'cloud_shop_id'").get() as any;
+    const currentShopId = currentShopRow?.value ? Number(currentShopRow.value) : null;
+    if (user.shop_id && currentShopId && Number(user.shop_id) !== Number(currentShopId)) {
+      try {
+        console.log(`[Auth] User ${user.name} belongs to Shop #${user.shop_id} (active: #${currentShopId}). Switching branch automatically...`);
+        const { selectCloudShop } = await import('../services/cloud-sync');
+        await selectCloudShop(user.shop_id);
+      } catch (switchErr) {
+        console.warn('[Auth] Auto branch switch on login error:', switchErr);
+      }
+    }
+
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
       JWT_SECRET,
@@ -87,6 +100,7 @@ router.post('/login', async (req: Request, res: Response) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        shop_id: user.shop_id,
         category_ids: user.category_ids ? JSON.parse(user.category_ids) : [],
       },
       tenants: [tenant],
@@ -107,26 +121,55 @@ router.post('/pin-login', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'PIN is required' });
     }
 
+    const trimmedPin = String(pin).trim();
     const db = getDatabase();
+    const currentShopRow = db.prepare("SELECT value FROM settings WHERE key = 'cloud_shop_id'").get() as any;
+    const currentShopId = currentShopRow?.value ? Number(currentShopRow.value) : null;
+
     let user: any = null;
 
     if (userId) {
-      user = db.prepare('SELECT * FROM users WHERE id = ? AND pin = ? AND is_active = 1').get(String(userId), String(pin));
-    }
-    if (!user) {
-      user = db.prepare('SELECT * FROM users WHERE pin = ? AND is_active = 1').get(String(pin)) as any;
+      user = db.prepare('SELECT * FROM users WHERE id = ? AND pin = ? AND is_active = 1').get(String(userId), trimmedPin);
     }
 
-    // If not found locally, trigger live cloud sync from Supabase in case newly created in Super Admin
+    // 1. Check local users: prioritize matching user in currently active shop
+    if (!user && currentShopId) {
+      user = db.prepare('SELECT * FROM users WHERE pin = ? AND is_active = 1 AND shop_id = ?').get(trimmedPin, currentShopId) as any;
+    }
+
+    // 2. Check local users across other specific shops (shop_id IS NOT NULL)
+    if (!user) {
+      user = db.prepare('SELECT * FROM users WHERE pin = ? AND is_active = 1 AND shop_id IS NOT NULL').get(trimmedPin) as any;
+    }
+
+    // 3. Check local users without specific shop (fallback)
+    if (!user) {
+      user = db.prepare('SELECT * FROM users WHERE pin = ? AND is_active = 1').get(trimmedPin) as any;
+    }
+
+    // 3. If not found locally, query live cloud directly (handles newly created shops & staff)
     if (!user) {
       try {
-        const { syncStaffFromCloud } = await import('../services/cloud-sync');
-        await syncStaffFromCloud();
-        if (userId) {
-          user = db.prepare('SELECT * FROM users WHERE id = ? AND pin = ? AND is_active = 1').get(String(userId), String(pin));
-        }
-        if (!user) {
-          user = db.prepare('SELECT * FROM users WHERE pin = ? AND is_active = 1').get(String(pin)) as any;
+        const { findStaffByPinInCloud, selectCloudShop, syncStaffFromCloud } = await import('../services/cloud-sync');
+        const cloudMatch = await findStaffByPinInCloud(trimmedPin);
+
+        if (cloudMatch) {
+          console.log(`[Auth] Direct cloud PIN match for ${cloudMatch.name} (Shop #${cloudMatch.shop_id})`);
+          if (cloudMatch.shop_id && (!currentShopId || Number(cloudMatch.shop_id) !== Number(currentShopId))) {
+            await selectCloudShop(cloudMatch.shop_id);
+          } else {
+            await syncStaffFromCloud();
+          }
+          user = db.prepare('SELECT * FROM users WHERE pin = ? AND is_active = 1').get(trimmedPin) as any;
+        } else {
+          // Fallback: sync all staff once
+          await syncStaffFromCloud();
+          if (userId) {
+            user = db.prepare('SELECT * FROM users WHERE id = ? AND pin = ? AND is_active = 1').get(String(userId), trimmedPin);
+          }
+          if (!user) {
+            user = db.prepare('SELECT * FROM users WHERE pin = ? AND is_active = 1').get(trimmedPin) as any;
+          }
         }
       } catch (syncErr) {
         console.warn('[Auth] Live staff sync on PIN fallback error:', syncErr);
@@ -135,6 +178,17 @@ router.post('/pin-login', async (req: Request, res: Response) => {
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid PIN or user is deactivated' });
+    }
+
+    // 4. If the authenticated user belongs to another shop than active terminal shop, auto-switch branch!
+    if (user.shop_id && currentShopId && Number(user.shop_id) !== Number(currentShopId)) {
+      try {
+        console.log(`[Auth] User ${user.name} belongs to Shop #${user.shop_id} (active: #${currentShopId}). Switching branch automatically...`);
+        const { selectCloudShop } = await import('../services/cloud-sync');
+        await selectCloudShop(user.shop_id);
+      } catch (switchErr) {
+        console.warn('[Auth] Auto branch switch error:', switchErr);
+      }
     }
 
     const token = jwt.sign(
@@ -154,6 +208,7 @@ router.post('/pin-login', async (req: Request, res: Response) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        shop_id: user.shop_id,
         category_ids: user.category_ids ? JSON.parse(user.category_ids) : [],
       },
       tenants: [tenant],
@@ -177,9 +232,15 @@ router.get('/staff-pins', async (_req: Request, res: Response) => {
       syncStaffFromCloud().catch(() => {});
     } catch {}
 
-    const staff = db.prepare(
-      "SELECT id, name, role, email, (pin IS NOT NULL AND pin != '') as has_pin FROM users WHERE is_active = 1 ORDER BY role, name"
-    ).all();
+    const currentShopRow = db.prepare("SELECT value FROM settings WHERE key = 'cloud_shop_id'").get() as any;
+    const currentShopId = currentShopRow?.value ? Number(currentShopRow.value) : null;
+    const staff = currentShopId
+      ? db.prepare(
+          "SELECT id, name, role, email, (pin IS NOT NULL AND pin != '') as has_pin, shop_id FROM users WHERE is_active = 1 AND (shop_id = ? OR shop_id IS NULL) ORDER BY role, name"
+        ).all(currentShopId)
+      : db.prepare(
+          "SELECT id, name, role, email, (pin IS NOT NULL AND pin != '') as has_pin, shop_id FROM users WHERE is_active = 1 ORDER BY role, name"
+        ).all();
     res.json({ staff });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

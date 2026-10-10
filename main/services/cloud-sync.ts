@@ -385,6 +385,69 @@ export async function syncMenuFromCloud(forcedShopId?: number | string): Promise
 }
 
 /**
+ * Direct lookup of staff or shop owner across Supabase by PIN
+ */
+export async function findStaffByPinInCloud(pin: string): Promise<{
+  id: string;
+  name: string;
+  role: string;
+  shop_id: number;
+  email?: string;
+} | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  try {
+    const trimmedPin = String(pin).trim();
+
+    // 1. Look in pos_staff
+    const { data: staffList, error } = await client
+      .from('pos_staff')
+      .select('id, name, full_name, email, role, pin, shop_id, is_active, has_pos_access')
+      .eq('pin', trimmedPin)
+      .eq('is_active', true)
+      .eq('has_pos_access', true)
+      .limit(1);
+
+    if (!error && staffList && staffList.length > 0) {
+      const s = staffList[0];
+      return {
+        id: `cloud_staff_${s.id}`,
+        name: s.name || s.full_name || 'Staff Member',
+        role: s.role || 'cashier',
+        shop_id: s.shop_id ? Number(s.shop_id) : 4,
+        email: s.email || undefined,
+      };
+    }
+
+    // 2. Look in shops table for owner
+    const { data: shops } = await client
+      .from('shops')
+      .select('id, name, owner_name, owner_email, status, password')
+      .eq('status', 'active');
+
+    if (shops) {
+      for (const sh of shops) {
+        if (sh.password === trimmedPin) {
+          return {
+            id: `cloud_shop_owner_${sh.id}`,
+            name: `${sh.owner_name} (Owner)`,
+            role: 'owner',
+            shop_id: Number(sh.id),
+            email: sh.owner_email,
+          };
+        }
+      }
+    }
+
+    return null;
+  } catch (err: any) {
+    console.warn('[CloudSync] findStaffByPinInCloud error:', err.message);
+    return null;
+  }
+}
+
+/**
  * Pull Staff / Users with POS access from Pizza System (Supabase) into local SQLite
  */
 export async function syncStaffFromCloud(): Promise<{
@@ -401,34 +464,16 @@ export async function syncStaffFromCloud(): Promise<{
 
   try {
     const shopId = getSetting('cloud_shop_id', '');
-    console.log(`[CloudSync] Starting Staff Sync from Pizza System (Branch Filter: ${shopId ? `Shop #${shopId}` : 'All'})...`);
+    console.log(`[CloudSync] Starting Staff Sync from Pizza System (Active Branch: ${shopId ? `Shop #${shopId}` : 'All'})...`);
     // Immediately purge legacy dummy accounts from local SQLite
     db.exec("DELETE FROM users WHERE id IN ('user-1', 'user-2', 'user-3', 'user-4') OR email LIKE '%@flo.local';");
     let syncedStaff = 0;
 
-    // Method 1: Check pos_staff table in Supabase
+    // Method 1: Check pos_staff table in Supabase across all active shops
     try {
-      let cloudStaff: any[] | null = null;
-      let staffError: any = null;
-
-      if (shopId) {
-        const res = await client
-          .from('pos_staff')
-          .select('*')
-          .or(`shop_id.eq.${shopId},shop_id.is.null`);
-        if (res.error && res.error.message.includes('shop_id')) {
-          const fallback = await client.from('pos_staff').select('*');
-          cloudStaff = fallback.data;
-          staffError = fallback.error;
-        } else {
-          cloudStaff = res.data;
-          staffError = res.error;
-        }
-      } else {
-        const res = await client.from('pos_staff').select('*');
-        cloudStaff = res.data;
-        staffError = res.error;
-      }
+      const res = await client.from('pos_staff').select('*');
+      const cloudStaff = res.data;
+      const staffError = res.error;
 
       if (!staffError && cloudStaff) {
         const validStaffIds = new Set<string>();
@@ -466,44 +511,46 @@ export async function syncStaffFromCloud(): Promise<{
           }
         }
       }
-    } catch {
-      // ignore
+    } catch (e: any) {
+      console.warn('[CloudSync] Staff sync pos_staff note:', e.message);
     }
 
-    // Method 1b: Ensure the current shop's owner from `shops` table is provisioned
+    // Method 1b: Ensure active shops' owners from `shops` table are provisioned
     try {
-      let shopQuery = client.from('shops').select('id, name, owner_name, owner_email, status, password');
-      if (shopId) {
-        shopQuery = shopQuery.eq('id', shopId);
-      }
-      const { data: currentShops } = await shopQuery;
-      if (currentShops && currentShops.length > 0) {
-        for (const cs of currentShops) {
+      const { data: allShops } = await client.from('shops').select('id, name, owner_name, owner_email, status, password');
+      if (allShops && allShops.length > 0) {
+        for (const cs of allShops) {
           const ownerId = `cloud_shop_owner_${cs.id}`;
           const ownerName = `${cs.owner_name} (Owner)`;
           const ownerEmail = cs.owner_email || `shop_${cs.id}_owner@pos.local`;
           const ownerIsActive = cs.status === 'active' ? 1 : 0;
 
+          // If owner already has an entry in pos_staff with shop_id, don't create duplicate
+          const alreadyInStaff = db.prepare("SELECT id, pin FROM users WHERE shop_id = ? AND role = 'owner'").get(cs.id) as any;
+          if (alreadyInStaff) {
+            continue;
+          }
+
           const existingUser = db.prepare('SELECT id, pin FROM users WHERE id = ? OR email = ?').get(ownerId, ownerEmail) as any;
-          const ownerPin = existingUser?.pin || '1234';
+          const ownerPin = existingUser?.pin || (cs.password && String(cs.password).length === 4 ? String(cs.password) : '1234');
           const pwd = bcrypt.hashSync(ownerPin, 10);
 
           if (existingUser) {
             db.prepare(`
-              UPDATE users SET name = ?, email = ?, role = 'owner', is_active = ?, updated_at = datetime('now')
+              UPDATE users SET name = ?, email = ?, role = 'owner', is_active = ?, shop_id = ?, updated_at = datetime('now')
               WHERE id = ?
-            `).run(ownerName, ownerEmail, ownerIsActive, existingUser.id);
+            `).run(ownerName, ownerEmail, ownerIsActive, cs.id, existingUser.id);
           } else {
             db.prepare(`
-              INSERT INTO users (id, name, email, password, role, pin, is_active, created_at, updated_at)
-              VALUES (?, ?, ?, ?, 'owner', ?, ?, datetime('now'), datetime('now'))
-            `).run(ownerId, ownerName, ownerEmail, pwd, ownerPin, ownerIsActive);
+              INSERT INTO users (id, name, email, password, role, pin, is_active, shop_id, created_at, updated_at)
+              VALUES (?, ?, ?, ?, 'owner', ?, ?, ?, datetime('now'), datetime('now'))
+            `).run(ownerId, ownerName, ownerEmail, pwd, ownerPin, ownerIsActive, cs.id);
             syncedStaff++;
           }
         }
       }
-    } catch (shopOwnerErr) {
-      console.warn('[CloudSync] Shop owner sync note:', shopOwnerErr);
+    } catch (shopOwnerErr: any) {
+      console.warn('[CloudSync] Shop owner sync note:', shopOwnerErr.message);
     }
 
     // Method 2: Check Supabase Auth Users (Super Admin creates/manages users with POS access)
@@ -1237,8 +1284,8 @@ export async function fetchCloudShops(): Promise<{
   currentShopName: string;
 }> {
   const client = getSupabaseClient();
-  const currentShopId = getSetting('cloud_shop_id', '3');
-  const currentShopName = getSetting('cloud_shop_name', 'Pizza Crust - Master Branch');
+  const currentShopId = getSetting('cloud_shop_id', '4');
+  const currentShopName = getSetting('cloud_shop_name', 'papa pizza');
 
   if (!client) {
     return { success: false, shops: [], currentShopId, currentShopName };

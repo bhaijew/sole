@@ -26,8 +26,11 @@ router.get('/', (req: Request, res: Response) => {
     if (req.query.active === 'true') {
       query += ' AND is_active = 1';
     }
-    if (req.query.active === 'false') {
-      query += ' AND is_active = 0';
+    const currentShopRow = db.prepare("SELECT value FROM settings WHERE key = 'cloud_shop_id'").get() as any;
+    const currentShopId = (req.query.shop_id as string) || (currentShopRow?.value ? currentShopRow.value : null);
+    if (currentShopId) {
+      query += ' AND (shop_id = ? OR shop_id IS NULL)';
+      params.push(Number(currentShopId));
     }
 
     query += ' ORDER BY role, name';
