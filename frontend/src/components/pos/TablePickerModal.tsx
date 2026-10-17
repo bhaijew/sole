@@ -6,10 +6,10 @@ import { useHeldOrdersStore } from '@/store/held-orders';
 
 interface Props {
   tables: Table[];
-  selectedTableId: number | null;
-  onSelectAvailable: (tableId: number, customer?: { id: number; name: string; phone: string } | null) => void;
+  selectedTableId: number | string | null;
+  onSelectAvailable: (tableId: number | string, customer?: { id: number; name: string; phone: string } | null) => void;
   onSelectOccupied: (table: Table) => void;
-  onSelectHeld: (tableId: number) => void;
+  onSelectHeld: (tableId: number | string) => void;
   onClose: () => void;
 }
 

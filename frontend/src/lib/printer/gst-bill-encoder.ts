@@ -179,7 +179,7 @@ export function buildGstBillBytes(
     enc.text('Rates inclusive of GST').newline();
   }
 
-  enc.newline().newline().newline().cut();
+  enc.newline().cut();
 
   return enc.encode();
 }

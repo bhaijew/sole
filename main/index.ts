@@ -20,6 +20,7 @@ console.log('[Log] Log files location:', logPath);
 
 let updateAvailable = false;
 let updateDownloaded = false;
+let isManualCheck = false;
 
 function setupAutoUpdater(): void {
   autoUpdater.logger = log;
@@ -34,6 +35,7 @@ function setupAutoUpdater(): void {
   autoUpdater.on('update-available', (info) => {
     console.log('[Update] Update available:', info.version);
     updateAvailable = true;
+    isManualCheck = false;
     mainWindow?.webContents.send('update-status', { 
       status: 'available', 
       version: info.version,
@@ -44,7 +46,7 @@ function setupAutoUpdater(): void {
       type: 'info',
       title: 'Update Available',
       message: `Sole What ${info.version} is available!`,
-      detail: `Release date: ${info.releaseDate}\n\nWould you like to download it now?`,
+      detail: `Release date: ${info.releaseDate || 'Latest'}\n\nWould you like to download it now?`,
       buttons: ['Download', 'Later'],
       defaultId: 0,
     }).then((result) => {
@@ -57,6 +59,16 @@ function setupAutoUpdater(): void {
   autoUpdater.on('update-not-available', () => {
     console.log('[Update] No updates available');
     mainWindow?.webContents.send('update-status', { status: 'up-to-date' });
+    if (isManualCheck) {
+      isManualCheck = false;
+      dialog.showMessageBox({
+        type: 'info',
+        title: 'Check for Updates',
+        message: 'Sole What is up to date!',
+        detail: `You are running the latest version (${app.getVersion()}).`,
+        buttons: ['OK'],
+      });
+    }
   });
 
   autoUpdater.on('download-progress', (progress) => {
@@ -78,7 +90,7 @@ function setupAutoUpdater(): void {
       type: 'info',
       title: 'Update Ready',
       message: 'Update downloaded successfully!',
-      detail: `Version ${info.version} is ready to install.\n\nThe update will be installed when you quit the app.`,
+      detail: `Version ${info.version} is ready to install.\n\nThe update will be installed when you restart the app.`,
       buttons: ['Restart Now', 'Later'],
       defaultId: 0,
     }).then((result) => {
@@ -95,15 +107,60 @@ function setupAutoUpdater(): void {
     if (is404) {
       log.debug('[Update] No release artifacts found (404) — skipping update');
       mainWindow?.webContents.send('update-status', { status: 'up-to-date' });
+      if (isManualCheck) {
+        isManualCheck = false;
+        dialog.showMessageBox({
+          type: 'info',
+          title: 'Check for Updates',
+          message: 'Sole What is up to date!',
+          detail: `You are running the latest version (${app.getVersion()}).`,
+          buttons: ['OK'],
+        });
+      }
     } else {
       log.error('[Update] Error:', err);
       mainWindow?.webContents.send('update-status', { status: 'error', error: err.message });
+      if (isManualCheck) {
+        isManualCheck = false;
+        dialog.showMessageBox({
+          type: 'error',
+          title: 'Update Error',
+          message: 'Failed to check for updates.',
+          detail: err.message,
+          buttons: ['OK'],
+        });
+      }
     }
   });
 }
 
-function checkForUpdates(): void {
-  if (isDev) return;
+function checkForUpdates(manual = false): void {
+  if (isDev) {
+    if (manual) {
+      dialog.showMessageBox({
+        type: 'info',
+        title: 'Check for Updates',
+        message: 'Running in development mode.',
+        detail: 'Auto-updates are active in production builds.',
+        buttons: ['OK'],
+      });
+    }
+    return;
+  }
+  isManualCheck = manual;
+  const updateYmlPath = path.join(process.resourcesPath || '', 'app-update.yml');
+  if (!fs.existsSync(updateYmlPath)) {
+    if (manual) {
+      dialog.showMessageBox({
+        type: 'info',
+        title: 'Check for Updates',
+        message: 'Sole What is up to date!',
+        detail: `Version ${app.getVersion()}`,
+        buttons: ['OK'],
+      });
+    }
+    return;
+  }
   autoUpdater.checkForUpdates().catch((err) => {
     console.error('[Update] Check failed:', err);
   });
@@ -134,11 +191,12 @@ function createWindow(): void {
       nodeIntegration: false,
       sandbox: false,
     },
-    show: false,
+    show: true,
   });
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
+    mainWindow?.focus();
   });
 
   // Always load from the embedded Express server (serves static Next.js export).
@@ -171,8 +229,13 @@ function createWindow(): void {
 
   mainWindow.on('close', (event) => {
     if (!isQuitting) {
-      event.preventDefault();
-      mainWindow?.hide();
+      if (process.platform === 'darwin') {
+        event.preventDefault();
+        mainWindow?.hide();
+      } else {
+        isQuitting = true;
+        app.quit();
+      }
     }
   });
 
@@ -303,7 +366,7 @@ function createMenu(): void {
       label: 'Help',
       submenu: [
         { label: 'About Sole What', click: () => showAbout() },
-        { label: 'Check for Updates', click: () => checkForUpdates() },
+        { label: 'Check for Updates', click: () => checkForUpdates(true) },
       ],
     },
   ];
@@ -410,7 +473,22 @@ async function initialize(): Promise<void> {
   }
 }
 
-app.whenReady().then(initialize);
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  console.log('[Flo] Another instance is already running. Quitting duplicate.');
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      if (!mainWindow.isVisible()) mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  app.whenReady().then(initialize);
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

@@ -87,6 +87,7 @@ export function generateBillHtml(
   <style>
     ${styles}
     @media print {
+      @page { margin: 3mm; size: auto; }
       .no-print { display: none !important; }
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
@@ -227,11 +228,11 @@ function getPaperStyles(size: PaperSize): string {
   switch (size) {
     case 'a4':
       return baseStyles + `
-        .bill-container { padding: 40px; max-width: 210mm; min-height: 297mm; }
+        .bill-container { padding: 20px; max-width: 210mm; }
       `;
     case 'a5':
       return baseStyles + `
-        .bill-container { padding: 20px; max-width: 148mm; min-height: 210mm; font-size: 11px; }
+        .bill-container { padding: 15px; max-width: 148mm; font-size: 11px; }
         .header h1 { font-size: 18px; }
       `;
     case 'thermal58':

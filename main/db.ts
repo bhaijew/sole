@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as bcrypt from 'bcryptjs';
 
 // Bump this whenever the schema changes incompatibly
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 13;
 
 let db: Database.Database;
 
@@ -122,6 +122,27 @@ function runMigrations(): void {
   } else if (currentVersion < SCHEMA_VERSION) {
     // Incremental migrations
     runIncrementalMigrations(currentVersion);
+  }
+
+  // Defensive guarantee: Ensure shop_id & cloud_id exist on core multi-branch tables
+  const coreColumns = [
+    { table: 'categories', column: 'shop_id', type: 'INTEGER' },
+    { table: 'categories', column: 'cloud_id', type: 'TEXT' },
+    { table: 'products', column: 'shop_id', type: 'INTEGER' },
+    { table: 'products', column: 'cloud_id', type: 'TEXT' },
+    { table: 'orders', column: 'shop_id', type: 'INTEGER' },
+    { table: 'users', column: 'shop_id', type: 'INTEGER' },
+    { table: 'tables', column: 'shop_id', type: 'INTEGER' },
+  ];
+  for (const { table, column, type } of coreColumns) {
+    if (!columnExists(table, column)) {
+      try {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+        console.log(`[DB] Defensive check: Added missing column ${column} to ${table}`);
+      } catch (err: any) {
+        console.warn(`[DB] Defensive column check (${table}.${column}):`, err.message);
+      }
+    }
   }
 
   console.log('[DB] Migrations complete');
@@ -288,6 +309,53 @@ function runIncrementalMigrations(fromVersion: number): void {
     console.log('[DB] Multi-Branch Recipe & Inventory tables initialized.');
   }
 
+  // Migration from version 11 to 12 (Pizza Management Realtime Table Integration)
+  if (fromVersion < 12) {
+    console.log('[DB] Running migration to v12 (Pizza Management Realtime Table Integration)...');
+
+    if (!columnExists('tables', 'cloud_id')) {
+      db.exec(`ALTER TABLE tables ADD COLUMN cloud_id TEXT`);
+    }
+    if (!columnExists('tables', 'shop_id')) {
+      db.exec(`ALTER TABLE tables ADD COLUMN shop_id INTEGER`);
+    }
+    if (!columnExists('tables', 'token_code')) {
+      db.exec(`ALTER TABLE tables ADD COLUMN token_code TEXT`);
+    }
+    if (!columnExists('tables', 'name')) {
+      db.exec(`ALTER TABLE tables ADD COLUMN name TEXT`);
+    }
+    console.log('[DB] Tables table upgraded for Pizza Management cloud sync.');
+  }
+
+  // Migration from version 12 to 13 (Fix missing shop_id on categories, products, orders)
+  if (fromVersion < 13) {
+    console.log('[DB] Running migration to v13 (Ensuring shop_id on all multi-tenant tables)...');
+
+    if (!columnExists('categories', 'shop_id')) {
+      db.exec(`ALTER TABLE categories ADD COLUMN shop_id INTEGER`);
+    }
+    if (!columnExists('categories', 'cloud_id')) {
+      db.exec(`ALTER TABLE categories ADD COLUMN cloud_id TEXT`);
+    }
+    if (!columnExists('products', 'shop_id')) {
+      db.exec(`ALTER TABLE products ADD COLUMN shop_id INTEGER`);
+    }
+    if (!columnExists('products', 'cloud_id')) {
+      db.exec(`ALTER TABLE products ADD COLUMN cloud_id TEXT`);
+    }
+    if (!columnExists('orders', 'shop_id')) {
+      db.exec(`ALTER TABLE orders ADD COLUMN shop_id INTEGER`);
+    }
+    if (!columnExists('users', 'shop_id')) {
+      db.exec(`ALTER TABLE users ADD COLUMN shop_id INTEGER`);
+    }
+    if (!columnExists('tables', 'shop_id')) {
+      db.exec(`ALTER TABLE tables ADD COLUMN shop_id INTEGER`);
+    }
+    console.log('[DB] v13 migration complete: shop_id ensured on all tables.');
+  }
+
 
   // Update schema version
   db.prepare(`
@@ -304,6 +372,7 @@ function createSchema(): void {
     CREATE TABLE IF NOT EXISTS categories (
       id TEXT PRIMARY KEY,
       cloud_id TEXT,
+      shop_id INTEGER,
       name TEXT NOT NULL,
       description TEXT,
       image_url TEXT,
@@ -321,6 +390,7 @@ function createSchema(): void {
     CREATE TABLE IF NOT EXISTS products (
       id TEXT PRIMARY KEY,
       cloud_id TEXT,
+      shop_id INTEGER,
       category_id TEXT,
       name TEXT NOT NULL,
       slug TEXT,
@@ -392,6 +462,10 @@ function createSchema(): void {
 
     CREATE TABLE IF NOT EXISTS tables (
       id TEXT PRIMARY KEY,
+      cloud_id TEXT,
+      shop_id INTEGER,
+      token_code TEXT,
+      name TEXT,
       number TEXT NOT NULL UNIQUE,
       capacity INTEGER DEFAULT 4,
       status TEXT DEFAULT 'available',
@@ -443,6 +517,7 @@ function createSchema(): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       order_number TEXT UNIQUE NOT NULL,
       cloud_order_id TEXT,
+      shop_id INTEGER,
       order_source TEXT DEFAULT 'pos',
       delivery_address TEXT,
       delivery_fee REAL DEFAULT 0,

@@ -308,6 +308,60 @@ export default function SettingsPage() {
   };
   const resetPrinting = () => setPrintingForm(savedPrinting);
 
+  // Hardware thermal printers state
+  const [hardwarePrinters, setHardwarePrinters] = useState<any[]>([]);
+  const [detectingPrinters, setDetectingPrinters] = useState(false);
+  const [testingPrinterId, setTestingPrinterId] = useState<string | null>(null);
+
+  const fetchHardwarePrinters = async () => {
+    try {
+      const res = await api.get('/printers');
+      setHardwarePrinters(res.data?.printers || []);
+    } catch {}
+  };
+
+  const handleDetectHardwarePrinters = async () => {
+    setDetectingPrinters(true);
+    try {
+      const res = await api.get('/printers/detect');
+      const detected = res.data?.printers || [];
+      toast.success(`Found ${detected.length} printer(s) on this PC`);
+      await fetchHardwarePrinters();
+      usePrinterStore.getState().refreshBackendPrinter();
+    } catch (err: any) {
+      toast.error('Detection failed: ' + (err.message || 'Error'));
+    } finally {
+      setDetectingPrinters(false);
+    }
+  };
+
+  const handleTestHardwarePrinter = async (id: string) => {
+    setTestingPrinterId(id);
+    try {
+      const res = await api.post(`/printers/${id}/test`);
+      if (res.data?.success) {
+        toast.success('Test receipt printed successfully!');
+      } else {
+        toast.error(res.data?.error || 'Test print failed');
+      }
+    } catch (err: any) {
+      toast.error('Test print failed: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setTestingPrinterId(null);
+    }
+  };
+
+  const handleSetDefaultPrinter = async (id: string) => {
+    try {
+      await api.post(`/printers/${id}/set-default`);
+      toast.success('Default printer updated');
+      await fetchHardwarePrinters();
+      usePrinterStore.getState().refreshBackendPrinter();
+    } catch (err: any) {
+      toast.error('Failed to set default: ' + (err.message || 'Error'));
+    }
+  };
+
   // Bill template local state
   type BillTemplateForm = { billTemplate: BillTemplate; billFooterMessage: string };
   const initBillTemplate = (): BillTemplateForm => ({
@@ -375,6 +429,8 @@ export default function SettingsPage() {
       if (d.business_address) posSettings.setBillAddress(d.business_address);
       if (d.business_phone) posSettings.setBillPhone(d.business_phone);
     }).catch(() => {});
+
+    fetchHardwarePrinters();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -824,6 +880,73 @@ export default function SettingsPage() {
                 </div>
                 <Toggle value={printingForm.whatsappShareEnabled} onChange={(v) => setPrintingForm((p) => ({ ...p, whatsappShareEnabled: v }))} />
               </div>
+            </div>
+
+            {/* Hardware Thermal Printers Card */}
+            <div className="lg:col-span-2 bg-white rounded-xl border border-gray-100 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Printer size={20} className="text-gray-500" />
+                  <h2 className="font-semibold text-gray-900">Connected Thermal Printers</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleDetectHardwarePrinters}
+                  disabled={detectingPrinters}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50"
+                >
+                  <RefreshCw size={12} className={detectingPrinters ? 'animate-spin' : ''} />
+                  {detectingPrinters ? 'Scanning...' : 'Scan / Detect Printers'}
+                </button>
+              </div>
+
+              {hardwarePrinters.length === 0 ? (
+                <div className="text-center py-6 text-gray-400 text-sm border border-dashed rounded-lg">
+                  No printers configured. Click &quot;Scan / Detect Printers&quot; to auto-detect your thermal printer.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {hardwarePrinters.map((p) => (
+                    <div
+                      key={p.id}
+                      className="flex items-center justify-between p-3 rounded-lg border border-gray-200 bg-gray-50/50"
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-gray-900 text-sm">{p.name}</span>
+                          {p.is_default === 1 && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-700">
+                              DEFAULT
+                            </span>
+                          )}
+                          <span className="text-xs text-gray-400 capitalize">
+                            ({p.connection_type} &bull; {p.paper_width || '80mm'})
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {p.is_default !== 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleSetDefaultPrinter(p.id)}
+                            className="px-2.5 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100 text-gray-700 font-medium"
+                          >
+                            Set Default
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleTestHardwarePrinter(p.id)}
+                          disabled={testingPrinterId === p.id}
+                          className="px-2.5 py-1 text-xs bg-brand text-white rounded hover:opacity-90 disabled:opacity-50 font-medium flex items-center gap-1"
+                        >
+                          {testingPrinterId === p.id ? 'Printing...' : 'Test Print'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

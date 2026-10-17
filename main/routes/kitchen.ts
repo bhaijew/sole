@@ -7,13 +7,22 @@ const router = Router();
 router.get('/orders', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
+    const activeShop = (req.query.shop_id as string) || (db.prepare("SELECT value FROM settings WHERE key = 'cloud_shop_id'").get() as any)?.value;
+    const shopId = activeShop ? parseInt(activeShop, 10) : null;
 
-    const orders = db.prepare(`
+    let ordersQuery = `
       SELECT o.*
       FROM orders o
       WHERE o.status NOT IN ('completed', 'cancelled')
-      ORDER BY o.created_at ASC
-    `).all();
+    `;
+    const ordersParams: any[] = [];
+    if (shopId) {
+      ordersQuery += ' AND o.shop_id = ?';
+      ordersParams.push(shopId);
+    }
+    ordersQuery += ' ORDER BY o.created_at ASC';
+
+    const orders = db.prepare(ordersQuery).all(...ordersParams);
 
     const ordersWithItems = orders.map((order: any) => {
       const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson);
@@ -25,12 +34,17 @@ router.get('/orders', (req: Request, res: Response) => {
       return { ...order, items, table };
     });
 
-    const counts = db.prepare(`
+    let countsQuery = `
       SELECT status, COUNT(*) as count
       FROM order_items
-      WHERE order_id IN (SELECT id FROM orders WHERE status NOT IN ('completed', 'cancelled'))
+      WHERE order_id IN (
+        SELECT id FROM orders 
+        WHERE status NOT IN ('completed', 'cancelled')
+        ${shopId ? 'AND shop_id = ?' : ''}
+      )
       GROUP BY status
-    `).all() as { status: string; count: number }[];
+    `;
+    const counts = db.prepare(countsQuery).all(...(shopId ? [shopId] : [])) as { status: string; count: number }[];
 
     const countMap: Record<string, number> = {};
     counts.forEach((c) => { countMap[c.status] = c.count; });

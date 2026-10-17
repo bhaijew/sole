@@ -1,5 +1,7 @@
 import * as net from 'net';
 import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { execSync, exec } from 'child_process';
 import { getDatabase } from '../db';
 
@@ -159,33 +161,35 @@ function detectWindowsPrinters(): PrinterInfo[] {
   const printers: PrinterInfo[] = [];
 
   try {
-    const output = execSync('wmic printer get Name,Default,Status,DriverName 2>/dev/null', { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
-    const lines = output.split('\n').slice(1);
+    const psCmd = `powershell -NoProfile -Command "Get-CimInstance Win32_Printer | Select-Object Name, Default, PrinterStatus, DriverName | ConvertTo-Json"`;
+    const output = execSync(psCmd, { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
+    if (!output || !output.trim()) return printers;
 
-    for (const line of lines) {
-      const parts = line.trim().split(/\s{2,}/);
-      if (parts.length >= 2 && parts[0]) {
-        const name = parts[0].trim();
-        const isDefault = parts[1]?.toLowerCase() === 'true';
-        const status = parts[2]?.toLowerCase() || 'unknown';
-        const driver = parts[3] || '';
+    const parsed = JSON.parse(output.trim());
+    const list = Array.isArray(parsed) ? parsed : [parsed];
 
-        const makeModel = detectWindowsMakeModel(name, driver);
+    for (const item of list) {
+      if (!item || !item.Name) continue;
+      const name = String(item.Name).trim();
+      const isDefault = Boolean(item.Default);
+      const status = item.PrinterStatus === 0 || item.PrinterStatus === 3 ? 'idle' : 'offline';
+      const driver = String(item.DriverName || '');
 
-        printers.push({
-          name,
-          make: makeModel.make,
-          model: makeModel.model,
-          connectionType: 'usb',
-          deviceUri: name,
-          driver,
-          status: status === 'ok' || status === 'idle' ? 'idle' : 'offline',
-          isDefault
-        });
-      }
+      const makeModel = detectWindowsMakeModel(name, driver);
+
+      printers.push({
+        name,
+        make: makeModel.make,
+        model: makeModel.model,
+        connectionType: 'usb',
+        deviceUri: name,
+        driver,
+        status,
+        isDefault
+      });
     }
   } catch (err) {
-    console.log('[Printer] Could not detect Windows printers via wmic:', err);
+    console.log('[Printer] Could not detect Windows printers:', err);
   }
 
   return printers;
@@ -197,7 +201,10 @@ function detectWindowsMakeModel(name: string, driver: string): { make: string; m
 
   const lower = (name + ' ' + driver).toLowerCase();
 
-  if (lower.includes('epson') || name.toLowerCase().includes('tm-')) {
+  if (lower.includes('rongta') || lower.includes('80normal') || lower.includes('80series') || lower.includes('58normal')) {
+    make = 'Rongta';
+    model = lower.includes('58') ? 'Rongta 58mm' : 'Rongta 80mm';
+  } else if (lower.includes('epson') || name.toLowerCase().includes('tm-')) {
     make = 'Epson';
     model = name.includes('TM-m30') ? 'TM-m30' :
             name.includes('TM-T88') ? 'TM-T88' :
@@ -264,13 +271,38 @@ export async function initPrinter(): Promise<void> {
   try {
     const db = getDatabase();
     defaultPrinter = db.prepare('SELECT * FROM printers WHERE is_default = 1').get();
+
+    // Auto-detect printers on system
+    const detected = await detectConnectedPrinters();
+    console.log(`[Printer] Found ${detected.length} system printers:`, detected.map(p => p.name));
+
+    // Look for thermal or default printer
+    const realPrinter = detected.find(p => p.isDefault) || detected.find(p => p.make !== 'Unknown') || detected[0];
+
+    if (realPrinter) {
+      if (!defaultPrinter) {
+        const id = 'printer-' + Date.now();
+        db.prepare(`
+          INSERT INTO printers (id, name, connection_type, paper_width, is_default, created_at, updated_at)
+          VALUES (?, ?, 'usb', ?, 1, datetime('now'), datetime('now'))
+        `).run(id, realPrinter.name, realPrinter.model.includes('58') ? '58mm' : '80mm');
+        defaultPrinter = db.prepare('SELECT * FROM printers WHERE is_default = 1').get();
+        console.log(`[Printer] Auto-configured default printer: ${realPrinter.name}`);
+      } else if (defaultPrinter.name === 'Thermal Printer' && realPrinter.name !== 'Thermal Printer') {
+        db.prepare("UPDATE printers SET name = ?, paper_width = ?, updated_at = datetime('now') WHERE id = ?")
+          .run(realPrinter.name, realPrinter.model.includes('58') ? '58mm' : '80mm', defaultPrinter.id);
+        defaultPrinter = db.prepare('SELECT * FROM printers WHERE is_default = 1').get();
+        console.log(`[Printer] Updated default printer to real printer: ${realPrinter.name}`);
+      }
+    }
+
     if (defaultPrinter) {
       console.log(`[Printer] Default printer: ${defaultPrinter.name} (${defaultPrinter.connection_type})`);
     } else {
       console.log('[Printer] No default printer configured');
     }
   } catch (error) {
-    console.log('[Printer] Printer initialization skipped (database not ready)');
+    console.log('[Printer] Printer initialization skipped (database not ready):', error);
   }
 }
 
@@ -710,12 +742,12 @@ function buildEscPos(lines: string[]): Buffer {
     }
 
     if (line.includes('{FEED}')) {
-      buf.push(0x1B, 0x64, 0x05);
+      buf.push(0x1B, 0x64, 0x02);
       continue;
     }
 
     if (line.includes('{CUT}')) {
-      buf.push(0x1B, 0x64, 0x05);
+      buf.push(0x1B, 0x64, 0x02);
       buf.push(0x1D, 0x56, 0x00);
       continue;
     }
@@ -824,50 +856,103 @@ async function printViaUSBMacOS(data: Buffer, printerName?: string): Promise<boo
 
 async function printViaUSBWindows(data: Buffer, printerName?: string): Promise<boolean> {
   try {
-    const printerLib = require('node-thermal-printer');
-    const ThermalPrinter = printerLib.printer;
-    const PrinterTypes = printerLib.types;
+    let targetPrinter = printerName;
 
-    const printer = new ThermalPrinter({
-      type: PrinterTypes.EPSON,
-      interface: printerName ? ` printer:${printerName}` : undefined,
-      width: 48,
-    });
+    // If no printer name or generic placeholder name, look up default/connected thermal printer
+    if (!targetPrinter || targetPrinter.toLowerCase() === 'thermal printer') {
+      const detected = detectWindowsPrinters();
+      const defaultP = detected.find(p => p.isDefault) || detected.find(p => p.make !== 'Unknown') || detected[0];
+      if (defaultP) {
+        targetPrinter = defaultP.name;
+      }
+    }
 
-    const isConnected = await printer.isPrinterConnected();
-    console.log('[Printer] Windows printer connected:', isConnected);
-
-    if (!isConnected) {
-      console.error('[Printer] No USB printer detected');
+    if (!targetPrinter) {
+      console.error('[Printer] No Windows printer specified or found');
       return false;
     }
 
-    printer.printRaw(data);
-    await printer.execute();
-    console.log('[Printer] Windows print sent successfully');
-    return true;
+    console.log(`[Printer] Printing via Windows raw spooler to: ${targetPrinter}`);
+    return await printViaWindowsRawSpooler(data, targetPrinter);
   } catch (err: any) {
     console.error('[Printer] Windows print error:', err.message);
-
-    console.log('[Printer] Trying raw Windows printing...');
-    return await printViaWindowsRaw(data, printerName);
+    return false;
   }
 }
 
-async function printViaWindowsRaw(data: Buffer, printerName?: string): Promise<boolean> {
+async function printViaWindowsRawSpooler(data: Buffer, printerName: string): Promise<boolean> {
+  const tmpFile = path.join(os.tmpdir(), `flo_print_${Date.now()}_${Math.random().toString(36).substring(7)}.bin`);
   try {
-    const tmpFile = `C:\\Windows\\Temp\\flo_print_${Date.now()}.bin`;
     fs.writeFileSync(tmpFile, data);
 
-    const name = printerName || 'Microsoft Print to PDF';
-    const cmd = `powershell -Command "Start-Process -FilePath '${tmpFile}' -Verb PrintTo -ArgumentList '${name}' -Wait"`;
+    const scriptPath = path.join(__dirname, 'print-raw-windows.ps1');
+    let cmd: string;
+    if (fs.existsSync(scriptPath)) {
+      cmd = `powershell -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}" -PrinterName "${printerName}" -FilePath "${tmpFile}"`;
+    } else {
+      const escapedPrinter = printerName.replace(/"/g, '`"');
+      const escapedFile = tmpFile.replace(/\\/g, '\\\\');
+      cmd = `powershell -NoProfile -Command "$code = @'
+using System;
+using System.IO;
+using System.Runtime.InteropServices;
+public class RawPrinterHelper {
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+  public class DOCINFOA {
+    [MarshalAs(UnmanagedType.LPStr)] public string pDocName;
+    [MarshalAs(UnmanagedType.LPStr)] public string pOutputFile;
+    [MarshalAs(UnmanagedType.LPStr)] public string pDataType;
+  }
+  [DllImport(\\"winspool.Drv\\", EntryPoint = \\"OpenPrinterA\\", SetLastError = true, CharSet = CharSet.Ansi, ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
+  public static extern bool OpenPrinter([MarshalAs(UnmanagedType.LPStr)] string szPrinter, out IntPtr hPrinter, IntPtr pd);
+  [DllImport(\\"winspool.Drv\\", EntryPoint = \\"ClosePrinter\\", SetLastError = true, ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
+  public static extern bool ClosePrinter(IntPtr hPrinter);
+  [DllImport(\\"winspool.Drv\\", EntryPoint = \\"StartDocPrinterA\\", SetLastError = true, CharSet = CharSet.Ansi, ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
+  public static extern bool StartDocPrinter(IntPtr hPrinter, int level, [In, MarshalAs(UnmanagedType.LPStruct)] DOCINFOA di);
+  [DllImport(\\"winspool.Drv\\", EntryPoint = \\"EndDocPrinter\\", SetLastError = true, ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
+  public static extern bool EndDocPrinter(IntPtr hPrinter);
+  [DllImport(\\"winspool.Drv\\", EntryPoint = \\"StartPagePrinter\\", SetLastError = true, ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
+  public static extern bool StartPagePrinter(IntPtr hPrinter);
+  [DllImport(\\"winspool.Drv\\", EntryPoint = \\"EndPagePrinter\\", SetLastError = true, ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
+  public static extern bool EndPagePrinter(IntPtr hPrinter);
+  [DllImport(\\"winspool.Drv\\", EntryPoint = \\"WritePrinter\\", SetLastError = true, ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
+  public static extern bool WritePrinter(IntPtr hPrinter, IntPtr pBytes, int dwCount, out int dwWritten);
+  public static bool SendFileToPrinter(string szPrinterName, string szFileName) {
+    if (!File.Exists(szFileName)) return false;
+    byte[] bytes = File.ReadAllBytes(szFileName);
+    if (bytes.Length == 0) return true;
+    IntPtr pUnmanagedBytes = Marshal.AllocCoTaskMem(bytes.Length);
+    Marshal.Copy(bytes, 0, pUnmanagedBytes, bytes.Length);
+    IntPtr hPrinter = IntPtr.Zero;
+    DOCINFOA di = new DOCINFOA();
+    di.pDocName = \\"Flo POS Document\\";
+    di.pDataType = \\"RAW\\";
+    bool success = false;
+    if (OpenPrinter(szPrinterName, out hPrinter, IntPtr.Zero)) {
+      if (StartDocPrinter(hPrinter, 1, di)) {
+        int dwWritten = 0;
+        success = WritePrinter(hPrinter, pUnmanagedBytes, bytes.Length, out dwWritten);
+        EndDocPrinter(hPrinter);
+      }
+      ClosePrinter(hPrinter);
+    }
+    Marshal.FreeCoTaskMem(pUnmanagedBytes);
+    return success;
+  }
+}
+'@
+Add-Type -TypeDefinition $code -Language CSharp
+[RawPrinterHelper]::SendFileToPrinter(\\"${escapedPrinter}\\", '${escapedFile}')"`;
+    }
 
-    execSync(cmd, { encoding: 'utf8' });
-    fs.unlinkSync(tmpFile);
-    return true;
+    const result = execSync(cmd, { encoding: 'utf8' }).trim();
+    console.log('[Printer] Windows raw print result:', result);
+    return result.toLowerCase().includes('true');
   } catch (err: any) {
     console.error('[Printer] Windows raw print error:', err.message);
     return false;
+  } finally {
+    try { fs.unlinkSync(tmpFile); } catch {}
   }
 }
 

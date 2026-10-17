@@ -1,13 +1,13 @@
 {
   "name": "sole-what-pos",
-  "version": "1.5.6",
+  "version": "1.5.7",
   "description": "Sole What - Smart Point of Sale System",
   "main": "dist/index.js",
   "scripts": {
     "dev": "npm run build:frontend && npm run build && electron .",
     "dev:fast": "npm run build && electron .",
     "dev:frontend": "cd frontend && npm run dev",
-    "build": "tsc",
+    "build": "tsc && node -e \"const fs=require('fs'); try{fs.copyFileSync('main/printers/print-raw-windows.ps1', 'dist/printers/print-raw-windows.ps1');}catch(e){}\"",
     "build:frontend": "cd frontend && npx cross-env NEXT_BUILD_MODE=desktop NEXT_PUBLIC_API_URL=http://localhost:3001/api npm run build",
     "build:all-platforms": "npm run build:frontend && npm run build && electron-builder --win --mac --linux",
     "postinstall": "echo Submodules ready",
@@ -19,8 +19,8 @@
     "rebuild": "electron-rebuild -f -o better-sqlite3"
   },
   "author": {
-    "name": "Flo",
-    "email": "support@flo.local"
+    "name": "Zeeshan",
+    "email": "as8759111@gmail.com"
   },
   "homepage": "https://flo.local",
   "license": "MIT",
@@ -72,8 +72,8 @@
     ],
     "publish": {
       "provider": "github",
-      "owner": "FreeOpenSourcePOS",
-      "repo": "FloDesktop"
+      "owner": "bhaijew",
+      "repo": "sole"
     },
     "extraResources": [
       {

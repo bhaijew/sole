@@ -9,6 +9,8 @@ router.get('/orders', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const stationId = req.query.station_id as string;
+    const activeShop = (req.query.shop_id as string) || (db.prepare("SELECT value FROM settings WHERE key = 'cloud_shop_id'").get() as any)?.value;
+    const shopId = activeShop ? parseInt(activeShop, 10) : null;
 
     let query = `
       SELECT o.*, t.number as table_name, t.floor, t.section
@@ -17,6 +19,11 @@ router.get('/orders', (req: Request, res: Response) => {
       WHERE o.status NOT IN ('completed', 'cancelled')
     `;
     const params: any[] = [];
+
+    if (shopId) {
+      query += ` AND o.shop_id = ?`;
+      params.push(shopId);
+    }
 
     if (stationId) {
       query += ` AND t.kitchen_station_id = ?`;

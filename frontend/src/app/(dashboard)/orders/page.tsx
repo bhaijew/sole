@@ -129,7 +129,12 @@ export default function OrdersPage() {
 
       // 3. Resilient Direct Supabase REST fallback to ensure any newly placed online orders appear instantaneously
       try {
-        const cloudRes = await fetch(SUPABASE_REST_URL, {
+        const syncStatusRes = await api.get('/cloud-sync/status').catch(() => null);
+        const activeBranchId = syncStatusRes?.data?.currentShopId || (currentTenant as any)?.shop_id || '4';
+
+        const branchRestUrl = `${SUPABASE_BASE_URL}?select=*&shop_id=eq.${activeBranchId}&order=id.desc&limit=40`;
+
+        const cloudRes = await fetch(branchRestUrl, {
           headers: {
             apikey: SUPABASE_ANON_KEY,
             Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
@@ -139,6 +144,9 @@ export default function OrdersPage() {
         if (cloudRes.ok) {
           const cloudOrders = await cloudRes.json();
           for (const co of cloudOrders) {
+            if (String(co.shop_id || '') !== String(activeBranchId)) {
+              continue; // Strictly filter out other shops' orders
+            }
             const alreadyExistsIndex = fetched.findIndex(
               (o) =>
                 o.order_number === co.order_number ||

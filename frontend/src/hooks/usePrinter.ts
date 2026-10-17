@@ -14,6 +14,7 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { buildGstBillBytes, type GstBillOptions } from '@/lib/printer/gst-bill-encoder';
 import { buildKotBytes, type KotOptions } from '@/lib/printer/kot-encoder';
 import type { Bill, Tenant, Order } from '@/lib/types';
+import api from '@/lib/api';
 
 type PrintModeType = 'receipt' | 'gst' | 'kot';
 type PaperWidth = 58 | 80;
@@ -27,6 +28,8 @@ interface PrinterState {
   paperWidth: PaperWidth;
   printMethod: PrintMode;
 
+  backendPrinter: any | null;
+  refreshBackendPrinter: () => Promise<void>;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
   printBill: (bill: Bill, tenant: Pick<Tenant, 'business_name' | 'currency'>, opts?: ReceiptOptions) => Promise<void>;
@@ -45,11 +48,35 @@ export const usePrinterStore = create<PrinterState>()(
     (set, get) => ({
       status: 'disconnected',
       deviceInfo: null,
+      backendPrinter: null,
       lastError: null,
       lastPrintedBytes: null,
       printMode: 'receipt',
       paperWidth: 58,
       printMethod: 'escpos',
+
+      refreshBackendPrinter: async () => {
+        try {
+          const res = await api.get('/printers');
+          const printers = res.data?.printers || [];
+          const defaultP = printers.find((p: any) => p.is_default) || printers[0] || null;
+          set({ backendPrinter: defaultP });
+          if (defaultP && !printerService.isConnected) {
+            set({
+              status: 'connected',
+              deviceInfo: {
+                vendorId: 0,
+                productId: 0,
+                productName: defaultP.name,
+                manufacturerName: `${defaultP.connection_type.toUpperCase()} Thermal Printer`,
+              },
+              paperWidth: defaultP.paper_width === '58mm' ? 58 : 80,
+            });
+          }
+        } catch {
+          // Pure browser mode or backend offline
+        }
+      },
 
       connect: async () => {
         set({ lastError: null });
@@ -57,11 +84,14 @@ export const usePrinterStore = create<PrinterState>()(
           await printerService.connect();
         } catch (err) {
           set({ lastError: (err as Error).message });
+          // If WebUSB fails, try refreshing desktop backend printer
+          await get().refreshBackendPrinter();
         }
       },
 
       disconnect: async () => {
         await printerService.disconnect();
+        set({ status: 'disconnected', deviceInfo: null });
       },
 
       printBill: async (bill, tenant, opts) => {
@@ -111,7 +141,24 @@ export const usePrinterStore = create<PrinterState>()(
           }
 
           set({ lastPrintedBytes: bytes });
-          await printerService.print(bytes);
+
+          if (printerService.isConnected) {
+            await printerService.print(bytes);
+          } else {
+            // Desktop backend printer path
+            try {
+              const res = await api.post('/printers/print-bill', {
+                billId: bill.id,
+                orderId: bill.order_id,
+              });
+              if (!res.data?.success) {
+                throw new Error(res.data?.error || 'Failed to print bill');
+              }
+            } catch (backendErr: any) {
+              const errMsg = backendErr.response?.data?.error || backendErr.message || 'Thermal printer error';
+              throw new Error(errMsg);
+            }
+          }
         } catch (err) {
           set({ lastError: (err as Error).message });
           throw err;
@@ -126,7 +173,22 @@ export const usePrinterStore = create<PrinterState>()(
           set({ lastPrintedBytes: bytes });
           
           if (get().printMethod === 'escpos') {
-            await printerService.print(bytes);
+            if (printerService.isConnected) {
+              await printerService.print(bytes);
+            } else {
+              try {
+                const res = await api.post('/printers/print-bill', {
+                  billId: bill.id,
+                  orderId: bill.order_id,
+                });
+                if (!res.data?.success) {
+                  throw new Error(res.data?.error || 'Failed to print GST bill');
+                }
+              } catch (backendErr: any) {
+                const errMsg = backendErr.response?.data?.error || backendErr.message || 'Thermal printer error';
+                throw new Error(errMsg);
+              }
+            }
           } else {
             throw new Error('Browser print mode - use printViaBrowser instead');
           }
@@ -144,7 +206,22 @@ export const usePrinterStore = create<PrinterState>()(
           set({ lastPrintedBytes: bytes });
           
           if (get().printMethod === 'escpos') {
-            await printerService.print(bytes);
+            if (printerService.isConnected) {
+              await printerService.print(bytes);
+            } else {
+              try {
+                const res = await api.post('/printers/print-kot', {
+                  orderId: order.id,
+                  items: order.items,
+                });
+                if (!res.data?.success) {
+                  throw new Error(res.data?.error || 'Failed to print KOT');
+                }
+              } catch (backendErr: any) {
+                const errMsg = backendErr.response?.data?.error || backendErr.message || 'Thermal printer error';
+                throw new Error(errMsg);
+              }
+            }
           } else {
             throw new Error('Browser print mode - use printViaBrowser instead');
           }
@@ -192,19 +269,28 @@ export const usePrinterStore = create<PrinterState>()(
 );
 
 export function usePrinterStatusSync(): void {
-  const store = usePrinterStore();
-
   useEffect(() => {
-    usePrinterStore.setState({
-      status: printerService.status,
-      deviceInfo: printerService.deviceInfo,
-    });
-
-    const unsub = printerService.onStatusChange((status, info) => {
+    // 1. Initial WebUSB check
+    if (printerService.isConnected) {
       usePrinterStore.setState({
-        status,
-        deviceInfo: info ?? printerService.deviceInfo,
+        status: printerService.status,
+        deviceInfo: printerService.deviceInfo,
       });
+    }
+
+    // 2. Sync with desktop backend printer
+    usePrinterStore.getState().refreshBackendPrinter();
+
+    // 3. Listen to WebUSB changes
+    const unsub = printerService.onStatusChange((status, info) => {
+      if (status === 'connected') {
+        usePrinterStore.setState({
+          status,
+          deviceInfo: info ?? printerService.deviceInfo,
+        });
+      } else {
+        usePrinterStore.getState().refreshBackendPrinter();
+      }
     });
 
     return unsub;

@@ -95,7 +95,7 @@ export function buildKotBytes(
   enc.rule({ style: 'single' });
   enc.align('center').text('--- End of KOT ---').newline();
 
-  enc.newline().newline().newline().cut();
+  enc.newline().cut();
 
   return enc.encode();
 }

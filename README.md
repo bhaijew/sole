@@ -1,4 +1,4 @@
-# Flo Desktop - Self-Hosted POS for Restaurants & Retail
+# Sole - Smart POS for Restaurants & Retail
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">

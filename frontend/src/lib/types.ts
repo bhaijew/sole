@@ -95,14 +95,27 @@ export interface Addon {
 }
 
 export interface Table {
-  id: number;
+  id: string | number;
+  number?: string;
   name: string;
   capacity: number;
-  status: 'available' | 'occupied' | 'reserved' | 'maintenance';
-  kitchen_station_id: number | null;
-  floor: string | null;
-  section: string | null;
-  is_active: boolean;
+  status: 'available' | 'occupied' | 'reserved' | 'cleaning' | 'maintenance' | 'inactive';
+  kitchen_station_id?: number | string | null;
+  floor?: string | null;
+  section?: string | null;
+  token_code?: string | null;
+  cloud_id?: string | null;
+  shop_id?: number | null;
+  is_active?: boolean;
+  active_order?: {
+    id: string | number;
+    order_number: string;
+    total: number;
+    status: string;
+    guest_count?: number;
+    created_at?: string;
+    elapsed_minutes?: number | null;
+  } | null;
   current_order?: Order | null;
   reservation_customer_id?: number | null;
   reservation_customer_name?: string | null;
@@ -127,7 +140,7 @@ export interface Customer {
 export interface Order {
   id: number;
   order_number: string;
-  table_id: number | null;
+  table_id: number | string | null;
   customer_id: number | null;
   type: 'dine_in' | 'takeaway' | 'delivery' | 'online';
   status: 'pending' | 'preparing' | 'ready' | 'served' | 'completed' | 'cancelled';

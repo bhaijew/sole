@@ -16,8 +16,20 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     const db = getDatabase();
+    const activeShop = (req.query.shop_id as string) || (db.prepare("SELECT value FROM settings WHERE key = 'cloud_shop_id'").get() as any)?.value;
+    if (activeShop) {
+      try {
+        db.prepare("UPDATE orders SET shop_id = ? WHERE shop_id IS NULL").run(parseInt(activeShop, 10));
+      } catch {}
+    }
+
     let query = 'SELECT * FROM orders WHERE 1=1';
     const params: any[] = [];
+
+    if (activeShop) {
+      query += ' AND shop_id = ?';
+      params.push(parseInt(activeShop, 10));
+    }
 
     if (req.query.status) {
       query += ' AND status = ?';
@@ -107,12 +119,15 @@ router.post('/', async (req: Request, res: Response) => {
     };
 
     // Create order
+    const activeShop = req.body.shop_id || settings.cloud_shop_id || (db.prepare("SELECT value FROM settings WHERE key = 'cloud_shop_id'").get() as any)?.value;
+    const shopIdNum = activeShop ? parseInt(activeShop, 10) : null;
+
     const orderResult = db.prepare(`
       INSERT INTO orders (order_number, table_id, customer_id, user_id, type, guest_count, special_instructions,
-        packaging_charge, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+        packaging_charge, status, shop_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
     `).run(orderNumber, table_id || null, customer_id || null, user_id || null, type, guest_count || null,
-      special_instructions || null, packaging_charge || 0, now(), now());
+      special_instructions || null, packaging_charge || 0, shopIdNum, now(), now());
 
     const orderId = orderResult.lastInsertRowid;
 

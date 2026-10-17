@@ -223,7 +223,7 @@ export function buildClassicReceiptBytes(
     enc.align('left');
   }
 
-  enc.newline().newline().newline().cut();
+  enc.newline().cut();
 
   return enc.encode();
 }
@@ -316,7 +316,7 @@ export function buildCompactReceiptBytes(
   }
   enc.align('left');
 
-  enc.newline().newline().newline().cut();
+  enc.newline().cut();
 
   return enc.encode();
 }
@@ -463,7 +463,7 @@ export function buildDetailedReceiptBytes(
   }
   enc.align('left');
 
-  enc.newline().newline().newline().cut();
+  enc.newline().cut();
 
   return enc.encode();
 }

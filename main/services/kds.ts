@@ -235,6 +235,7 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
 
 function sendActiveOrders(ws: WebSocket, categoryIds: string[]): void {
   const db = getDatabase();
+  const activeShop = (db.prepare("SELECT value FROM settings WHERE key = 'cloud_shop_id'").get() as any)?.value;
 
   let query = `
     SELECT o.*, t.number as table_name
@@ -242,10 +243,15 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[]): void {
     LEFT JOIN tables t ON o.table_id = t.id
     WHERE o.status NOT IN ('completed', 'cancelled')
   `;
+  const params: any[] = [];
+  if (activeShop) {
+    query += ' AND o.shop_id = ?';
+    params.push(parseInt(activeShop, 10));
+  }
 
   query += ' ORDER BY o.created_at ASC';
 
-  const orders = db.prepare(query).all();
+  const orders = db.prepare(query).all(...params);
 
   // Filter and attach items
   const ordersWithItems = orders.map((order: any) => {
@@ -262,7 +268,7 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[]): void {
     return { ...order, items };
   }).filter((order: any) => order.items.length > 0);
 
-  // Get counts (filtered by category)
+  // Get counts (filtered by category and active shop)
   let countsQuery = `
     SELECT oi.status, COUNT(*) as count
     FROM order_items oi
@@ -270,16 +276,21 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[]): void {
     JOIN orders o ON oi.order_id = o.id
     WHERE o.status NOT IN ('completed', 'cancelled')
   `;
+  const countParams: any[] = [];
+
+  if (activeShop) {
+    countsQuery += ' AND o.shop_id = ?';
+    countParams.push(parseInt(activeShop, 10));
+  }
 
   if (categoryIds.length > 0) {
     countsQuery += ` AND p.category_id IN (${categoryIds.map(() => '?').join(',')})`;
+    countParams.push(...categoryIds);
   }
 
   countsQuery += ' GROUP BY oi.status';
 
-  const counts = categoryIds.length > 0
-    ? db.prepare(countsQuery).all(...categoryIds) as { status: string; count: number }[]
-    : db.prepare(countsQuery).all() as { status: string; count: number }[];
+  const counts = db.prepare(countsQuery).all(...countParams) as { status: string; count: number }[];
 
   const countMap: Record<string, number> = {};
   counts.forEach((c) => { countMap[c.status] = c.count; });

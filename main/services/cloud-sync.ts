@@ -607,6 +607,237 @@ export async function syncStaffFromCloud(): Promise<{
 }
 
 /**
+ * Pull and synchronize Tables between local SQLite and Pizza System cloud (Supabase)
+ */
+export async function syncTablesFromCloud(forcedShopId?: number | string): Promise<{
+  success: boolean;
+  message: string;
+  count?: number;
+}> {
+  const syncEnabled = getSetting('cloud_sync_enabled', '1') === '1';
+  if (!syncEnabled) return { success: false, message: 'Cloud sync is disabled' };
+
+  const client = getSupabaseClient();
+  if (!client) return { success: false, message: 'Supabase client not available' };
+
+  try {
+    const db = getDatabase();
+    const shopId = forcedShopId || getSetting('cloud_shop_id', '4');
+
+    // 1. Fetch tables from Supabase for this shop
+    const { data: cloudTables, error } = await client
+      .from('restaurant_tables')
+      .select('*')
+      .or(`shop_id.eq.${shopId},shop_id.is.null`)
+      .order('table_number');
+
+    if (error) {
+      console.warn('[CloudSync] Error fetching restaurant_tables:', error.message);
+      return { success: false, message: error.message };
+    }
+
+    // 2. Fetch local tables
+    const localTables = db.prepare('SELECT * FROM tables').all() as any[];
+
+    // 3. Handle DELETIONS from Pizza Management:
+    // If a table was deleted in Pizza Management cloud, remove it locally immediately!
+    const cloudIdSet = new Set((cloudTables || []).map((ct: any) => String(ct.id)));
+    const cloudNumberSet = new Set((cloudTables || []).map((ct: any) => String(ct.table_number).toLowerCase()));
+
+    let deletedCount = 0;
+    const deleteStmt = db.prepare('DELETE FROM tables WHERE id = ?');
+
+    for (const lt of localTables) {
+      const existsInCloud =
+        (lt.cloud_id && cloudIdSet.has(String(lt.cloud_id))) ||
+        cloudNumberSet.has(String(lt.number).toLowerCase());
+
+      if (!existsInCloud) {
+        console.log(`[CloudSync] Table ${lt.number} (id: ${lt.id}, cloud_id: ${lt.cloud_id}) was deleted in Pizza Management. Removing locally...`);
+        deleteStmt.run(lt.id);
+        deletedCount++;
+      }
+    }
+
+    // 4. Upsert cloud tables into local SQLite
+    const insertStmt = db.prepare(`
+      INSERT INTO tables (id, cloud_id, shop_id, token_code, name, number, capacity, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const updateStmt = db.prepare(`
+      UPDATE tables SET
+        cloud_id = ?,
+        shop_id = ?,
+        token_code = ?,
+        name = ?,
+        capacity = ?,
+        status = CASE WHEN status = 'occupied' THEN 'occupied' ELSE ? END,
+        updated_at = ?
+      WHERE id = ? OR number = ? OR cloud_id = ?
+    `);
+
+    let addedCount = 0;
+    let updatedCount = 0;
+
+    if (cloudTables && cloudTables.length > 0) {
+      for (const ct of cloudTables) {
+        const localStatus = ct.status === 'reserved' ? 'reserved' : (ct.status === 'inactive' ? 'inactive' : 'available');
+        const existing = localTables.find(
+          (t) => (t.cloud_id && String(t.cloud_id) === String(ct.id)) || String(t.number).toLowerCase() === String(ct.table_number).toLowerCase()
+        );
+
+        if (existing) {
+          updateStmt.run(
+            String(ct.id),
+            ct.shop_id || Number(shopId),
+            ct.token_code || null,
+            ct.table_name || ct.table_number,
+            ct.capacity || 4,
+            localStatus,
+            ct.created_at || now(),
+            existing.id,
+            ct.table_number,
+            String(ct.id)
+          );
+          updatedCount++;
+        } else {
+          const newId = `tbl-cloud-${ct.id}`;
+          insertStmt.run(
+            newId,
+            String(ct.id),
+            ct.shop_id || Number(shopId),
+            ct.token_code || null,
+            ct.table_name || ct.table_number,
+            ct.table_number,
+            ct.capacity || 4,
+            localStatus,
+            ct.created_at || now(),
+            now()
+          );
+          addedCount++;
+        }
+      }
+    }
+
+    if (addedCount > 0 || deletedCount > 0 || updatedCount > 0) {
+      console.log(`[CloudSync] Synced restaurant_tables: ${cloudTables?.length || 0} total (+${addedCount} added, -${deletedCount} deleted, ${updatedCount} updated).`);
+      broadcastCloudEvent('tables-updated', { count: cloudTables?.length || 0, added: addedCount, deleted: deletedCount });
+    }
+
+    return {
+      success: true,
+      message: `Synced ${cloudTables?.length || 0} tables from Pizza System (+${addedCount}, -${deletedCount})`,
+      count: cloudTables?.length || 0,
+    };
+  } catch (err: any) {
+    console.error('[CloudSync] syncTablesFromCloud failed:', err.message);
+    return { success: false, message: err.message };
+  }
+}
+
+/**
+ * Push new or updated table to Pizza System cloud (Supabase)
+ */
+export async function pushTableToCloud(table: {
+  id?: string;
+  cloud_id?: string;
+  number: string;
+  name?: string;
+  capacity?: number;
+  status?: string;
+}): Promise<{ success: boolean; cloud_id?: string; token_code?: string; error?: string }> {
+  const syncEnabled = getSetting('cloud_sync_enabled', '1') === '1';
+  if (!syncEnabled) return { success: true };
+
+  const client = getSupabaseClient();
+  if (!client) return { success: false, error: 'Supabase client unavailable' };
+
+  try {
+    const db = getDatabase();
+    const shopId = Number(getSetting('cloud_shop_id', '4')) || 4;
+    const cloudStatus = table.status === 'reserved' ? 'reserved' : (table.status === 'inactive' || table.status === 'cleaning' ? 'inactive' : 'active');
+    
+    const payload: any = {
+      table_number: table.number,
+      table_name: table.name || `Table ${table.number}`,
+      capacity: Number(table.capacity) || 4,
+      status: cloudStatus,
+      shop_id: shopId,
+    };
+
+    if (table.cloud_id) {
+      const { data, error } = await client
+        .from('restaurant_tables')
+        .update(payload)
+        .eq('id', table.cloud_id)
+        .select()
+        .single();
+
+      if (error) {
+        console.warn('[CloudSync] pushTableToCloud update error:', error.message);
+        return { success: false, error: error.message };
+      }
+      return { success: true, cloud_id: String(data?.id), token_code: data?.token_code };
+    } else {
+      const { data, error } = await client
+        .from('restaurant_tables')
+        .insert(payload)
+        .select()
+        .single();
+
+      if (error) {
+        console.warn('[CloudSync] pushTableToCloud insert error:', error.message);
+        return { success: false, error: error.message };
+      }
+
+      if (data && table.id) {
+        db.prepare(`
+          UPDATE tables SET
+            cloud_id = ?,
+            shop_id = ?,
+            token_code = ?,
+            name = COALESCE(name, ?)
+          WHERE id = ?
+        `).run(String(data.id), shopId, data.token_code, data.table_name, table.id);
+      }
+
+      return { success: true, cloud_id: String(data?.id), token_code: data?.token_code };
+    }
+  } catch (err: any) {
+    console.error('[CloudSync] pushTableToCloud exception:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Delete table from Pizza System cloud (Supabase)
+ */
+export async function deleteTableFromCloud(cloudId: string): Promise<boolean> {
+  const syncEnabled = getSetting('cloud_sync_enabled', '1') === '1';
+  if (!syncEnabled || !cloudId) return false;
+
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const { error } = await client
+      .from('restaurant_tables')
+      .delete()
+      .eq('id', cloudId);
+
+    if (error) {
+      console.warn('[CloudSync] deleteTableFromCloud error:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.error('[CloudSync] deleteTableFromCloud exception:', err.message);
+    return false;
+  }
+}
+
+/**
  * Unified sync: Pull both menu & staff from Pizza System
  */
 export async function syncAllFromCloud(): Promise<{
@@ -615,16 +846,19 @@ export async function syncAllFromCloud(): Promise<{
   categoriesCount?: number;
   productsCount?: number;
   staffCount?: number;
+  tablesCount?: number;
 }> {
   const menuResult = await syncMenuFromCloud();
   const staffResult = await syncStaffFromCloud();
+  const tablesResult = await syncTablesFromCloud();
 
   return {
     success: menuResult.success,
-    message: `${menuResult.message} ${staffResult.message}`,
+    message: `${menuResult.message} ${staffResult.message} ${tablesResult.message}`,
     categoriesCount: menuResult.categoriesCount,
     productsCount: menuResult.productsCount,
     staffCount: staffResult.staffCount,
+    tablesCount: tablesResult.count,
   };
 }
 
@@ -640,11 +874,13 @@ export async function handleIncomingCloudOrder(cloudOrder: any): Promise<boolean
   const orderNumber = cloudOrder.order_number || `ONL-${cloudOrder.id}`;
 
   try {
-    // Branch check: ensure order belongs to this shop
+    // Branch check: ensure order belongs strictly to this shop
     const currentShopId = getSetting('cloud_shop_id', '4');
-    if (currentShopId && cloudOrder.shop_id && String(cloudOrder.shop_id) !== String(currentShopId)) {
-      console.log(`[CloudSync] Order ${orderNumber} is for Shop #${cloudOrder.shop_id}, not current branch #${currentShopId}. Skipping.`);
-      return false;
+    if (currentShopId) {
+      if (!cloudOrder.shop_id || String(cloudOrder.shop_id) !== String(currentShopId)) {
+        console.log(`[CloudSync] Order ${orderNumber} is for Shop #${cloudOrder.shop_id || 'unassigned'}, not current branch #${currentShopId}. Skipping.`);
+        return false;
+      }
     }
 
     // Check for duplicate
@@ -839,7 +1075,7 @@ export async function pullOnlineOrdersFromCloud(): Promise<{
       .limit(50);
 
     if (currentShopId) {
-      query = query.or(`shop_id.eq.${currentShopId},shop_id.is.null`);
+      query = query.eq('shop_id', Number(currentShopId));
     }
 
     const { data: cloudOrders, error } = await query;
@@ -953,7 +1189,7 @@ export async function pushOrderToCloud(order: any, rawItems: any[]): Promise<boo
   const client = getSupabaseClient();
   if (!client) return false;
 
-  const shopId = getSetting('cloud_shop_id', '3'); // defaults to branch 3 if not configured
+  const shopId = order.shop_id || getSetting('cloud_shop_id', '4');
 
   try {
     const db = getDatabase();
@@ -1165,9 +1401,28 @@ export function startRealtimeOrderListener(): void {
               .run(localStatus, String(updated.id), updated.order_number);
             notifyKdsUpdate();
             broadcastCloudEvent('order-status-updated', { orderNumber: updated.order_number, status: localStatus });
+            broadcastCloudEvent('tables-updated');
           } catch (e) {
             console.error('[CloudSync] Error updating local order status from cloud:', e);
           }
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'restaurant_tables' }, async (payload) => {
+        console.log('[CloudSync] Realtime update on restaurant_tables! Event:', payload?.eventType, payload);
+        try {
+          if (payload?.eventType === 'DELETE' && payload.old) {
+            const db = getDatabase();
+            if (payload.old.id) {
+              db.prepare('DELETE FROM tables WHERE cloud_id = ?').run(String(payload.old.id));
+            }
+            if (payload.old.table_number) {
+              db.prepare('DELETE FROM tables WHERE lower(number) = lower(?)').run(String(payload.old.table_number));
+            }
+          }
+          await syncTablesFromCloud();
+          broadcastCloudEvent('tables-updated');
+        } catch (e) {
+          console.error('[CloudSync] Realtime restaurant_tables sync error:', e);
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pos_staff' }, async (payload) => {
@@ -1254,9 +1509,9 @@ export function getCloudSyncStatus(): {
   const lastSync = getSetting('cloud_last_sync', '');
   const operatingMode = (getSetting('pizza_system_mode', 'integrated') as 'integrated' | 'standalone');
   const isPizzaIntegrated = operatingMode === 'integrated' && syncEnabled;
-  const currentShopId = getSetting('cloud_shop_id', '3');
-  const currentShopName = getSetting('cloud_shop_name', 'Pizza Crust - Master Branch');
-  const currentShopSlug = getSetting('cloud_shop_slug', 'pizza-crust-main');
+  const currentShopId = getSetting('cloud_shop_id', '4');
+  const currentShopName = getSetting('cloud_shop_name', 'papa pizza');
+  const currentShopSlug = getSetting('cloud_shop_slug', 'papa-pizza');
 
   return {
     configured: Boolean(url),
@@ -1335,9 +1590,11 @@ export async function selectCloudShop(shopId: number | string): Promise<{ succes
 
     console.log(`[CloudSync] Switched POS terminal to branch: ${shopName} (ID: ${shopId})`);
 
-    // Sync menu and staff specifically for this branch
+    // Sync menu, staff, and online orders specifically for this branch
     await syncMenuFromCloud();
     await syncStaffFromCloud();
+    await pullOnlineOrdersFromCloud();
+    broadcastCloudEvent('order-synced');
 
     return { success: true, message: `Connected to branch: ${shopName}`, shopName };
   } catch (err: any) {
@@ -1415,6 +1672,9 @@ export async function initCloudSync(): Promise<void> {
   syncMenuFromCloud().catch((err) => {
     console.warn('[CloudSync] Initial background menu sync note:', err?.message || err);
   });
+  syncTablesFromCloud().catch((err) => {
+    console.warn('[CloudSync] Initial background tables sync note:', err?.message || err);
+  });
 
   // Safety fallback: periodic background refresh & auto-reconnect every 15 seconds
   setInterval(() => {
@@ -1427,10 +1687,18 @@ export async function initCloudSync(): Promise<void> {
       syncPendingOfflineOrders().catch(() => {});
       // 3. Pull latest online orders from customer storefront
       pullOnlineOrdersFromCloud().catch(() => {});
-      // 4. Keep staff and menu fresh
+      // 4. Keep staff, menu and tables fresh
       syncStaffFromCloud().catch(() => {});
       syncMenuFromCloud().catch(() => {});
+      syncTablesFromCloud().catch(() => {});
     }
   }, 15 * 1000);
+
+  // Fast Real-Time Table Sync Heartbeat (checks every 2.5s so tables created or deleted in Pizza Management reflect instantly)
+  setInterval(() => {
+    if (getSetting('cloud_sync_enabled', '1') === '1') {
+      syncTablesFromCloud().catch(() => {});
+    }
+  }, 2500);
 }
 

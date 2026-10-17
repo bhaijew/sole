@@ -1,22 +1,19 @@
 'use client';
 
 import {
-  ShoppingCart, UtensilsCrossed, Package, Truck, Globe,
-  Plus, Minus, Trash2, Pause,
+  ShoppingCart, UtensilsCrossed, Package, Truck,
+  Plus, Minus, Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/store/cart';
-import { useHeldOrdersStore } from '@/store/held-orders';
-import { useAuthStore } from '@/store/auth';
-import toast from 'react-hot-toast';
 import type { Table } from '@/lib/types';
 
 interface Props {
-  tables: Table[];
+  tables?: Table[];
   currency: string;
   submitting: boolean;
   onPlaceOrder: () => void;
-  onShowTablePicker: () => void;
+  onShowTablePicker?: () => void;
   variant?: 'sidebar' | 'drawer';
 }
 
@@ -24,73 +21,46 @@ const orderTypeIcons = {
   dine_in: UtensilsCrossed,
   takeaway: Package,
   delivery: Truck,
-  online: Globe,
 };
 
-export default function CartPanel({ tables, currency, submitting, onPlaceOrder, onShowTablePicker, variant = 'sidebar' }: Props) {
+export default function CartPanel({
+  currency,
+  submitting,
+  onPlaceOrder,
+  variant = 'sidebar',
+}: Props) {
   const cart = useCartStore();
-  const heldOrders = useHeldOrdersStore();
-  const { currentTenant } = useAuthStore();
-  const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
-
-  const handleHold = () => {
-    if (!cart.tableId) {
-      toast.error('Select a table first');
-      return;
-    }
-    if (cart.items.length === 0) {
-      toast.error('Cart is empty');
-      return;
-    }
-    const tableName = tables.find((t) => t.id === cart.tableId)?.name || cart.tableId;
-    heldOrders.holdOrder(cart.tableId, cart.items, cart.customerId, cart.guestCount);
-    cart.clearCart();
-    toast.success(`Order held for ${tableName}`);
-  };
-
   const isDrawer = variant === 'drawer';
 
   return (
-    <div className={
-      isDrawer
-        ? 'flex flex-col w-full'
-        : 'w-full h-full bg-white rounded-xl border border-gray-100 flex flex-col shadow-sm'
-    }>
+    <div
+      className={
+        isDrawer
+          ? 'flex flex-col w-full'
+          : 'w-full h-full bg-white rounded-xl border border-gray-100 flex flex-col shadow-sm'
+      }
+    >
       {/* Order Type */}
       <div className="p-4 border-b border-gray-100 space-y-2">
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-          {(['dine_in', 'takeaway', 'delivery', 'online'] as const)
-            .filter((type) => isRestaurant || type !== 'dine_in')
-            .map((type) => {
-              const Icon = orderTypeIcons[type];
-              return (
-                <button
-                  key={type}
-                  onClick={() => cart.setOrderType(type)}
-                  className={`flex-1 flex items-center justify-center gap-1 py-2 rounded-md text-xs font-medium transition-colors ${
-                    cart.orderType === type
-                      ? 'bg-white text-brand shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  <Icon size={14} />
-                  {type.replace('_', ' ')}
-                </button>
-              );
-            })}
+          {(['dine_in', 'takeaway', 'delivery'] as const).map((type) => {
+            const Icon = orderTypeIcons[type];
+            return (
+              <button
+                key={type}
+                onClick={() => cart.setOrderType(type)}
+                className={`flex-1 flex items-center justify-center gap-1 py-2 rounded-md text-xs font-medium transition-colors ${
+                  cart.orderType === type
+                    ? 'bg-white text-brand shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <Icon size={14} />
+                {type.replace('_', ' ')}
+              </button>
+            );
+          })}
         </div>
-
-        {isRestaurant && cart.orderType === 'dine_in' && (
-          <button
-            onClick={onShowTablePicker}
-            className="w-full py-2 text-sm border border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-brand hover:text-brand transition-colors"
-          >
-            {cart.tableId
-              ? `Table: ${tables.find((t) => t.id === cart.tableId)?.name || cart.tableId}`
-              : 'Select Table'}
-          </button>
-        )}
-
       </div>
 
       {/* Cart Items */}
@@ -164,11 +134,6 @@ export default function CartPanel({ tables, currency, submitting, onPlaceOrder, 
           </span>
         </div>
         <div className="flex gap-2">
-          {isRestaurant && cart.orderType === 'dine_in' && cart.tableId && cart.items.length > 0 && (
-            <Button variant="outline" onClick={handleHold} className="flex-1">
-              <Pause size={14} className="mr-1" /> Hold
-            </Button>
-          )}
           <Button
             onClick={onPlaceOrder}
             disabled={submitting || cart.items.length === 0}

@@ -157,27 +157,49 @@ export function registerIpcHandlers(): void {
     try {
       const db = getDatabase();
       const today = new Date().toISOString().slice(0, 10);
+      const activeShop = (db.prepare("SELECT value FROM settings WHERE key = 'cloud_shop_id'").get() as any)?.value;
+      const shopId = activeShop ? parseInt(activeShop, 10) : null;
 
-      const bills = db.prepare(`
-        SELECT COUNT(*) as bill_count, COALESCE(SUM(total), 0) as revenue
-        FROM bills WHERE date(created_at) = date(?) AND payment_status = 'paid'
-      `).get(today) as { bill_count: number; revenue: number };
+      let billsQuery = `
+        SELECT COUNT(*) as bill_count, COALESCE(SUM(b.total), 0) as revenue
+        FROM bills b
+        JOIN orders o ON b.order_id = o.id
+        WHERE date(b.created_at) = date(?) AND b.payment_status = 'paid'
+      `;
+      const billsParams: any[] = [today];
+      if (shopId) {
+        billsQuery += ' AND o.shop_id = ?';
+        billsParams.push(shopId);
+      }
+      const bills = db.prepare(billsQuery).get(...billsParams) as { bill_count: number; revenue: number };
 
-      const covers = db.prepare(`
+      let coversQuery = `
         SELECT COALESCE(SUM(guest_count), 0) as covers FROM orders
         WHERE date(created_at) = date(?) AND status != 'cancelled'
-      `).get(today) as { covers: number };
+      `;
+      const coversParams: any[] = [today];
+      if (shopId) {
+        coversQuery += ' AND shop_id = ?';
+        coversParams.push(shopId);
+      }
+      const covers = db.prepare(coversQuery).get(...coversParams) as { covers: number };
 
-      const pendingOrders = db.prepare(`
+      let pendingOrdersQuery = `
         SELECT COUNT(*) as count FROM orders WHERE status IN ('pending', 'preparing')
-      `).get() as { count: number };
+      `;
+      const pendingParams: any[] = [];
+      if (shopId) {
+        pendingOrdersQuery += ' AND shop_id = ?';
+        pendingParams.push(shopId);
+      }
+      const pendingOrders = db.prepare(pendingOrdersQuery).get(...pendingParams) as { count: number };
 
       return {
         date: today,
-        revenue: bills.revenue,
-        bill_count: bills.bill_count,
-        covers: covers.covers,
-        pending_orders: pendingOrders.count,
+        revenue: bills?.revenue || 0,
+        bill_count: bills?.bill_count || 0,
+        covers: covers?.covers || 0,
+        pending_orders: pendingOrders?.count || 0,
       };
     } catch (error: any) {
       return { error: error.message };

@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import type { CartItem } from '@/lib/types';
 
 interface HeldOrder {
-  tableId: number;
+  tableId: number | string;
   items: CartItem[];
   customerId: number | null;
   guestCount: number;
@@ -11,12 +11,12 @@ interface HeldOrder {
 }
 
 interface HeldOrdersState {
-  orders: Record<number, HeldOrder>;
-  holdOrder: (tableId: number, items: CartItem[], customerId: number | null, guestCount: number) => void;
-  restoreOrder: (tableId: number) => HeldOrder | null;
-  removeHeldOrder: (tableId: number) => void;
-  hasHeldOrder: (tableId: number) => boolean;
-  getHeldOrder: (tableId: number) => HeldOrder | undefined;
+  orders: Record<string, HeldOrder>;
+  holdOrder: (tableId: number | string, items: CartItem[], customerId: number | null, guestCount: number) => void;
+  restoreOrder: (tableId: number | string) => HeldOrder | null;
+  removeHeldOrder: (tableId: number | string) => void;
+  hasHeldOrder: (tableId: number | string) => boolean;
+  getHeldOrder: (tableId: number | string) => HeldOrder | undefined;
 }
 
 export const useHeldOrdersStore = create<HeldOrdersState>()(

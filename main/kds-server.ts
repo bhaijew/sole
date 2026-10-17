@@ -92,6 +92,8 @@ export function startKdsServer(): Promise<void> {
       try {
         const db = getDatabase();
         const categoryIds = req.query.category_ids ? String(req.query.category_ids).split(',') : null;
+        const activeShop = (req.query.shop_id as string) || (db.prepare("SELECT value FROM settings WHERE key = 'cloud_shop_id'").get() as any)?.value;
+        const shopId = activeShop ? parseInt(activeShop, 10) : null;
         
         let query = `
           SELECT o.*, t.number as table_number
@@ -99,10 +101,15 @@ export function startKdsServer(): Promise<void> {
           LEFT JOIN tables t ON o.table_id = t.id
           WHERE o.status IN ('pending', 'preparing', 'ready')
           AND o.created_at >= datetime('now', '-24 hours')
-          ORDER BY o.created_at ASC
         `;
+        const params: any[] = [];
+        if (shopId) {
+          query += ' AND o.shop_id = ?';
+          params.push(shopId);
+        }
+        query += ' ORDER BY o.created_at ASC';
         
-        const orders = db.prepare(query).all();
+        const orders = db.prepare(query).all(...params);
         
         const ordersWithItems = orders.map((order: any) => {
           let items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson);

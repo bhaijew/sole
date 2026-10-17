@@ -13,6 +13,7 @@
  * click, satisfying the browser's "transient user activation" requirement.
  */
 
+import { useState } from 'react';
 import {
   Printer,
   PrinterCheck,
@@ -33,6 +34,7 @@ import {
 import { usePrinterStore, usePrinterStatusSync } from '@/hooks/usePrinter';
 import type { PrinterStatus } from '@/lib/printer/PrinterService';
 import toast from 'react-hot-toast';
+import api from '@/lib/api';
 
 const STATUS_CONFIG: Record<
   PrinterStatus,
@@ -87,6 +89,51 @@ export default function PrinterStatus() {
     toast('Printer disconnected');
   };
 
+  const [testing, setTesting] = useState(false);
+
+  const handleTestPrint = async () => {
+    setTesting(true);
+    try {
+      const printer = usePrinterStore.getState().backendPrinter;
+      let targetId = printer?.id;
+
+      if (!targetId) {
+        const res = await api.get('/printers');
+        targetId = res.data?.printers?.[0]?.id;
+      }
+
+      if (targetId) {
+        const res = await api.post(`/printers/${targetId}/test`);
+        if (res.data?.success) {
+          toast.success('Test print sent to printer!');
+        } else {
+          toast.error(res.data?.error || 'Test print failed');
+        }
+      } else {
+        toast.error('No printer configured to test');
+      }
+    } catch (err: any) {
+      toast.error('Test print failed: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const handleDetect = async () => {
+    try {
+      const res = await api.get('/printers/detect');
+      const detected = res.data?.printers || [];
+      if (detected.length > 0) {
+        toast.success(`Found ${detected.length} printer: ${detected[0].name}`);
+        await usePrinterStore.getState().refreshBackendPrinter();
+      } else {
+        toast('No thermal printers detected on USB.');
+      }
+    } catch (err: any) {
+      toast.error('Detection failed: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
   const isConnected = status === 'connected';
   const isConnecting = status === 'connecting';
 
@@ -109,17 +156,19 @@ export default function PrinterStatus() {
         </Button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" className="w-52">
+      <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel className="text-xs text-gray-500">
-          Receipt Printer
+          Thermal Receipt Printer
         </DropdownMenuLabel>
 
         {isConnected && deviceInfo && (
           <div className="px-2 py-1.5 text-xs text-gray-500 border-b border-gray-100">
-            <p className="font-medium text-gray-700 truncate">
-              {deviceInfo.productName ?? 'Unknown device'}
+            <p className="font-semibold text-gray-800 truncate">
+              {deviceInfo.productName ?? 'Thermal Printer'}
             </p>
-            <p>{deviceInfo.manufacturerName ?? `VID:${deviceInfo.vendorId.toString(16).toUpperCase()}`}</p>
+            <p className="text-[11px] text-gray-400">
+              {deviceInfo.manufacturerName ?? 'Connected'}
+            </p>
           </div>
         )}
 
@@ -131,6 +180,25 @@ export default function PrinterStatus() {
 
         <DropdownMenuSeparator />
 
+        {isConnected && (
+          <DropdownMenuItem
+            onClick={handleTestPrint}
+            disabled={testing}
+            className="text-sm cursor-pointer text-brand focus:text-brand"
+          >
+            <Printer size={14} className="mr-2" />
+            {testing ? 'Printing test...' : 'Test Print'}
+          </DropdownMenuItem>
+        )}
+
+        <DropdownMenuItem
+          onClick={handleDetect}
+          className="text-sm cursor-pointer"
+        >
+          <PrinterCheck size={14} className="mr-2" />
+          Scan / Detect Printers
+        </DropdownMenuItem>
+
         {printMethod === 'escpos' && (
           <>
             {!isConnected && !isConnecting && (
@@ -140,7 +208,7 @@ export default function PrinterStatus() {
                 className="text-sm cursor-pointer"
               >
                 <Printer size={14} className="mr-2" />
-                {isConnecting ? 'Connecting…' : 'Connect USB Printer'}
+                {isConnecting ? 'Connecting…' : 'Connect WebUSB Printer'}
               </DropdownMenuItem>
             )}
 
