@@ -19,6 +19,7 @@ function buildLocalTenant(db: ReturnType<typeof getDatabase>, userRole: string) 
 
   return {
     id: 1,
+    shop_id: s.cloud_shop_id ? Number(s.cloud_shop_id) : null,
     business_name:  s.business_name  || s.cloud_shop_name || 'Sole-What',
     slug:           s.cloud_shop_slug || 'local',
     database_name:  'local',
@@ -73,7 +74,7 @@ router.post('/login', async (req: Request, res: Response) => {
     // Auto-switch branch if user belongs to another branch
     const currentShopRow = db.prepare("SELECT value FROM settings WHERE key = 'cloud_shop_id'").get() as any;
     const currentShopId = currentShopRow?.value ? Number(currentShopRow.value) : null;
-    if (user.shop_id && currentShopId && Number(user.shop_id) !== Number(currentShopId)) {
+    if (user.shop_id && (!currentShopId || Number(user.shop_id) !== Number(currentShopId))) {
       try {
         console.log(`[Auth] User ${user.name} belongs to Shop #${user.shop_id} (active: #${currentShopId}). Switching branch automatically...`);
         const { selectCloudShop } = await import('../services/cloud-sync');
@@ -181,7 +182,7 @@ router.post('/pin-login', async (req: Request, res: Response) => {
     }
 
     // 4. If the authenticated user belongs to another shop than active terminal shop, auto-switch branch!
-    if (user.shop_id && currentShopId && Number(user.shop_id) !== Number(currentShopId)) {
+    if (user.shop_id && (!currentShopId || Number(user.shop_id) !== Number(currentShopId))) {
       try {
         console.log(`[Auth] User ${user.name} belongs to Shop #${user.shop_id} (active: #${currentShopId}). Switching branch automatically...`);
         const { selectCloudShop } = await import('../services/cloud-sync');

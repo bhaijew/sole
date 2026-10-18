@@ -124,13 +124,15 @@ export default function OrdersPage() {
       }
 
       // 2. Fetch local SQLite orders
-      const res = await api.get('/orders?sync=1');
+      const syncStatusRes = await api.get('/cloud-sync/status').catch(() => null);
+      const activeBranchId = syncStatusRes?.data?.currentShopId || (currentTenant as any)?.shop_id || '';
+      const res = await api.get('/orders?sync=1' + (activeBranchId ? `&shop_id=${activeBranchId}` : ''));
       let fetched: Order[] = res.data?.orders || [];
 
       // 3. Resilient Direct Supabase REST fallback to ensure any newly placed online orders appear instantaneously
       try {
         const syncStatusRes = await api.get('/cloud-sync/status').catch(() => null);
-        const activeBranchId = syncStatusRes?.data?.currentShopId || (currentTenant as any)?.shop_id || '4';
+        const activeBranchId = syncStatusRes?.data?.currentShopId || (currentTenant as any)?.shop_id || '';
 
         const branchRestUrl = `${SUPABASE_BASE_URL}?select=*&shop_id=eq.${activeBranchId}&order=id.desc&limit=40`;
 
@@ -266,7 +268,10 @@ export default function OrdersPage() {
       }
       previousOnlineCountRef.current = currentOnlineCount;
 
-      setOrders(finalOrders);
+      const branchOrders = activeBranchId
+        ? finalOrders.filter((fo) => !fo.shop_id || String(fo.shop_id) === String(activeBranchId))
+        : finalOrders;
+      setOrders(branchOrders);
     } catch (err: any) {
       if (!isSilent) {
         toast.error('Failed to load orders: ' + (err.response?.data?.error || err.message));

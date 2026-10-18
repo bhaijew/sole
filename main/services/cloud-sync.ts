@@ -622,7 +622,7 @@ export async function syncTablesFromCloud(forcedShopId?: number | string): Promi
 
   try {
     const db = getDatabase();
-    const shopId = forcedShopId || getSetting('cloud_shop_id', '4');
+    const shopId = forcedShopId || getSetting('cloud_shop_id', '');
 
     // 1. Fetch tables from Supabase for this shop
     const { data: cloudTables, error } = await client
@@ -755,7 +755,7 @@ export async function pushTableToCloud(table: {
 
   try {
     const db = getDatabase();
-    const shopId = Number(getSetting('cloud_shop_id', '4')) || 4;
+    const shopId = Number(getSetting('cloud_shop_id', '')) || 4;
     const cloudStatus = table.status === 'reserved' ? 'reserved' : (table.status === 'inactive' || table.status === 'cleaning' ? 'inactive' : 'active');
     
     const payload: any = {
@@ -875,7 +875,7 @@ export async function handleIncomingCloudOrder(cloudOrder: any): Promise<boolean
 
   try {
     // Branch check: ensure order belongs strictly to this shop
-    const currentShopId = getSetting('cloud_shop_id', '4');
+    const currentShopId = getSetting('cloud_shop_id', '');
     if (currentShopId) {
       if (!cloudOrder.shop_id || String(cloudOrder.shop_id) !== String(currentShopId)) {
         console.log(`[CloudSync] Order ${orderNumber} is for Shop #${cloudOrder.shop_id || 'unassigned'}, not current branch #${currentShopId}. Skipping.`);
@@ -1065,8 +1065,10 @@ export async function pullOnlineOrdersFromCloud(): Promise<{
     return { success: false, message: 'Supabase client not initialized', importedCount: 0, totalCloudOrders: 0 };
   }
 
-  const currentShopId = getSetting('cloud_shop_id', '4');
-
+  const currentShopId = getSetting('cloud_shop_id', '');
+  if (!currentShopId) {
+    return { success: true, message: 'No branch selected', importedCount: 0, totalCloudOrders: 0 };
+  }
   try {
     let query = client
       .from('orders')
@@ -1189,7 +1191,7 @@ export async function pushOrderToCloud(order: any, rawItems: any[]): Promise<boo
   const client = getSupabaseClient();
   if (!client) return false;
 
-  const shopId = order.shop_id || getSetting('cloud_shop_id', '4');
+  const shopId = order.shop_id || getSetting('cloud_shop_id', '');
 
   try {
     const db = getDatabase();
@@ -1509,8 +1511,8 @@ export function getCloudSyncStatus(): {
   const lastSync = getSetting('cloud_last_sync', '');
   const operatingMode = (getSetting('pizza_system_mode', 'integrated') as 'integrated' | 'standalone');
   const isPizzaIntegrated = operatingMode === 'integrated' && syncEnabled;
-  const currentShopId = getSetting('cloud_shop_id', '4');
-  const currentShopName = getSetting('cloud_shop_name', 'papa pizza');
+  const currentShopId = getSetting('cloud_shop_id', '');
+  const currentShopName = getSetting('cloud_shop_name', '');
   const currentShopSlug = getSetting('cloud_shop_slug', 'papa-pizza');
 
   return {
@@ -1539,8 +1541,8 @@ export async function fetchCloudShops(): Promise<{
   currentShopName: string;
 }> {
   const client = getSupabaseClient();
-  const currentShopId = getSetting('cloud_shop_id', '4');
-  const currentShopName = getSetting('cloud_shop_name', 'papa pizza');
+  const currentShopId = getSetting('cloud_shop_id', '');
+  const currentShopName = getSetting('cloud_shop_name', '');
 
   if (!client) {
     return { success: false, shops: [], currentShopId, currentShopName };
@@ -1589,6 +1591,15 @@ export async function selectCloudShop(shopId: number | string): Promise<{ succes
     setSetting('business_name', shopName);
 
     console.log(`[CloudSync] Switched POS terminal to branch: ${shopName} (ID: ${shopId})`);
+
+    // Multi-branch order isolation: clean up other shops' orders from local SQLite
+    try {
+      const db = getDatabase();
+      db.prepare('DELETE FROM orders WHERE shop_id IS NOT NULL AND shop_id != ?').run(Number(shopId));
+      db.prepare('DELETE FROM order_items WHERE order_id NOT IN (SELECT id FROM orders)').run();
+    } catch (purgeErr) {
+      console.warn('[CloudSync] Branch switch order purge notice:', purgeErr);
+    }
 
     // Sync menu, staff, and online orders specifically for this branch
     await syncMenuFromCloud();

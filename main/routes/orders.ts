@@ -17,11 +17,7 @@ router.get('/', async (req: Request, res: Response) => {
 
     const db = getDatabase();
     const activeShop = (req.query.shop_id as string) || (db.prepare("SELECT value FROM settings WHERE key = 'cloud_shop_id'").get() as any)?.value;
-    if (activeShop) {
-      try {
-        db.prepare("UPDATE orders SET shop_id = ? WHERE shop_id IS NULL").run(parseInt(activeShop, 10));
-      } catch {}
-    }
+    // Preserving original shop_id for multi-branch isolation
 
     let query = 'SELECT * FROM orders WHERE 1=1';
     const params: any[] = [];
