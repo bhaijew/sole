@@ -204,60 +204,71 @@ class PrinterService {
    * @param htmlContent - The HTML to print
    * @param paperWidth - Paper width in mm (58 or 80)
    */
-  async printViaBrowser(htmlContent: string, paperWidth: 58 | 80): Promise<void> {
-    const printWindow = window.open('', '_blank');
+  async printViaBrowser(htmlContent: string, paperWidth: 58 | 80 = 80): Promise<void> {
+    const printWindow = window.open('', '_blank', 'width=450,height=750');
     if (!printWindow) {
       throw new Error('Please allow popups to print');
     }
 
     const mmWidth = paperWidth === 58 ? '58mm' : '80mm';
 
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Receipt</title>
-          <style>
-            @page {
-              size: ${mmWidth} auto;
-              margin: 0;
-            }
-            * {
-              margin: 0;
-              padding: 0;
-              box-sizing: border-box;
-            }
-            body {
-              font-family: 'Courier New', monospace;
-              font-size: 12px;
-              line-height: 1.2;
-              width: ${mmWidth};
-              max-width: ${mmWidth};
-              margin: 0 auto;
-              padding: 4px;
-              text-align: left;
-            }
-            @media print {
-              body {
-                width: ${mmWidth} !important;
-                max-width: ${mmWidth} !important;
-              }
+    if (htmlContent.includes('<!DOCTYPE html>') || htmlContent.includes('<html')) {
+      printWindow.document.open();
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+    } else {
+      printWindow.document.open();
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <title>Receipt</title>
+            <style>
               @page {
                 size: ${mmWidth} auto;
-                margin: 0;
+                margin: 0mm;
               }
-            }
-          </style>
-        </head>
-        <body>
-          ${htmlContent}
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
+              * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+              }
+              body {
+                font-family: 'Courier New', Courier, monospace;
+                font-size: 14px;
+                line-height: 1.3;
+                width: 72mm;
+                max-width: 72mm;
+                margin: 0 auto;
+                padding: 4mm 2mm;
+                text-align: left;
+                color: #000000;
+                background: #ffffff;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+              @media print {
+                body {
+                  width: 72mm !important;
+                  max-width: 72mm !important;
+                  padding: 2mm 1mm !important;
+                  margin: 0 auto !important;
+                }
+              }
+            </style>
+          </head>
+          <body>
+            ${htmlContent}
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    }
+
     printWindow.onload = () => {
+      printWindow.focus();
       printWindow.print();
-      printWindow.close();
     };
   }
 

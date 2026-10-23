@@ -1,7 +1,18 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase, now } from '../db';
 import { v4 as uuidv4 } from 'uuid';
-import { printViaNetwork, printViaUSB, buildTestPage, printReceipt, printKOT, detectConnectedPrinters } from '../printers/thermal';
+import { 
+  printViaNetwork, 
+  printViaUSB, 
+  buildTestPage, 
+  printReceipt, 
+  printKOT, 
+  detectConnectedPrinters, 
+  refreshDefaultPrinter, 
+  refreshPrinters, 
+  getKitchenPrinter,
+  getPrinterConfig 
+} from '../printers/thermal';
 
 const router = Router();
 
@@ -9,21 +20,108 @@ const router = Router();
 router.get('/', (_req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const printers = db.prepare('SELECT * FROM printers ORDER BY is_default DESC, name').all();
-    res.json({ printers });
+    const printers = db.prepare('SELECT * FROM printers ORDER BY is_default DESC, is_kitchen DESC, name').all();
+    const kitchenSetting = db.prepare("SELECT value FROM settings WHERE key = 'kitchen_printer_id'").get() as any;
+    const copiesSetting = db.prepare("SELECT value FROM settings WHERE key = 'receipt_copies'").get() as any;
+    res.json({ 
+      printers,
+      kitchen_printer_id: kitchenSetting?.value || null,
+      receipt_copies: copiesSetting?.value || 'customer',
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// GET /api/printers/detect — detect connected USB/network printers
+// GET /api/printers/detect — detect connected USB/network printers AND auto-sync to DB
 router.get('/detect', async (_req: Request, res: Response) => {
   try {
-    const printers = await detectConnectedPrinters();
-    console.log('[Printer] Detected printers:', printers);
-    res.json({ printers });
+    const detected = await detectConnectedPrinters();
+    console.log('[Printer] Detected printers on host:', detected);
+
+    const db = getDatabase();
+    const existing = db.prepare('SELECT * FROM printers').all() as any[];
+    const existingNames = new Set(existing.map((p: any) => p.name.toLowerCase()));
+    const hasDefault = existing.some((p: any) => p.is_default === 1);
+
+    // Auto-register any detected hardware printers into SQLite catalog
+    for (const p of detected) {
+      if (!p.name) continue;
+      const lower = p.name.toLowerCase();
+      // Skip dummy virtual printers unless nothing else is found
+      const isVirtual = lower.includes('onenote') || lower.includes('fax');
+      if (isVirtual && detected.length > 1) continue;
+
+      const pWidth = (p.model && p.model.includes('58')) || lower.includes('58') ? '58mm' : '80mm';
+
+      if (!existingNames.has(lower)) {
+        const id = 'printer-' + uuidv4().substring(0, 8);
+        const makeDefault = !hasDefault && (p.isDefault || p.make !== 'Unknown');
+
+        db.prepare(`
+          INSERT INTO printers (id, name, connection_type, paper_width, is_default, created_at, updated_at)
+          VALUES (?, ?, 'usb', ?, ?, ?, ?)
+        `).run(id, p.name, pWidth, makeDefault ? 1 : 0, now(), now());
+
+        existingNames.add(lower);
+      }
+    }
+
+    refreshDefaultPrinter();
+    const printers = db.prepare('SELECT * FROM printers ORDER BY is_default DESC, name').all() as any[];
+    const statusMap = new Map(detected.map((d: any) => [d.name.toLowerCase(), d.status]));
+    const enriched = printers.map((p: any) => ({
+      ...p,
+      live_status: statusMap.get(p.name.toLowerCase()) || 'offline',
+    }));
+    res.json({ printers: enriched, detected });
   } catch (error: any) {
     console.error('[Printer] Detection error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/printers/select-active — one-click activate a printer
+router.post('/select-active', (req: Request, res: Response) => {
+  try {
+    const { id, name, paper_width } = req.body;
+    const db = getDatabase();
+
+    db.prepare('UPDATE printers SET is_default = 0').run();
+
+    if (id) {
+      db.prepare(`
+        UPDATE printers 
+        SET is_default = 1, 
+            paper_width = COALESCE(?, paper_width), 
+            updated_at = ? 
+        WHERE id = ?
+      `).run(paper_width || null, now(), id);
+    } else if (name) {
+      const existing = db.prepare('SELECT * FROM printers WHERE name = ?').get(name) as any;
+      if (existing) {
+        db.prepare(`
+          UPDATE printers 
+          SET is_default = 1, 
+              paper_width = COALESCE(?, paper_width), 
+              updated_at = ? 
+          WHERE id = ?
+        `).run(paper_width || null, now(), existing.id);
+      } else {
+        const newId = 'printer-' + uuidv4().substring(0, 8);
+        const pWidth = paper_width || (name.includes('58') ? '58mm' : '80mm');
+        db.prepare(`
+          INSERT INTO printers (id, name, connection_type, paper_width, is_default, created_at, updated_at)
+          VALUES (?, ?, 'usb', ?, 1, ?, ?)
+        `).run(newId, name, pWidth, now(), now());
+      }
+    }
+
+    refreshDefaultPrinter();
+    const defaultPrinter = db.prepare('SELECT * FROM printers WHERE is_default = 1').get();
+    const printers = db.prepare('SELECT * FROM printers ORDER BY is_default DESC, name').all();
+    res.json({ success: true, defaultPrinter, printers });
+  } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
@@ -79,6 +177,7 @@ router.post('/', (req: Request, res: Response) => {
       now(), now()
     );
 
+    refreshDefaultPrinter();
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(id);
     res.status(201).json({ printer });
   } catch (error: any) {
@@ -121,6 +220,7 @@ router.put('/:id', (req: Request, res: Response) => {
       now(), req.params.id
     );
 
+    refreshDefaultPrinter();
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id);
     res.json({ printer });
   } catch (error: any) {
@@ -136,6 +236,7 @@ router.delete('/:id', (req: Request, res: Response) => {
     if (!printer) return res.status(404).json({ error: 'Printer not found' });
 
     db.prepare('DELETE FROM printers WHERE id = ?').run(req.params.id);
+    refreshDefaultPrinter();
     res.json({ message: 'Printer deleted' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -152,7 +253,48 @@ router.post('/:id/set-default', (req: Request, res: Response) => {
     db.prepare('UPDATE printers SET is_default = 0').run();
     db.prepare('UPDATE printers SET is_default = 1, updated_at = ? WHERE id = ?').run(now(), req.params.id);
 
-    res.json({ message: 'Default printer set' });
+    refreshDefaultPrinter();
+    res.json({ message: 'Default printer set', printer });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/printers/:id/set-kitchen — designate dedicated kitchen printer
+router.post('/:id/set-kitchen', (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id);
+    if (!printer) return res.status(404).json({ error: 'Printer not found' });
+
+    db.prepare('UPDATE printers SET is_kitchen = 0').run();
+    db.prepare('UPDATE printers SET is_kitchen = 1, updated_at = ? WHERE id = ?').run(now(), req.params.id);
+    db.prepare(`
+      INSERT INTO settings (key, value, updated_at) VALUES ('kitchen_printer_id', ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(req.params.id, now());
+
+    refreshPrinters();
+    const updated = db.prepare('SELECT * FROM printers ORDER BY is_default DESC, is_kitchen DESC, name').all();
+    res.json({ message: 'Kitchen printer set', printer, printers: updated });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/printers/:id/remove-kitchen — clear kitchen printer role
+router.post('/:id/remove-kitchen', (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    db.prepare('UPDATE printers SET is_kitchen = 0, updated_at = ? WHERE id = ?').run(now(), req.params.id);
+    db.prepare(`
+      INSERT INTO settings (key, value, updated_at) VALUES ('kitchen_printer_id', '', ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(now());
+
+    refreshPrinters();
+    const updated = db.prepare('SELECT * FROM printers ORDER BY is_default DESC, is_kitchen DESC, name').all();
+    res.json({ message: 'Kitchen printer role cleared', printers: updated });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -165,7 +307,8 @@ router.post('/:id/test', async (req: Request, res: Response) => {
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id) as any;
     if (!printer) return res.status(404).json({ error: 'Printer not found' });
 
-    const testData = buildTestPage(printer.paper_width);
+    console.log(`[Printer] Testing printer ${printer.name} (${printer.paper_width})`);
+    const testData = buildTestPage(printer.paper_width, printer.name);
     let success = false;
 
     switch (printer.connection_type) {
@@ -177,14 +320,32 @@ router.post('/:id/test', async (req: Request, res: Response) => {
         success = await printViaUSB(testData, printer.name);
         break;
       case 'webusb':
-        // WebUSB is handled entirely in the browser; return the bytes for the frontend to send
         return res.json({ success: true, webusb: true, bytes: Array.from(testData) });
     }
 
     if (success) {
-      res.json({ success: true });
+      res.json({ success: true, message: `Test receipt printed to ${printer.name}` });
     } else {
-      res.status(502).json({ error: 'Printer did not respond or print failed' });
+      res.status(502).json({ error: `Could not send print job to ${printer.name}. Check printer power and USB connection.` });
+    }
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/printers/test-direct — send a test print job by name directly
+router.post('/test-direct', async (req: Request, res: Response) => {
+  try {
+    const { printerName, paperWidth = '58mm' } = req.body;
+    if (!printerName) return res.status(400).json({ error: 'printerName is required' });
+
+    const testData = buildTestPage(paperWidth, printerName);
+    const success = await printViaUSB(testData, printerName);
+
+    if (success) {
+      res.json({ success: true, message: `Test receipt printed to ${printerName}` });
+    } else {
+      res.status(502).json({ error: `Print to ${printerName} failed. Check printer connection.` });
     }
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -267,22 +428,32 @@ router.post('/print-bill', async (req: Request, res: Response) => {
 
     // Fetch business settings for bill template
     const businessName = db.prepare("SELECT value FROM settings WHERE key = 'business_name'").get() as any;
-    const businessAddress = db.prepare("SELECT value FROM settings WHERE key = 'address'").get() as any;
-    const businessPhone = db.prepare("SELECT value FROM settings WHERE key = 'phone'").get() as any;
+    const businessAddress = db.prepare("SELECT value FROM settings WHERE key = 'address'").get() as any || db.prepare("SELECT value FROM settings WHERE key = 'business_address'").get() as any;
+    const businessPhone = db.prepare("SELECT value FROM settings WHERE key = 'phone'").get() as any || db.prepare("SELECT value FROM settings WHERE key = 'business_phone'").get() as any;
     const gstin = db.prepare("SELECT value FROM settings WHERE key = 'gstin'").get() as any;
     const billTemplate = db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as any;
+    const easypaisaNumber = db.prepare("SELECT value FROM settings WHERE key = 'easypaisa_number'").get() as any;
+    const easypaisaTitle = db.prepare("SELECT value FROM settings WHERE key = 'easypaisa_title'").get() as any;
+    const complaintNumber = db.prepare("SELECT value FROM settings WHERE key = 'complaint_number'").get() as any;
+    const footerMsg = db.prepare("SELECT value FROM settings WHERE key = 'bill_footer_message'").get() as any;
 
     const business = {
-      name: businessName?.value || 'Store',
+      name: businessName?.value || 'PIZZA MAFIA',
       address: businessAddress?.value || '',
       phone: businessPhone?.value || '',
       gstin: gstin?.value || '',
+      easypaisa_number: easypaisaNumber?.value || '',
+      easypaisa_title: easypaisaTitle?.value || '',
+      complaint_number: complaintNumber?.value || '',
+      footer_message: footerMsg?.value || '',
     };
-    console.log('[Print Bill] Business:', business.name, 'Template:', billTemplate?.value || 'compact');
+    const copySetting = db.prepare("SELECT value FROM settings WHERE key = 'receipt_copies'").get() as any;
+    const copyType = req.body.copyType || copySetting?.value || 'customer';
+    console.log('[Print Bill] Business:', business.name, 'Template:', billTemplate?.value || 'classic', 'CopyType:', copyType);
 
-    // Use existing printReceipt function with template support
+    // Use printReceipt with 80mm Pizza Mafia format & dual copy support
     console.log('[Print Bill] Calling printReceipt...');
-    const success = await printReceipt(order, bill, business, billTemplate?.value || 'compact');
+    const success = await printReceipt(order, bill, business, billTemplate?.value || 'classic', copyType);
     console.log('[Print Bill] Print result:', success);
 
     if (success) {
@@ -307,13 +478,19 @@ router.post('/print-kot', async (req: Request, res: Response) => {
     }
 
     const db = getDatabase();
-    const printer = db.prepare('SELECT * FROM printers WHERE is_default = 1').get();
+    const printer = getKitchenPrinter() || getPrinterConfig();
     
     if (!printer) {
-      return res.status(400).json({ error: 'No default printer configured. Add a printer in Settings.' });
+      return res.status(400).json({ error: 'No kitchen or default printer configured. Add a printer in Settings.' });
     }
 
-    const order: any = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+    const order: any = db.prepare(`
+      SELECT o.*, c.name as customer_name, c.phone as customer_phone
+      FROM orders o
+      LEFT JOIN customers c ON o.customer_id = c.id
+      WHERE o.id = ?
+    `).get(orderId) || db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
@@ -360,7 +537,13 @@ router.post('/print-order', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No default printer configured. Please configure a printer in Settings.' });
     }
 
-    const order: any = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+    const order: any = db.prepare(`
+      SELECT o.*, c.name as customer_name, c.phone as customer_phone
+      FROM orders o
+      LEFT JOIN customers c ON o.customer_id = c.id
+      WHERE o.id = ?
+    `).get(orderId) || db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
@@ -398,19 +581,29 @@ router.post('/print-order', async (req: Request, res: Response) => {
       }
 
       const businessName = db.prepare("SELECT value FROM settings WHERE key = 'business_name'").get() as any;
-      const businessAddress = db.prepare("SELECT value FROM settings WHERE key = 'address'").get() as any;
-      const businessPhone = db.prepare("SELECT value FROM settings WHERE key = 'phone'").get() as any;
+      const businessAddress = db.prepare("SELECT value FROM settings WHERE key = 'address'").get() as any || db.prepare("SELECT value FROM settings WHERE key = 'business_address'").get() as any;
+      const businessPhone = db.prepare("SELECT value FROM settings WHERE key = 'phone'").get() as any || db.prepare("SELECT value FROM settings WHERE key = 'business_phone'").get() as any;
       const gstin = db.prepare("SELECT value FROM settings WHERE key = 'gstin'").get() as any;
       const billTemplate = db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as any;
+      const easypaisaNumber = db.prepare("SELECT value FROM settings WHERE key = 'easypaisa_number'").get() as any;
+      const easypaisaTitle = db.prepare("SELECT value FROM settings WHERE key = 'easypaisa_title'").get() as any;
+      const complaintNumber = db.prepare("SELECT value FROM settings WHERE key = 'complaint_number'").get() as any;
+      const footerMsg = db.prepare("SELECT value FROM settings WHERE key = 'bill_footer_message'").get() as any;
 
       const business = {
-        name: businessName?.value || 'Store',
+        name: businessName?.value || 'PIZZA MAFIA',
         address: businessAddress?.value || '',
         phone: businessPhone?.value || '',
         gstin: gstin?.value || '',
+        easypaisa_number: easypaisaNumber?.value || '',
+        easypaisa_title: easypaisaTitle?.value || '',
+        complaint_number: complaintNumber?.value || '',
+        footer_message: footerMsg?.value || '',
       };
+      const copySetting = db.prepare("SELECT value FROM settings WHERE key = 'receipt_copies'").get() as any;
+      const copyType = req.body.copyType || copySetting?.value || 'customer';
 
-      billSuccess = await printReceipt(order, bill, business, billTemplate?.value || 'compact');
+      billSuccess = await printReceipt(order, bill, business, billTemplate?.value || 'classic', copyType);
     }
 
     // 2. If KOT requested

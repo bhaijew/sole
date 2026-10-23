@@ -478,29 +478,40 @@ export async function syncStaffFromCloud(): Promise<{
       if (!staffError && cloudStaff) {
         const validStaffIds = new Set<string>();
         for (const s of cloudStaff) {
-          const staffId = `cloud_staff_${s.id}`;
-          validStaffIds.add(staffId);
-          const name = s.name || s.full_name || 'Staff Member';
-          const email = s.email || null;
-          const role = s.role || 'cashier';
-          const pin = s.pin ? String(s.pin) : null;
-          const isActive = (s.is_active !== false && s.has_pos_access !== false) ? 1 : 0;
-          const pwd = s.password ? s.password : bcrypt.hashSync(pin || '1234', 10);
+          try {
+            const staffId = `cloud_staff_${s.id}`;
+            validStaffIds.add(staffId);
+            const name = s.name || s.full_name || 'Staff Member';
+            const email = s.email || null;
 
-          const existing = db.prepare('SELECT id FROM users WHERE id = ? OR (email = ? AND email IS NOT NULL)').get(staffId, email) as any;
-          const staffShopId = s.shop_id ? Number(s.shop_id) : null;
-          if (existing) {
-            db.prepare(`
-              UPDATE users SET name = ?, email = ?, role = ?, pin = ?, is_active = ?, shop_id = ?, updated_at = datetime('now')
-              WHERE id = ?
-            `).run(name, email, role, pin, isActive, staffShopId, existing.id);
-          } else {
-            db.prepare(`
-              INSERT INTO users (id, name, email, password, role, pin, is_active, shop_id, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-            `).run(staffId, name, email, pwd, role, pin, isActive, staffShopId);
+            // Normalize role to satisfy SQLite CHECK constraint: role IN ('owner', 'manager', 'cashier', 'waiter', 'chef')
+            let role = (s.role || 'cashier').toLowerCase();
+            if (role === 'sub_admin' || role === 'admin' || role === 'super_admin') role = 'manager';
+            if (!['owner', 'manager', 'cashier', 'waiter', 'chef'].includes(role)) {
+              role = 'cashier';
+            }
+
+            const pin = s.pin ? String(s.pin) : null;
+            const isActive = (s.is_active !== false && s.has_pos_access !== false) ? 1 : 0;
+            const pwd = s.password ? s.password : bcrypt.hashSync(pin || '1234', 10);
+
+            const existing = db.prepare('SELECT id FROM users WHERE id = ? OR (email = ? AND email IS NOT NULL)').get(staffId, email) as any;
+            const staffShopId = s.shop_id ? Number(s.shop_id) : null;
+            if (existing) {
+              db.prepare(`
+                UPDATE users SET name = ?, email = ?, role = ?, pin = ?, is_active = ?, shop_id = ?, updated_at = datetime('now')
+                WHERE id = ?
+              `).run(name, email, role, pin, isActive, staffShopId, existing.id);
+            } else {
+              db.prepare(`
+                INSERT INTO users (id, name, email, password, role, pin, is_active, shop_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+              `).run(staffId, name, email, pwd, role, pin, isActive, staffShopId);
+            }
+            syncedStaff++;
+          } catch (staffItemErr: any) {
+            console.warn(`[CloudSync] Error syncing staff ${s.name || s.id}:`, staffItemErr.message);
           }
-          syncedStaff++;
         }
 
         // Clean up any staff removed from Supabase pos_staff table
@@ -1031,6 +1042,11 @@ export async function handleIncomingCloudOrder(cloudOrder: any): Promise<boolean
       try {
         const localOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(localOrderId) as any;
         const localItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(localOrderId) as any[];
+
+        if (localOrder) {
+          localOrder.customer_name = cloudOrder.customer_name || localOrder.customer_name;
+          localOrder.customer_phone = cloudOrder.customer_phone || localOrder.customer_phone;
+        }
 
         console.log(`[CloudSync] Triggering Auto-Print KOT for online order ${orderNumber}...`);
         await printKOT(localOrder, localItems, 'Kitchen (Online)');
@@ -1595,8 +1611,8 @@ export async function selectCloudShop(shopId: number | string): Promise<{ succes
     // Multi-branch order isolation: clean up other shops' orders from local SQLite
     try {
       const db = getDatabase();
+      db.prepare('DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE shop_id IS NOT NULL AND shop_id != ?)').run(Number(shopId));
       db.prepare('DELETE FROM orders WHERE shop_id IS NOT NULL AND shop_id != ?').run(Number(shopId));
-      db.prepare('DELETE FROM order_items WHERE order_id NOT IN (SELECT id FROM orders)').run();
     } catch (purgeErr) {
       console.warn('[CloudSync] Branch switch order purge notice:', purgeErr);
     }
@@ -1657,6 +1673,25 @@ export function updateCloudSyncSettings(settings: {
   }
 }
 
+let syncIntervalHandle: NodeJS.Timeout | null = null;
+let tableSyncIntervalHandle: NodeJS.Timeout | null = null;
+
+/**
+ * Clear all cloud sync interval timers and terminate listeners
+ */
+export function stopCloudSyncIntervals(): void {
+  if (syncIntervalHandle) {
+    clearInterval(syncIntervalHandle);
+    syncIntervalHandle = null;
+  }
+  if (tableSyncIntervalHandle) {
+    clearInterval(tableSyncIntervalHandle);
+    tableSyncIntervalHandle = null;
+  }
+  stopRealtimeOrderListener();
+  console.log('[CloudSync] All sync interval timers stopped');
+}
+
 /**
  * Initialize cloud sync on app launch
  */
@@ -1687,8 +1722,11 @@ export async function initCloudSync(): Promise<void> {
     console.warn('[CloudSync] Initial background tables sync note:', err?.message || err);
   });
 
+  if (syncIntervalHandle) clearInterval(syncIntervalHandle);
+  if (tableSyncIntervalHandle) clearInterval(tableSyncIntervalHandle);
+
   // Safety fallback: periodic background refresh & auto-reconnect every 15 seconds
-  setInterval(() => {
+  syncIntervalHandle = setInterval(() => {
     if (getSetting('cloud_sync_enabled', '1') === '1') {
       // 1. Ensure realtime listener is alive
       if (!isRealtimeListening) {
@@ -1704,12 +1742,14 @@ export async function initCloudSync(): Promise<void> {
       syncTablesFromCloud().catch(() => {});
     }
   }, 15 * 1000);
+  syncIntervalHandle.unref();
 
   // Fast Real-Time Table Sync Heartbeat (checks every 2.5s so tables created or deleted in Pizza Management reflect instantly)
-  setInterval(() => {
+  tableSyncIntervalHandle = setInterval(() => {
     if (getSetting('cloud_sync_enabled', '1') === '1') {
       syncTablesFromCloud().catch(() => {});
     }
   }, 2500);
+  tableSyncIntervalHandle.unref();
 }
 

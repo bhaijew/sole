@@ -6,6 +6,7 @@ import { execSync, exec } from 'child_process';
 import { getDatabase } from '../db';
 
 let defaultPrinter: any = null;
+let kitchenPrinter: any = null;
 
 export interface PrinterInfo {
   name: string;
@@ -161,7 +162,7 @@ function detectWindowsPrinters(): PrinterInfo[] {
   const printers: PrinterInfo[] = [];
 
   try {
-    const psCmd = `powershell -NoProfile -Command "Get-CimInstance Win32_Printer | Select-Object Name, Default, PrinterStatus, DriverName | ConvertTo-Json"`;
+    const psCmd = `powershell -NoProfile -Command "Get-CimInstance Win32_Printer | Select-Object Name, Default, PrinterStatus, ExtendedPrinterStatus, WorkOffline, DetectedErrorState, DriverName | ConvertTo-Json"`;
     const output = execSync(psCmd, { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
     if (!output || !output.trim()) return printers;
 
@@ -172,7 +173,12 @@ function detectWindowsPrinters(): PrinterInfo[] {
       if (!item || !item.Name) continue;
       const name = String(item.Name).trim();
       const isDefault = Boolean(item.Default);
-      const status = item.PrinterStatus === 0 || item.PrinterStatus === 3 ? 'idle' : 'offline';
+      const isOffline = Boolean(item.WorkOffline) ||
+                        item.ExtendedPrinterStatus === 9 ||
+                        item.ExtendedPrinterStatus === 7 ||
+                        item.DetectedErrorState === 1 ||
+                        item.PrinterStatus === 1;
+      const status = isOffline ? 'offline' : 'idle';
       const driver = String(item.DriverName || '');
 
       const makeModel = detectWindowsMakeModel(name, driver);
@@ -306,24 +312,41 @@ export async function initPrinter(): Promise<void> {
   }
 }
 
-export async function printReceipt(order: any, bill: any, business?: any, template?: string): Promise<boolean> {
+export async function printReceipt(
+  order: any,
+  bill: any,
+  business?: any,
+  template?: string,
+  copyType: 'customer' | 'business' | 'both' = 'both'
+): Promise<boolean> {
   try {
-    console.log('[Printer] printReceipt called, template:', template);
+    const db = getDatabase();
+    let effectiveCopyType = copyType;
+    if (!effectiveCopyType || effectiveCopyType === 'both') {
+      try {
+        const copySetting = db.prepare("SELECT value FROM settings WHERE key = 'receipt_copies'").get() as any;
+        if (copySetting?.value) {
+          effectiveCopyType = copySetting.value as any;
+        }
+      } catch {}
+    }
+    if (!effectiveCopyType) effectiveCopyType = 'customer';
+
+    console.log('[Printer] printReceipt called, template:', template, 'copyType:', effectiveCopyType);
     const printer = getPrinterConfig();
     if (!printer) {
-      console.log('[Printer] No printer configured');
+      console.log('[Printer] No counter printer configured');
       return false;
     }
-    console.log('[Printer] Using printer:', printer.name, printer.connection_type);
+    console.log('[Printer] Using counter printer:', printer.name, printer.connection_type);
     
     const paperWidth = printer.paper_width || '80mm';
     const cols = paperWidth === '58mm' ? 42 : 48;
     
     let data: Buffer;
     try {
-      data = formatReceipt(order, bill, business, template, cols);
+      data = formatReceipt(order, bill, business, template, cols, effectiveCopyType);
       console.log('[Printer] Receipt data length:', data.length, 'bytes');
-      console.log('[Printer] First 100 bytes:', Array.from(data.slice(0, 100)).map(b => b.toString(16)).join(' '));
     } catch (err) {
       console.error('[Printer] formatReceipt failed:', err);
       throw err;
@@ -339,12 +362,12 @@ export async function printReceipt(order: any, bill: any, business?: any, templa
 export async function printKOT(order: any, items: any[], stationName: string): Promise<boolean> {
   try {
     console.log('[Printer] printKOT called, items count:', items?.length || 0);
-    const printer = getPrinterConfig();
+    const printer = getKitchenPrinter() || getPrinterConfig();
     if (!printer) {
-      console.log('[Printer] No printer configured');
+      console.log('[Printer] No kitchen or counter printer configured');
       return false;
     }
-    console.log('[Printer] Using printer:', printer.name, printer.connection_type);
+    console.log('[Printer] Using kitchen printer:', printer.name, printer.connection_type);
     
     const paperWidth = printer.paper_width || '80mm';
     const cols = paperWidth === '58mm' ? 42 : 48;
@@ -373,268 +396,280 @@ async function dispatchPrint(printer: any, data: Buffer): Promise<boolean> {
   }
 }
 
-function getPrinterConfig(): any {
-  if (defaultPrinter) return defaultPrinter;
-  const db = getDatabase();
-  return db.prepare('SELECT * FROM printers WHERE is_default = 1').get();
+export function refreshPrinters(): { defaultPrinter: any; kitchenPrinter: any } {
+  try {
+    const db = getDatabase();
+    defaultPrinter = db.prepare('SELECT * FROM printers WHERE is_default = 1').get() || null;
+    
+    const kitchenSetting = db.prepare("SELECT value FROM settings WHERE key = 'kitchen_printer_id'").get() as any;
+    if (kitchenSetting?.value) {
+      kitchenPrinter = db.prepare('SELECT * FROM printers WHERE id = ?').get(kitchenSetting.value) || null;
+    }
+    if (!kitchenPrinter) {
+      kitchenPrinter = db.prepare('SELECT * FROM printers WHERE is_kitchen = 1').get() || null;
+    }
+    return { defaultPrinter, kitchenPrinter };
+  } catch {
+    return { defaultPrinter: null, kitchenPrinter: null };
+  }
 }
 
-function formatReceipt(order: any, bill: any, business?: any, template?: string, cols: number = 48): Buffer {
-  console.log('[Printer] formatReceipt - template:', template);
+export function refreshDefaultPrinter(): any {
+  return refreshPrinters().defaultPrinter;
+}
+
+export function getKitchenPrinter(): any {
+  try {
+    const db = getDatabase();
+    const kitchenSetting = db.prepare("SELECT value FROM settings WHERE key = 'kitchen_printer_id'").get() as any;
+    if (kitchenSetting?.value) {
+      const p = db.prepare('SELECT * FROM printers WHERE id = ?').get(kitchenSetting.value);
+      if (p) {
+        kitchenPrinter = p;
+        return p;
+      }
+    }
+    const currentKitchen = db.prepare('SELECT * FROM printers WHERE is_kitchen = 1').get();
+    if (currentKitchen) {
+      kitchenPrinter = currentKitchen;
+      return currentKitchen;
+    }
+  } catch {}
+  return kitchenPrinter || getPrinterConfig();
+}
+
+export function getPrinterConfig(): any {
+  try {
+    const db = getDatabase();
+    const current = db.prepare('SELECT * FROM printers WHERE is_default = 1').get();
+    if (current) {
+      defaultPrinter = current;
+      return current;
+    }
+  } catch {}
+  return defaultPrinter;
+}
+
+function formatReceipt(
+  order: any,
+  bill: any,
+  business?: any,
+  template?: string,
+  cols: number = 48,
+  copyType: 'customer' | 'business' | 'both' = 'customer'
+): Buffer {
+  console.log('[Printer] formatReceipt - template:', template, 'copyType:', copyType);
   console.log('[Printer] formatReceipt - order:', order?.order_number, 'bill:', bill?.bill_number);
   console.log('[Printer] formatReceipt - items count:', order?.items?.length || 0, 'cols:', cols);
   
-  const tpl = template || 'compact';
-  const biz = business || { name: 'Store', address: '', phone: '', gstin: '' };
+  const biz = business || { name: 'PIZZA MAFIA', address: '', phone: '', gstin: '' };
 
   try {
-    switch (tpl) {
-      case 'classic':
-        return formatClassicReceipt(order, bill, biz, cols);
-      case 'detailed':
-        return formatDetailedReceipt(order, bill, biz, cols);
-      default:
-        return formatCompactReceipt(order, bill, biz, cols);
+    if (copyType === 'customer') {
+      return formatSingleReceiptCopy(order, bill, biz, cols, 'Customer Copy');
     }
+    if (copyType === 'business') {
+      return formatSingleReceiptCopy(order, bill, biz, cols, 'Business Copy');
+    }
+    // Default 'both': Customer Copy + Cut + Business Copy + Cut
+    const customerBuf = formatSingleReceiptCopy(order, bill, biz, cols, 'Customer Copy');
+    const businessBuf = formatSingleReceiptCopy(order, bill, biz, cols, 'Business Copy');
+    return Buffer.concat([customerBuf, businessBuf]);
   } catch (err) {
     console.error('[Printer] formatReceipt error:', err);
     throw err;
   }
 }
 
-function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48): Buffer {
+/**
+ * Format a single receipt copy (Customer Copy or Business Copy) matching Pizza Mafia layout.
+ */
+function formatSingleReceiptCopy(
+  order: any,
+  bill: any,
+  biz: any,
+  cols: number = 48,
+  copyLabel: 'Customer Copy' | 'Business Copy' = 'Customer Copy'
+): Buffer {
   const lines: string[] = [];
-  const date = new Date(order.created_at);
+  const dateObj = order?.created_at ? new Date(order.created_at) : (bill?.created_at ? new Date(bill.created_at) : new Date());
   
-  const bar = '='.repeat(cols);
+  const month = dateObj.getMonth() + 1;
+  const day = dateObj.getDate();
+  const year = dateObj.getFullYear();
+  const dateStr = `${month}/${day}/${year}`;
+  const timeStr = dateObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
+
+  const orderNum = order?.order_number || bill?.bill_number || '1';
+  const orderType = formatOrderType(order?.type || order?.order_type || order?.order_source);
+  let customerName = order?.customer?.name || order?.customer_name || '';
+  if (!customerName && order?.notes && order.notes.includes('Customer: ')) {
+    customerName = order.notes.split('Customer: ')[1]?.split('|')[0]?.trim();
+  }
+  if (!customerName) {
+    customerName = order?.order_source === 'online' ? 'Online Customer' : 'Walk-in';
+  }
+  const restaurantName = (biz.name || biz.business_name || 'PIZZA MAFIA').toUpperCase();
+
   const dash = '-'.repeat(cols);
-  
-  const itemNameLen = cols === 42 ? 22 : 28;
-  const amtLen = cols === 42 ? 10 : 10;
 
+  // 1. Initialize & Header
   lines.push('{INIT}');
-  lines.push('{CENTER}{BOLD}' + (biz.name || 'Store') + '{/BOLD}{/CENTER}');
-  lines.push(bar);
-  lines.push('Bill #: ' + (bill.bill_number || order.order_number));
-  lines.push('Date: ' + date.toLocaleDateString() + ' ' + date.toLocaleTimeString());
-  lines.push(dash);
-  lines.push('Item' + ' '.repeat(itemNameLen) + 'Qty    Amount');
+  lines.push('{CENTER}{DOUBLE_HEIGHT}{BOLD}' + restaurantName + '{/BOLD}{/DOUBLE_HEIGHT}{/CENTER}');
+  lines.push('{CENTER}{BOLD}' + copyLabel + '{/BOLD}{/CENTER}');
+  lines.push('{CENTER}Order #: ' + orderNum + '{/CENTER}');
+  lines.push('{CENTER}Date: ' + dateStr + '{/CENTER}');
+  lines.push('{CENTER}Time: ' + timeStr + '{/CENTER}');
+  lines.push('{CENTER}Type: ' + orderType + '{/CENTER}');
+  lines.push('{CENTER}Name: ' + customerName + '{/CENTER}');
+
+  // 2. Separator
   lines.push(dash);
 
-  if (order.items) {
+  // 3. Items Table Header (3-column)
+  const itemColWidth = cols >= 48 ? 30 : 16;
+  const qtyColWidth = cols >= 48 ? 8 : 6;
+  const priceColWidth = 10;
+  
+  const headerStr = 'Item'.padEnd(itemColWidth) + 'Quantity'.padStart(qtyColWidth) + 'Price'.padStart(priceColWidth);
+  lines.push('{BOLD}' + headerStr + '{/BOLD}');
+  lines.push(dash);
+
+  // Items List
+  if (order?.items) {
     for (const item of order.items) {
-      const name = truncate(item.product_name, itemNameLen);
-      const qty = String(item.quantity).padEnd(5);
-      const taxRate = getTaxRate(item);
-      const taxStr = taxRate > 0 ? (taxRate + '%').padEnd(5) : '     ';
-      const amt = formatCurrency(item.total);
-      lines.push(name + qty + taxStr + rightAlign(amt, amtLen));
+      const name = item.product_name || 'Item';
+      const qty = String(item.quantity || 1).padStart(qtyColWidth);
+      const itemTotal = Number(item.total ?? (Number(item.unit_price || 0) * Number(item.quantity || 1)));
+      const price = formatPriceNumber(itemTotal).padStart(priceColWidth);
 
+      // Clean line wrapping for long names
+      const wrappedLines = wrapText(name, itemColWidth);
+      lines.push(wrappedLines[0].padEnd(itemColWidth) + qty + price);
+      for (let i = 1; i < wrappedLines.length; i++) {
+        lines.push(wrappedLines[i]);
+      }
+
+      // Addons
       const addons = parseAddons(item.addons);
       for (const addon of addons) {
-        const addonName = truncate('  + ' + addon.name, itemNameLen + 4);
-        const addonPrice = addon.price ? formatCurrency(addon.price) : '';
-        lines.push(addonName + rightAlign(addonPrice, cols - itemNameLen - 8));
+        const addonPrice = addon.price ? ` (Rs ${formatPriceNumber(addon.price)})` : '';
+        lines.push('  + ' + addon.name + addonPrice);
       }
+
+      // Special instructions
       if (item.special_instructions) {
-        lines.push('  Note: ' + truncate(item.special_instructions, cols - 8));
+        lines.push('  >> ' + item.special_instructions);
       }
     }
   }
 
   lines.push(dash);
-  lines.push('Subtotal' + rightAlign(formatCurrency(bill.subtotal), cols - 8));
-  if (bill.discount_amount > 0) {
-    lines.push('Discount' + rightAlign('-' + formatCurrency(bill.discount_amount), cols - 8));
-  }
-  lines.push('Tax' + rightAlign(formatCurrency(bill.tax_amount), cols - 3));
-  lines.push('{BOLD}TOTAL' + rightAlign(formatCurrency(bill.total), cols - 5) + '{/BOLD}');
 
-  if (bill.payment_details) {
+  // Subtotal / Breakdown if discounts, delivery or taxes exist
+  const subtotal = Number(bill?.subtotal || order?.subtotal || bill?.total || 0);
+  const total = Number(bill?.total || order?.total || 0);
+  const discount = Number(bill?.discount_amount || order?.discount_amount || 0);
+  const delivery = Number(bill?.delivery_charge || order?.delivery_charge || 0);
+  const tax = Number(bill?.tax_amount || order?.tax_amount || 0);
+
+  if (discount > 0 || delivery > 0 || tax > 0) {
+    lines.push('Subtotal' + rightAlign('Rs ' + formatPriceNumber(subtotal), cols - 8));
+    if (discount > 0) {
+      lines.push('Discount' + rightAlign('-Rs ' + formatPriceNumber(discount), cols - 8));
+    }
+    if (delivery > 0) {
+      lines.push('Delivery' + rightAlign('Rs ' + formatPriceNumber(delivery), cols - 8));
+    }
+    if (tax > 0) {
+      lines.push('Tax' + rightAlign('Rs ' + formatPriceNumber(tax), cols - 3));
+    }
     lines.push(dash);
-    try {
-      const payments = typeof bill.payment_details === 'string' ? JSON.parse(bill.payment_details) : bill.payment_details;
-      if (payments && Array.isArray(payments)) {
-        for (const payment of payments) {
-          if (payment && payment.method) {
-            lines.push(payment.method + rightAlign(formatCurrency(payment.amount), cols - payment.method.length));
-          }
-        }
-      }
-    } catch {}
   }
 
-  lines.push(bar);
-  if (biz.address) lines.push(biz.address);
-  if (biz.phone) lines.push('Ph: ' + biz.phone);
-  if (biz.gstin) lines.push('GSTIN: ' + biz.gstin);
-  lines.push('{CENTER}Thank you!{/CENTER}');
+  // 4. Prominent Centered Total
+  lines.push('{CENTER}{DOUBLE_HEIGHT}{BOLD}TOTAL: Rs ' + formatPriceNumber(total) + '{/BOLD}{/DOUBLE_HEIGHT}{/CENTER}');
+  lines.push(dash);
+
+  // 5. Payment and Footer
+  const epNumber = biz.easypaisa_number || biz.payment_phone || '';
+  const epTitle = biz.easypaisa_title || biz.account_title || '';
+  const compNumber = biz.complaint_number || biz.complaint_phone || biz.phone || '';
+
+  if (epNumber) {
+    lines.push('EasyPaisa: ' + epNumber);
+  }
+  if (epTitle) {
+    lines.push(epTitle);
+  }
+  if (compNumber) {
+    lines.push('Complaint: ' + compNumber);
+  }
+  if (biz.footer_message) {
+    lines.push(biz.footer_message);
+  }
+
+  lines.push('');
+  lines.push('{CENTER}{BOLD}Thank You!{/BOLD}{/CENTER}');
   lines.push('{CUT}');
 
   return buildEscPos(lines);
+}
+
+function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48): Buffer {
+  return formatSingleReceiptCopy(order, bill, biz, cols, 'Customer Copy');
 }
 
 function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48): Buffer {
-  const lines: string[] = [];
-  const date = new Date(order.created_at);
-  
-  const bar = '='.repeat(cols);
-  const dash = '-'.repeat(cols);
-  
-  const itemNameLen = cols === 42 ? 22 : 28;
-
-  lines.push('{INIT}');
-  lines.push('{CENTER}{BOLD}' + (biz.name || 'Store') + '{/BOLD}{/CENTER}');
-  lines.push(bar);
-  lines.push('Bill #: ' + (bill.bill_number || order.order_number));
-  lines.push('Date: ' + date.toLocaleDateString() + ' ' + date.toLocaleTimeString());
-  lines.push(dash);
-  lines.push('Item' + ' '.repeat(itemNameLen) + 'Qty    Amount');
-  lines.push(dash);
-
-  if (order.items) {
-    for (const item of order.items) {
-      const name = truncate(item.product_name, itemNameLen);
-      const qty = String(item.quantity).padEnd(5);
-      const taxRate = getTaxRate(item);
-      const taxStr = taxRate > 0 ? (taxRate + '%').padEnd(5) : '     ';
-      const amt = formatCurrency(item.total);
-      lines.push(name + qty + taxStr + rightAlign(amt, 10));
-
-      const addons = parseAddons(item.addons);
-      for (const addon of addons) {
-        const addonName = truncate('  + ' + addon.name, itemNameLen + 4);
-        const addonPrice = addon.price ? formatCurrency(addon.price) : '';
-        lines.push(addonName + rightAlign(addonPrice, cols - itemNameLen - 8));
-      }
-      if (item.special_instructions) {
-        lines.push('  Note: ' + truncate(item.special_instructions, cols - 8));
-      }
-    }
-  }
-
-  lines.push(dash);
-  lines.push('Subtotal' + rightAlign(formatCurrency(bill.subtotal), cols - 8));
-  if (bill.discount_amount > 0) {
-    lines.push('Discount' + rightAlign('-' + formatCurrency(bill.discount_amount), cols - 8));
-  }
-  lines.push('Tax' + rightAlign(formatCurrency(bill.tax_amount), cols - 3));
-  lines.push('{BOLD}TOTAL' + rightAlign(formatCurrency(bill.total), cols - 5) + '{/BOLD}');
-
-  if (bill.payment_details) {
-    lines.push(dash);
-    try {
-      const payments = typeof bill.payment_details === 'string' ? JSON.parse(bill.payment_details) : bill.payment_details;
-      if (payments && Array.isArray(payments)) {
-        for (const payment of payments) {
-          if (payment && payment.method) {
-            lines.push(payment.method + rightAlign(formatCurrency(payment.amount), cols - payment.method.length));
-          }
-        }
-      }
-    } catch {}
-  }
-
-  lines.push(bar);
-  if (biz.address) lines.push(biz.address);
-  if (biz.phone) lines.push('Ph: ' + biz.phone);
-  if (biz.gstin) lines.push('GSTIN: ' + biz.gstin);
-  lines.push('{CENTER}Thank you!{/CENTER}');
-  lines.push('{CUT}');
-
-  return buildEscPos(lines);
+  return formatSingleReceiptCopy(order, bill, biz, cols, 'Customer Copy');
 }
 
 function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 48): Buffer {
+  return formatSingleReceiptCopy(order, bill, biz, cols, 'Customer Copy');
+}
+
+function wrapText(text: string, maxWidth: number): string[] {
+  if (!text) return [''];
+  const words = text.split(' ');
   const lines: string[] = [];
-  const date = new Date(order.created_at);
-  
-  const bar = '='.repeat(cols);
-  const dash = '-'.repeat(cols);
-  
-  const itemNameLen = cols === 42 ? 22 : 28;
+  let current = '';
 
-  lines.push('{INIT}');
-  lines.push('{CENTER}{BOLD}' + (biz.name || 'Store').toUpperCase() + '{/BOLD}{/CENTER}');
-  lines.push(bar);
-  lines.push('{CENTER}TAX INVOICE{/CENTER}');
-  lines.push(bar);
-  lines.push('Invoice #: ' + (bill.bill_number || order.order_number));
-  lines.push('Date: ' + date.toLocaleDateString());
-  lines.push('Time: ' + date.toLocaleTimeString());
-  lines.push(dash);
-  lines.push('Item' + ' '.repeat(itemNameLen) + 'Qty    Amount');
-  lines.push(dash);
-
-  if (order.items) {
-    for (const item of order.items) {
-      const name = truncate(item.product_name, itemNameLen);
-      const qty = String(item.quantity).padEnd(5);
-      const taxRate = getTaxRate(item);
-      const taxStr = taxRate > 0 ? (taxRate + '%').padEnd(5) : '     ';
-      const amt = formatCurrency(item.total);
-      lines.push(name + qty + taxStr + rightAlign(amt, 10));
-
-      const addons = parseAddons(item.addons);
-      for (const addon of addons) {
-        const addonName = truncate('  + ' + addon.name, itemNameLen + 4);
-        const addonPrice = addon.price ? formatCurrency(addon.price) : '';
-        lines.push(addonName + rightAlign(addonPrice, cols - itemNameLen - 8));
-      }
-      if (item.special_instructions) {
-        lines.push('  Note: ' + truncate(item.special_instructions, cols - 8));
-      }
+  for (const word of words) {
+    if (!current) {
+      current = word;
+    } else if ((current + ' ' + word).length <= maxWidth) {
+      current += ' ' + word;
+    } else {
+      lines.push(current);
+      current = word;
     }
   }
+  if (current) lines.push(current);
+  return lines.length > 0 ? lines : [text.substring(0, maxWidth)];
+}
 
-  lines.push(dash);
-  lines.push('Subtotal' + rightAlign(formatCurrency(bill.subtotal), cols - 8));
-  if (bill.discount_amount > 0) {
-    lines.push('Discount' + rightAlign('-' + formatCurrency(bill.discount_amount), cols - 8));
+function formatPriceNumber(amount: number | string): string {
+  const n = Number(amount) || 0;
+  if (Number.isInteger(n)) return String(n);
+  return n.toFixed(2);
+}
+
+function formatOrderType(type?: string): string {
+  if (!type) return 'Takeaway';
+  const clean = type.toLowerCase().replace(/[_\s-]+/g, '');
+  if (clean.includes('take') || clean.includes('pickup') || clean.includes('togo')) {
+    return 'Takeaway';
   }
-
-  if (bill.tax_breakdown) {
-    try {
-      const taxBreakdown = typeof bill.tax_breakdown === 'string' ? JSON.parse(bill.tax_breakdown) : bill.tax_breakdown;
-      if (Array.isArray(taxBreakdown) && taxBreakdown.length > 0) {
-        for (const tax of taxBreakdown) {
-          if (tax.amount > 0) {
-            lines.push((tax.name || 'Tax') + ' @' + tax.rate + '%' + rightAlign(formatCurrency(tax.amount), cols - 16));
-          }
-        }
-      }
-    } catch {
-      lines.push('Tax' + rightAlign(formatCurrency(bill.tax_amount), cols - 3));
-    }
-  } else {
-    lines.push('Tax' + rightAlign(formatCurrency(bill.tax_amount), cols - 3));
+  if (clean.includes('dine') || clean.includes('table')) {
+    return 'Dine-in';
   }
-
-  lines.push(bar);
-  lines.push('{BOLD}GRAND TOTAL' + rightAlign(formatCurrency(bill.total), cols - 12) + '{/BOLD}');
-
-  if (bill.payment_details) {
-    lines.push(dash);
-    try {
-      const payments = typeof bill.payment_details === 'string' ? JSON.parse(bill.payment_details) : bill.payment_details;
-      if (payments && Array.isArray(payments)) {
-        for (const payment of payments) {
-          if (payment && payment.method) {
-            lines.push(payment.method + rightAlign(formatCurrency(payment.amount), cols - payment.method.length));
-          }
-        }
-      }
-    } catch {}
+  if (clean.includes('delivery')) {
+    return 'Delivery';
   }
-
-  lines.push(bar);
-  if (biz.address) lines.push('Address: ' + biz.address);
-  if (biz.phone) lines.push('Phone: ' + biz.phone);
-  if (biz.gstin) lines.push('GSTIN: ' + biz.gstin);
-  lines.push('{CENTER}Thank you for your business!{/CENTER}');
-  lines.push('{CUT}');
-
-  return buildEscPos(lines);
+  if (clean.includes('online')) {
+    return 'Online';
+  }
+  return type.charAt(0).toUpperCase() + type.slice(1);
 }
 
 function parseAddons(addons: any): any[] {
@@ -676,21 +711,63 @@ function truncate(text: string, length: number): string {
 function formatKOT(order: any, items: any[], stationName: string, cols: number = 48): Buffer {
   const lines: string[] = [];
   const bar = '='.repeat(cols);
+  const dash = '-'.repeat(cols);
+
+  const orderNum = order?.order_number || '1';
+  const orderType = formatOrderType(order?.type || order?.order_type || order?.order_source);
+
+  // Customer Name & Phone
+  let customerName = order?.customer?.name || order?.customer_name || '';
+  let customerPhone = order?.customer?.phone || order?.customer_phone || '';
+  if (!customerName && order?.notes && order.notes.includes('Customer: ')) {
+    customerName = order.notes.split('Customer: ')[1]?.split('|')[0]?.trim();
+  }
+  if (!customerPhone && order?.notes && order.notes.includes('Phone: ')) {
+    customerPhone = order.notes.split('Phone: ')[1]?.split('|')[0]?.trim();
+  }
+  if (!customerName && order?.order_source === 'online') {
+    customerName = 'Online Customer';
+  }
+
+  const dateObj = order?.created_at ? new Date(order.created_at) : new Date();
+  const timeStr = dateObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
 
   lines.push('{INIT}');
-  lines.push('{CENTER}{BOLD}KITCHEN ORDER TICKET{/BOLD}{/CENTER}');
-  lines.push('');
-  lines.push('Station: ' + stationName);
-  lines.push('Order: ' + order.order_number);
-  if (order.table) {
-    lines.push('Table: ' + order.table.name);
+  lines.push('{CENTER}{DOUBLE_HEIGHT}{BOLD}KITCHEN ORDER TICKET{/BOLD}{/DOUBLE_HEIGHT}{/CENTER}');
+  lines.push('{CENTER}Station: ' + (stationName || 'Kitchen') + '{/CENTER}');
+  lines.push(dash);
+  lines.push('{DOUBLE_HEIGHT}{BOLD}ORDER #: ' + orderNum + '{/BOLD}{/DOUBLE_HEIGHT}');
+  lines.push('{BOLD}Type: ' + orderType.toUpperCase() + '{/BOLD}');
+  if (order.table?.name || order.table) {
+    const tName = typeof order.table === 'object' ? order.table.name : order.table;
+    lines.push('Table: ' + tName);
   }
-  lines.push('Time: ' + new Date(order.created_at).toLocaleTimeString());
+  if (customerName) {
+    lines.push('{BOLD}Customer: ' + customerName + '{/BOLD}');
+  }
+  if (customerPhone) {
+    lines.push('Phone: ' + customerPhone);
+  }
+  lines.push('Time: ' + timeStr);
   lines.push(bar);
   lines.push('');
 
-  for (const item of items) {
-    lines.push('{DOUBLE_HEIGHT}{BOLD}' + item.quantity + 'x  ' + item.product_name + '{/BOLD}{/DOUBLE_HEIGHT}');
+  for (const item of (items || [])) {
+    const qty = item.quantity || item.qty || 1;
+    const name = item.product_name || item.name || 'Item';
+    lines.push('{DOUBLE_HEIGHT}{BOLD}' + qty + 'x  ' + name + '{/BOLD}{/DOUBLE_HEIGHT}');
+    
+    // Variant / Variation
+    if (item.variant_selection) {
+      lines.push('  [' + item.variant_selection + ']');
+    }
+
+    // Addons
+    const addons = parseAddons(item.addons);
+    for (const addon of addons) {
+      lines.push('  + ' + addon.name);
+    }
+
     if (item.special_instructions) {
       lines.push('  ** ' + item.special_instructions + ' **');
     }
@@ -703,23 +780,26 @@ function formatKOT(order: any, items: any[], stationName: string, cols: number =
   return buildEscPos(lines);
 }
 
-export function buildTestPage(paperWidth: string = '80mm'): Buffer {
-  const width = paperWidth === '58mm' ? 42 : 48;
+export function buildTestPage(paperWidth: string = '80mm', printerName?: string): Buffer {
+  const width = paperWidth === '58mm' ? 32 : 48;
   const bar = '='.repeat(width);
   const lines = [
     '{INIT}',
-    '{CENTER}{BOLD}Flo Printer Test{/BOLD}{/CENTER}',
+    '{CENTER}{BOLD}FLO POS TEST PRINT{/BOLD}{/CENTER}',
+    '{CENTER}--------------------------------{/CENTER}',
+    '',
+    `Printer: ${printerName || 'Thermal Printer'}`,
+    `Paper Width: ${paperWidth}`,
+    `Connection: Windows Spooler`,
+    `Date: ${new Date().toLocaleDateString()}`,
+    `Time: ${new Date().toLocaleTimeString()}`,
     '',
     bar,
-    '{CENTER}Network / USB test print{/CENTER}',
+    '{CENTER}{BOLD}PRINTER CONFIGURED OK!{/BOLD}{/CENTER}',
+    '{CENTER}Flo POS Real Printing Ready{/CENTER}',
     bar,
     '',
-    `Paper: ${paperWidth}`,
-    `Time: ${new Date().toLocaleString()}`,
     '',
-    bar,
-    '{CENTER}If you can read this, your printer is working!{/CENTER}',
-    bar,
     '{CUT}',
   ];
   return buildEscPos(lines);
@@ -747,7 +827,7 @@ function buildEscPos(lines: string[]): Buffer {
     }
 
     if (line.includes('{CUT}')) {
-      buf.push(0x1B, 0x64, 0x02);
+      buf.push(0x1B, 0x64, 0x04);
       buf.push(0x1D, 0x56, 0x00);
       continue;
     }
@@ -854,16 +934,113 @@ async function printViaUSBMacOS(data: Buffer, printerName?: string): Promise<boo
   }
 }
 
+export function ensureWindowsPrintScript(): string {
+  const scriptPath = path.join(os.tmpdir(), 'flo-print-raw-windows.ps1');
+  const ps1Script = `param(
+    [string]$PrinterName = "RONGTA 58mm Series Printer",
+    [string]$FilePath
+)
+
+$code = @"
+using System;
+using System.IO;
+using System.Runtime.InteropServices;
+
+public class RawPrinterHelper
+{
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+    public class DOCINFOA
+    {
+        [MarshalAs(UnmanagedType.LPStr)]
+        public string pDocName;
+        [MarshalAs(UnmanagedType.LPStr)]
+        public string pOutputFile;
+        [MarshalAs(UnmanagedType.LPStr)]
+        public string pDataType;
+    }
+
+    [DllImport("winspool.Drv", EntryPoint = "OpenPrinterA", SetLastError = true, CharSet = CharSet.Ansi, ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
+    public static extern bool OpenPrinter([MarshalAs(UnmanagedType.LPStr)] string szPrinter, out IntPtr hPrinter, IntPtr pd);
+
+    [DllImport("winspool.Drv", EntryPoint = "ClosePrinter", SetLastError = true, ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
+    public static extern bool ClosePrinter(IntPtr hPrinter);
+
+    [DllImport("winspool.Drv", EntryPoint = "StartDocPrinterA", SetLastError = true, CharSet = CharSet.Ansi, ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
+    public static extern bool StartDocPrinter(IntPtr hPrinter, int level, [In, MarshalAs(UnmanagedType.LPStruct)] DOCINFOA di);
+
+    [DllImport("winspool.Drv", EntryPoint = "EndDocPrinter", SetLastError = true, ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
+    public static extern bool EndDocPrinter(IntPtr hPrinter);
+
+    [DllImport("winspool.Drv", EntryPoint = "StartPagePrinter", SetLastError = true, ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
+    public static extern bool StartPagePrinter(IntPtr hPrinter);
+
+    [DllImport("winspool.Drv", EntryPoint = "EndPagePrinter", SetLastError = true, ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
+    public static extern bool EndPagePrinter(IntPtr hPrinter);
+
+    [DllImport("winspool.Drv", EntryPoint = "WritePrinter", SetLastError = true, ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
+    public static extern bool WritePrinter(IntPtr hPrinter, IntPtr pBytes, int dwCount, out int dwWritten);
+
+    public static bool SendFileToPrinter(string szPrinterName, string szFileName)
+    {
+        if (!File.Exists(szFileName)) return false;
+        byte[] bytes = File.ReadAllBytes(szFileName);
+        if (bytes.Length == 0) return true;
+
+        IntPtr pUnmanagedBytes = Marshal.AllocCoTaskMem(bytes.Length);
+        Marshal.Copy(bytes, 0, pUnmanagedBytes, bytes.Length);
+
+        IntPtr hPrinter = IntPtr.Zero;
+        DOCINFOA di = new DOCINFOA();
+        di.pDocName = "Flo POS Document";
+        di.pDataType = "RAW";
+
+        bool success = false;
+        if (OpenPrinter(szPrinterName, out hPrinter, IntPtr.Zero))
+        {
+            if (StartDocPrinter(hPrinter, 1, di))
+            {
+                int dwWritten = 0;
+                success = WritePrinter(hPrinter, pUnmanagedBytes, bytes.Length, out dwWritten);
+                EndDocPrinter(hPrinter);
+            }
+            ClosePrinter(hPrinter);
+        }
+        Marshal.FreeCoTaskMem(pUnmanagedBytes);
+        return success;
+    }
+}
+"@
+
+if (-not ([System.Management.Automation.PSTypeName]'RawPrinterHelper').Type) {
+    Add-Type -TypeDefinition $code -Language CSharp
+}
+$res = [RawPrinterHelper]::SendFileToPrinter($PrinterName, $FilePath)
+Write-Output $res
+`;
+
+  try {
+    fs.writeFileSync(scriptPath, ps1Script, 'utf8');
+  } catch (err) {
+    console.error('[Printer] Could not write spooler script:', err);
+  }
+  return scriptPath;
+}
+
 async function printViaUSBWindows(data: Buffer, printerName?: string): Promise<boolean> {
   try {
-    let targetPrinter = printerName;
+    let targetPrinter = printerName?.trim();
 
     // If no printer name or generic placeholder name, look up default/connected thermal printer
     if (!targetPrinter || targetPrinter.toLowerCase() === 'thermal printer') {
-      const detected = detectWindowsPrinters();
-      const defaultP = detected.find(p => p.isDefault) || detected.find(p => p.make !== 'Unknown') || detected[0];
-      if (defaultP) {
-        targetPrinter = defaultP.name;
+      const dbPrinter = getPrinterConfig();
+      if (dbPrinter && dbPrinter.name && dbPrinter.name.toLowerCase() !== 'thermal printer') {
+        targetPrinter = dbPrinter.name.trim();
+      } else {
+        const detected = detectWindowsPrinters();
+        const defaultP = detected.find(p => p.isDefault) || detected.find(p => p.make !== 'Unknown') || detected[0];
+        if (defaultP) {
+          targetPrinter = defaultP.name.trim();
+        }
       }
     }
 
@@ -885,67 +1062,12 @@ async function printViaWindowsRawSpooler(data: Buffer, printerName: string): Pro
   try {
     fs.writeFileSync(tmpFile, data);
 
-    const scriptPath = path.join(__dirname, 'print-raw-windows.ps1');
-    let cmd: string;
-    if (fs.existsSync(scriptPath)) {
-      cmd = `powershell -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}" -PrinterName "${printerName}" -FilePath "${tmpFile}"`;
-    } else {
-      const escapedPrinter = printerName.replace(/"/g, '`"');
-      const escapedFile = tmpFile.replace(/\\/g, '\\\\');
-      cmd = `powershell -NoProfile -Command "$code = @'
-using System;
-using System.IO;
-using System.Runtime.InteropServices;
-public class RawPrinterHelper {
-  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
-  public class DOCINFOA {
-    [MarshalAs(UnmanagedType.LPStr)] public string pDocName;
-    [MarshalAs(UnmanagedType.LPStr)] public string pOutputFile;
-    [MarshalAs(UnmanagedType.LPStr)] public string pDataType;
-  }
-  [DllImport(\\"winspool.Drv\\", EntryPoint = \\"OpenPrinterA\\", SetLastError = true, CharSet = CharSet.Ansi, ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
-  public static extern bool OpenPrinter([MarshalAs(UnmanagedType.LPStr)] string szPrinter, out IntPtr hPrinter, IntPtr pd);
-  [DllImport(\\"winspool.Drv\\", EntryPoint = \\"ClosePrinter\\", SetLastError = true, ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
-  public static extern bool ClosePrinter(IntPtr hPrinter);
-  [DllImport(\\"winspool.Drv\\", EntryPoint = \\"StartDocPrinterA\\", SetLastError = true, CharSet = CharSet.Ansi, ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
-  public static extern bool StartDocPrinter(IntPtr hPrinter, int level, [In, MarshalAs(UnmanagedType.LPStruct)] DOCINFOA di);
-  [DllImport(\\"winspool.Drv\\", EntryPoint = \\"EndDocPrinter\\", SetLastError = true, ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
-  public static extern bool EndDocPrinter(IntPtr hPrinter);
-  [DllImport(\\"winspool.Drv\\", EntryPoint = \\"StartPagePrinter\\", SetLastError = true, ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
-  public static extern bool StartPagePrinter(IntPtr hPrinter);
-  [DllImport(\\"winspool.Drv\\", EntryPoint = \\"EndPagePrinter\\", SetLastError = true, ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
-  public static extern bool EndPagePrinter(IntPtr hPrinter);
-  [DllImport(\\"winspool.Drv\\", EntryPoint = \\"WritePrinter\\", SetLastError = true, ExactSpelling = true, CallingConvention = CallingConvention.StdCall)]
-  public static extern bool WritePrinter(IntPtr hPrinter, IntPtr pBytes, int dwCount, out int dwWritten);
-  public static bool SendFileToPrinter(string szPrinterName, string szFileName) {
-    if (!File.Exists(szFileName)) return false;
-    byte[] bytes = File.ReadAllBytes(szFileName);
-    if (bytes.Length == 0) return true;
-    IntPtr pUnmanagedBytes = Marshal.AllocCoTaskMem(bytes.Length);
-    Marshal.Copy(bytes, 0, pUnmanagedBytes, bytes.Length);
-    IntPtr hPrinter = IntPtr.Zero;
-    DOCINFOA di = new DOCINFOA();
-    di.pDocName = \\"Flo POS Document\\";
-    di.pDataType = \\"RAW\\";
-    bool success = false;
-    if (OpenPrinter(szPrinterName, out hPrinter, IntPtr.Zero)) {
-      if (StartDocPrinter(hPrinter, 1, di)) {
-        int dwWritten = 0;
-        success = WritePrinter(hPrinter, pUnmanagedBytes, bytes.Length, out dwWritten);
-        EndDocPrinter(hPrinter);
-      }
-      ClosePrinter(hPrinter);
-    }
-    Marshal.FreeCoTaskMem(pUnmanagedBytes);
-    return success;
-  }
-}
-'@
-Add-Type -TypeDefinition $code -Language CSharp
-[RawPrinterHelper]::SendFileToPrinter(\\"${escapedPrinter}\\", '${escapedFile}')"`;
-    }
+    const scriptPath = ensureWindowsPrintScript();
+    const escapedPrinter = printerName.replace(/"/g, '`"');
+    const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}" -PrinterName "${escapedPrinter}" -FilePath "${tmpFile}"`;
 
-    const result = execSync(cmd, { encoding: 'utf8' }).trim();
+    console.log(`[Printer] Spooling raw data to Windows printer "${printerName}" (${data.length} bytes)`);
+    const result = execSync(cmd, { encoding: 'utf8', timeout: 15000 }).trim();
     console.log('[Printer] Windows raw print result:', result);
     return result.toLowerCase().includes('true');
   } catch (err: any) {

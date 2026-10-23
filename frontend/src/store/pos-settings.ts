@@ -30,6 +30,10 @@ interface PosSettingsState {
   billShowAddress: boolean;
   billShowPhone: boolean;
   billShowGstn: boolean;
+  // Receipt payment & contact details
+  easypaisaNumber: string;
+  easypaisaTitle: string;
+  complaintNumber: string;
   // Actions
   setShowProductImages: (show: boolean) => void;
   setCustomerMandatory: (mandatory: boolean) => void;
@@ -52,6 +56,9 @@ interface PosSettingsState {
   setBillShowAddress: (v: boolean) => void;
   setBillShowPhone: (v: boolean) => void;
   setBillShowGstn: (v: boolean) => void;
+  setEasypaisaNumber: (n: string) => void;
+  setEasypaisaTitle: (t: string) => void;
+  setComplaintNumber: (c: string) => void;
 }
 
 export const usePosSettingsStore = create<PosSettingsState>()(
@@ -62,7 +69,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       phoneDigits: 10,
       // Printer defaults
       printerPaperSize: 'thermal58',
-      printerEnabled: false,
+      printerEnabled: true,
       printerPrintMode: 'escpos',
       autoPrintKot: false,
       autoPrintBill: false,
@@ -81,6 +88,9 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       billShowAddress: true,
       billShowPhone: true,
       billShowGstn: false,
+      easypaisaNumber: '',
+      easypaisaTitle: '',
+      complaintNumber: '',
       // Actions
       setShowProductImages: (show) => set({ showProductImages: show }),
       setCustomerMandatory: (mandatory) => set({ customerMandatory: mandatory }),
@@ -103,6 +113,9 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       setBillShowAddress: (v) => set({ billShowAddress: v }),
       setBillShowPhone: (v) => set({ billShowPhone: v }),
       setBillShowGstn: (v) => set({ billShowGstn: v }),
+      setEasypaisaNumber: (n) => set({ easypaisaNumber: n }),
+      setEasypaisaTitle: (t) => set({ easypaisaTitle: t }),
+      setComplaintNumber: (c) => set({ complaintNumber: c }),
     }),
     { name: 'pos-settings' }
   )

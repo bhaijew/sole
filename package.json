@@ -1,6 +1,6 @@
 {
   "name": "sole-what-pos",
-  "version": "1.5.7",
+  "version": "1.5.9",
   "description": "Sole What - Smart Point of Sale System",
   "main": "dist/index.js",
   "scripts": {
@@ -16,7 +16,11 @@
     "build:linux": "npm run build:frontend && npm run build && electron-builder --linux",
     "pack": "electron-builder --dir",
     "start": "electron .",
-    "rebuild": "electron-rebuild -f -o better-sqlite3"
+    "update:app": "npm run build:frontend && npm run build && electron-builder --dir",
+    "update:quick": "npm run build:frontend && npm run build",
+    "release": "node scripts/publish-release.js",
+    "rebuild": "electron-rebuild -f -o better-sqlite3",
+    "build:exe": "cmd /c compile-csharp.bat"
   },
   "author": {
     "name": "Zeeshan",
@@ -53,7 +57,6 @@
     "jsonwebtoken": "^9.0.2",
     "node-thermal-printer": "^4.2.1",
     "pg": "^8.20.0",
-    "pizza-system": "file:../pizza-main",
     "qrcode": "^1.5.3",
     "uuid": "^9.0.1",
     "ws": "^8.17.0"
@@ -61,14 +64,14 @@
   "build": {
     "appId": "com.solewhat.pos",
     "productName": "Sole What",
+    "compression": "normal",
     "asar": true,
     "asarUnpack": "**/node_modules/better-sqlite3/**/*",
     "directories": {
       "output": "release"
     },
     "files": [
-      "dist/**/*",
-      "node_modules/**/*"
+      "dist/**/*"
     ],
     "publish": {
       "provider": "github",
@@ -136,7 +139,8 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "differentialPackage": false
     }
   }
 }

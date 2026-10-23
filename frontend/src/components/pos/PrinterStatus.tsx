@@ -68,7 +68,7 @@ export default function PrinterStatus() {
   const {
     status, deviceInfo, lastError,
     connect, disconnect, clearError,
-    printMethod,
+    printMethod, backendPrinter,
   } = usePrinterStore();
 
   const cfg = STATUS_CONFIG[status];
@@ -105,7 +105,7 @@ export default function PrinterStatus() {
       if (targetId) {
         const res = await api.post(`/printers/${targetId}/test`);
         if (res.data?.success) {
-          toast.success('Test print sent to printer!');
+          toast.success(res.data?.message || 'Test print sent to printer!');
         } else {
           toast.error(res.data?.error || 'Test print failed');
         }
@@ -122,9 +122,11 @@ export default function PrinterStatus() {
   const handleDetect = async () => {
     try {
       const res = await api.get('/printers/detect');
-      const detected = res.data?.printers || [];
+      const detected = res.data?.detected || [];
+      const printers = res.data?.printers || [];
+      const defaultP = printers.find((p: any) => p.is_default === 1);
       if (detected.length > 0) {
-        toast.success(`Found ${detected.length} printer: ${detected[0].name}`);
+        toast.success(`Found ${detected.length} printer(s). Active: ${defaultP?.name || detected[0].name}`);
         await usePrinterStore.getState().refreshBackendPrinter();
       } else {
         toast('No thermal printers detected on USB.');
@@ -149,14 +151,14 @@ export default function PrinterStatus() {
             size={16}
             className={isConnecting ? 'animate-spin' : undefined}
           />
-          <span className="hidden sm:inline text-xs font-medium">
-            {cfg.label}
+          <span className="hidden sm:inline text-xs font-semibold max-w-[150px] truncate">
+            {backendPrinter?.name ? backendPrinter.name : cfg.label}
           </span>
           <ChevronDown size={12} className="text-gray-400" />
         </Button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" className="w-56">
+      <DropdownMenuContent align="end" className="w-64">
         <DropdownMenuLabel className="text-xs text-gray-500">
           Thermal Receipt Printer
         </DropdownMenuLabel>

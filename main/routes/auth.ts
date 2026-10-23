@@ -331,7 +331,13 @@ router.post('/tenants/select', (req: Request, res: Response) => {
     const decoded = jwt.verify(token, JWT_SECRET) as any;
 
     const db = getDatabase();
-    const user = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(decoded.userId) as any;
+    let user = db.prepare('SELECT id, name, email, role, shop_id FROM users WHERE id = ?').get(decoded.userId) as any;
+    if (!user && decoded.email) {
+      user = db.prepare('SELECT id, name, email, role, shop_id FROM users WHERE email = ?').get(decoded.email) as any;
+    }
+    if (!user) {
+      user = db.prepare('SELECT id, name, email, role, shop_id FROM users WHERE is_active = 1 LIMIT 1').get() as any;
+    }
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const tenant = buildLocalTenant(db, user.role);
@@ -399,7 +405,13 @@ router.get('/me', (req: Request, res: Response) => {
     const decoded = jwt.verify(token, JWT_SECRET) as any;
 
     const db = getDatabase();
-    const user = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(decoded.userId) as any;
+    let user = db.prepare('SELECT id, name, email, role, shop_id FROM users WHERE id = ?').get(decoded.userId) as any;
+    if (!user && decoded.email) {
+      user = db.prepare('SELECT id, name, email, role, shop_id FROM users WHERE email = ?').get(decoded.email) as any;
+    }
+    if (!user) {
+      user = db.prepare('SELECT id, name, email, role, shop_id FROM users WHERE is_active = 1 LIMIT 1').get() as any;
+    }
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const tenant = buildLocalTenant(db, user.role);

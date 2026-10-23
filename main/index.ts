@@ -7,7 +7,8 @@ import { startServer, stopServer, getLocalIP, isServerRunning } from './server';
 import { startKdsServer, stopKdsServer, getKdsPort, isKdsServerRunning } from './kds-server';
 import { initPrinter, printReceipt, printKOT } from './printers/thermal';
 import { registerIpcHandlers } from './ipc';
-import { initCloudSync, stopRealtimeOrderListener } from './services/cloud-sync';
+import { initCloudSync, stopRealtimeOrderListener, stopCloudSyncIntervals } from './services/cloud-sync';
+import { stopKdsIntervals } from './services/kds';
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
 
@@ -24,11 +25,21 @@ let isManualCheck = false;
 
 function setupAutoUpdater(): void {
   autoUpdater.logger = log;
-  autoUpdater.autoDownload = false;
+  autoUpdater.autoDownload = true; // Auto-download in background without prompting
   autoUpdater.autoInstallOnAppQuit = true;
 
+  try {
+    autoUpdater.setFeedURL({
+      provider: 'github',
+      owner: 'bhaijew',
+      repo: 'sole',
+    });
+  } catch (feedErr) {
+    console.warn('[Update] Could not set feed URL:', feedErr);
+  }
+
   autoUpdater.on('checking-for-update', () => {
-    console.log('[Update] Checking for updates...');
+    console.log('[Update] Checking for updates on GitHub...');
     mainWindow?.webContents.send('update-status', { status: 'checking' });
   });
 
@@ -42,18 +53,7 @@ function setupAutoUpdater(): void {
       releaseDate: info.releaseDate,
       releaseNotes: info.releaseNotes 
     });
-    dialog.showMessageBox({
-      type: 'info',
-      title: 'Update Available',
-      message: `Sole What ${info.version} is available!`,
-      detail: `Release date: ${info.releaseDate || 'Latest'}\n\nWould you like to download it now?`,
-      buttons: ['Download', 'Later'],
-      defaultId: 0,
-    }).then((result) => {
-      if (result.response === 0) {
-        autoUpdater.downloadUpdate();
-      }
-    });
+    console.log('[Update] Downloading update in background...');
   });
 
   autoUpdater.on('update-not-available', () => {
@@ -89,8 +89,8 @@ function setupAutoUpdater(): void {
     dialog.showMessageBox({
       type: 'info',
       title: 'Update Ready',
-      message: 'Update downloaded successfully!',
-      detail: `Version ${info.version} is ready to install.\n\nThe update will be installed when you restart the app.`,
+      message: `Sole What v${info.version} ready to install!`,
+      detail: `Version ${info.version} has been downloaded.\n\nRestart now to apply the update, or it will be applied automatically when you close the app.`,
       buttons: ['Restart Now', 'Later'],
       defaultId: 0,
     }).then((result) => {
@@ -148,19 +148,6 @@ function checkForUpdates(manual = false): void {
     return;
   }
   isManualCheck = manual;
-  const updateYmlPath = path.join(process.resourcesPath || '', 'app-update.yml');
-  if (!fs.existsSync(updateYmlPath)) {
-    if (manual) {
-      dialog.showMessageBox({
-        type: 'info',
-        title: 'Check for Updates',
-        message: 'Sole What is up to date!',
-        detail: `Version ${app.getVersion()}`,
-        buttons: ['OK'],
-      });
-    }
-    return;
-  }
   autoUpdater.checkForUpdates().catch((err) => {
     console.error('[Update] Check failed:', err);
   });
@@ -170,6 +157,65 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let bonjour: Bonjour | null = null;
 let isQuitting = false;
+let isCleaningUp = false;
+
+export function cleanupAndExit(): void {
+  if (isCleaningUp) return;
+  isCleaningUp = true;
+  isQuitting = true;
+
+  console.log('[Flo] Cleaning up resources before exit...');
+
+  try {
+    if (tray) {
+      tray.destroy();
+      tray = null;
+    }
+  } catch (err) {
+    console.error('[Flo] Error destroying tray:', err);
+  }
+
+  try {
+    stopCloudSyncIntervals();
+  } catch (err) {
+    console.error('[Flo] Error stopping cloud sync:', err);
+  }
+
+  try {
+    stopKdsIntervals();
+  } catch (err) {
+    console.error('[Flo] Error stopping KDS intervals:', err);
+  }
+
+  try {
+    stopMdns();
+  } catch (err) {
+    console.error('[Flo] Error stopping mDNS:', err);
+  }
+
+  try {
+    stopKdsServer();
+  } catch (err) {
+    console.error('[Flo] Error stopping KDS server:', err);
+  }
+
+  try {
+    stopServer();
+  } catch (err) {
+    console.error('[Flo] Error stopping server:', err);
+  }
+
+  try {
+    closeDatabase();
+  } catch (err) {
+    console.error('[Flo] Error closing database:', err);
+  }
+
+  console.log('[Flo] Resources cleaned up. Terminating process...');
+  setTimeout(() => {
+    app.exit(0);
+  }, 100).unref();
+}
 
 export function getMainWindow(): BrowserWindow | null {
   return mainWindow;
@@ -233,8 +279,7 @@ function createWindow(): void {
         event.preventDefault();
         mainWindow?.hide();
       } else {
-        isQuitting = true;
-        app.quit();
+        cleanupAndExit();
       }
     }
   });
@@ -286,14 +331,30 @@ function createTray(): void {
     tray = new Tray(icon.resize({ width: 16, height: 16 }));
 
     const contextMenu = Menu.buildFromTemplate([
-      { label: 'Open Sole What', click: () => mainWindow?.show() },
+      { label: 'Open Sole What', click: () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          if (!mainWindow.isVisible()) mainWindow.show();
+          mainWindow.focus();
+        } else {
+          createWindow();
+        }
+      }},
       { type: 'separator' },
-      { label: 'Quit', click: () => { isQuitting = true; app.quit(); } },
+      { label: 'Quit', click: () => { cleanupAndExit(); } },
     ]);
 
     tray.setToolTip('Sole What POS');
     tray.setContextMenu(contextMenu);
-    tray.on('double-click', () => mainWindow?.show());
+    tray.on('double-click', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        if (!mainWindow.isVisible()) mainWindow.show();
+        mainWindow.focus();
+      } else {
+        createWindow();
+      }
+    });
   } catch {
     console.log('[Tray] Icon not found, skipping tray');
   }
@@ -319,7 +380,15 @@ function startMdns(): void {
 
 function stopMdns(): void {
   if (bonjour) {
-    bonjour.unpublishAll(() => bonjour?.destroy());
+    try {
+      bonjour.unpublishAll(() => {
+        try {
+          bonjour?.destroy();
+        } catch {}
+      });
+    } catch (err) {
+      console.warn('[mDNS] Error stopping Bonjour:', err);
+    }
     bonjour = null;
   }
 }
@@ -335,7 +404,7 @@ function createMenu(): void {
         { label: 'Backup Database', click: () => mainWindow?.webContents.send('backup-database') },
         { label: 'Restore Backup', click: () => mainWindow?.webContents.send('restore-backup') },
         { type: 'separator' },
-        { label: 'Exit', accelerator: 'CmdOrCtrl+Q', click: () => { isQuitting = true; app.quit(); } },
+        { label: 'Exit', accelerator: 'CmdOrCtrl+Q', click: () => { cleanupAndExit(); } },
       ],
     },
     {
@@ -462,6 +531,8 @@ async function initialize(): Promise<void> {
 
     if (!isDev) {
       setTimeout(() => checkForUpdates(), 5000);
+      // Automatically check for new updates every 30 minutes
+      setInterval(() => checkForUpdates(), 30 * 60 * 1000);
     }
 
     console.log('[Flo] Ready!');
@@ -480,10 +551,12 @@ if (!gotTheLock) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    if (mainWindow) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       if (!mainWindow.isVisible()) mainWindow.show();
       mainWindow.focus();
+    } else {
+      createWindow();
     }
   });
 
@@ -492,12 +565,12 @@ if (!gotTheLock) {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    app.quit();
+    cleanupAndExit();
   }
 });
 
 app.on('activate', () => {
-  if (mainWindow === null) {
+  if (mainWindow === null || mainWindow.isDestroyed()) {
     createWindow();
   } else {
     mainWindow.show();
@@ -505,17 +578,11 @@ app.on('activate', () => {
 });
 
 app.on('before-quit', () => {
-  isQuitting = true;
+  cleanupAndExit();
 });
 
-app.on('quit', () => {
-  console.log('[Flo] Shutting down...');
-  stopRealtimeOrderListener();
-  stopMdns();
-  stopKdsServer();
-  stopServer();
-  closeDatabase();
-  console.log('[Flo] Goodbye!');
+app.on('will-quit', () => {
+  cleanupAndExit();
 });
 
 process.on('uncaughtException', (error) => {

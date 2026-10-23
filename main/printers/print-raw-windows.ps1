@@ -73,6 +73,8 @@ public class RawPrinterHelper
 }
 "@
 
-Add-Type -TypeDefinition $code -Language CSharp
+if (-not ([System.Management.Automation.PSTypeName]'RawPrinterHelper').Type) {
+    Add-Type -TypeDefinition $code -Language CSharp
+}
 $res = [RawPrinterHelper]::SendFileToPrinter($PrinterName, $FilePath)
 Write-Output $res

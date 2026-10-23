@@ -102,19 +102,26 @@ export const usePrinterStore = create<PrinterState>()(
             billGstin, billAddress, billPhone, billFooterMessage,
             billShowName, billShowAddress, billShowPhone, billShowGstn,
             webPrintSize,
+            easypaisaNumber, easypaisaTitle, complaintNumber,
           } = usePosSettingsStore.getState();
 
+          const copyType = opts?.copyType || 'both';
+
           if (get().printMethod === 'browser') {
-            // Browser / A4 print path
+            // Browser / HTML print path (80mm thermal receipt)
             const { printWebBill } = await import('@/lib/printer/web-print');
             printWebBill(bill, tenant, {
-              paperSize: webPrintSize,
+              paperSize: 'thermal80',
               includeGst: billShowGstn,
               gstin: billShowGstn && billGstin ? billGstin : undefined,
               address: billShowAddress && billAddress ? billAddress : undefined,
               phone: billShowPhone && billPhone ? billPhone : undefined,
               footerNote: billFooterMessage || undefined,
-              businessName: billShowName ? tenant.business_name : undefined,
+              businessName: billShowName ? (tenant.business_name || 'PIZZA MAFIA') : undefined,
+              easypaisaNumber: easypaisaNumber || undefined,
+              easypaisaTitle: easypaisaTitle || undefined,
+              complaintNumber: complaintNumber || undefined,
+              copyType,
             });
             return;
           }
@@ -123,12 +130,17 @@ export const usePrinterStore = create<PrinterState>()(
           const { paperWidth } = get();
           const builderOpts: ReceiptOptions = {
             ...opts,
-            paperWidth,
+            paperWidth: paperWidth || 80,
             gstin: billShowGstn && billGstin ? billGstin : undefined,
             address: billShowAddress && billAddress ? billAddress : undefined,
             phone: billShowPhone && billPhone ? billPhone : undefined,
             footerNote: billFooterMessage || undefined,
+            businessName: billShowName ? (tenant.business_name || 'PIZZA MAFIA') : undefined,
+            easypaisaNumber: easypaisaNumber || undefined,
+            easypaisaTitle: easypaisaTitle || undefined,
+            complaintNumber: complaintNumber || undefined,
             showTaxBreakdown: billShowGstn,
+            copyType,
           };
 
           let bytes: Uint8Array;
@@ -150,6 +162,7 @@ export const usePrinterStore = create<PrinterState>()(
               const res = await api.post('/printers/print-bill', {
                 billId: bill.id,
                 orderId: bill.order_id,
+                copyType,
               });
               if (!res.data?.success) {
                 throw new Error(res.data?.error || 'Failed to print bill');

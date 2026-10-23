@@ -10,3 +10,4 @@ release/
 .claude/
 *.log
 scratch/
+*.exe

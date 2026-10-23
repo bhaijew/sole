@@ -10,7 +10,7 @@ import { setupKdsWebSocket } from './services/kds';
 
 let server: http.Server | null = null;
 let app: Express;
-let wss: WebSocketServer;
+let wss: WebSocketServer | null = null;
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
@@ -125,8 +125,18 @@ export function startServer(): Promise<void> {
 }
 
 export function stopServer(): void {
-  if (wss) wss.close();
-  if (server) server.close();
+  if (wss) {
+    try {
+      wss.close();
+    } catch {}
+    wss = null;
+  }
+  if (server) {
+    try {
+      server.close();
+    } catch {}
+    server = null;
+  }
   console.log('[Server] HTTP server stopped');
 }
 

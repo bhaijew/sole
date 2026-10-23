@@ -1,13 +1,16 @@
 /**
  * web-print.ts
  *
- * A4/A5 bill printing using browser's native print dialog.
- * Generates HTML that can be printed silently or shown to user.
+ * 80mm Thermal Receipt Print Template & Native Browser Printing.
+ * Matches the Pizza Mafia reference design with clean 3-column items table,
+ * centered header, prominent centered total, payment details, and dual-copy
+ * (Customer Copy & Business Copy) support.
  */
 
-import type { Bill, Tenant } from '@/lib/types';
+import type { Bill, Tenant, Order, OrderItem } from '@/lib/types';
 
 export type PaperSize = 'a4' | 'a5' | 'thermal58' | 'thermal80';
+export type CopyType = 'customer' | 'business' | 'both';
 
 export interface WebPrintOptions {
   paperSize?: PaperSize;
@@ -17,183 +20,486 @@ export interface WebPrintOptions {
   phone?: string;
   footerNote?: string;
   businessName?: string;
+  easypaisaNumber?: string;
+  easypaisaTitle?: string;
+  complaintNumber?: string;
+  copyType?: CopyType;
 }
 
 /**
- * Generate HTML for A4/A5 printing and open print dialog.
+ * Open browser print dialog with the 80mm thermal receipt HTML.
  */
 export function printWebBill(
   bill: Bill,
   tenant: Pick<Tenant, 'business_name' | 'currency'>,
   opts: WebPrintOptions = {}
 ): void {
-  const { paperSize = 'a4', includeGst = false, gstin, address, phone } = opts;
-  const currency = tenant.currency ?? '₹';
-  const order = bill.order;
+  const html = generateBillHtml(bill, tenant, opts);
 
-  const html = generateBillHtml(bill, tenant, { paperSize, includeGst, gstin, address, phone });
-
-  // Create a new window with the bill HTML
-  const printWindow = window.open('', '_blank', 'width=800,height=600');
+  const printWindow = window.open('', '_blank', 'width=450,height=750');
   if (!printWindow) {
-    alert('Please allow popups to print bills');
+    alert('Please allow popups to print receipts');
     return;
   }
 
+  printWindow.document.open();
   printWindow.document.write(html);
   printWindow.document.close();
 
-  // Wait for content to load then print
   printWindow.onload = () => {
+    printWindow.focus();
     printWindow.print();
-    // Close after print dialog is dismissed (optional)
-    // printWindow.close();
   };
 }
 
 /**
- * Generate HTML string for the bill (without opening print dialog).
- * Useful for preview or PDF generation.
+ * Generate complete HTML document for 80mm thermal receipt.
+ * Supports 'customer', 'business', or 'both' copies.
  */
 export function generateBillHtml(
   bill: Bill,
   tenant: Pick<Tenant, 'business_name' | 'currency'>,
   opts: WebPrintOptions = {}
 ): string {
-  const { paperSize = 'a4', includeGst = false, gstin, address, phone, footerNote, businessName } = opts;
-  const displayName = businessName ?? tenant.business_name;
-  const currency = tenant.currency ?? '₹';
-  const order = bill.order;
+  const { copyType = 'both' } = opts;
 
-  const styles = getPaperStyles(paperSize);
-  const taxBreakdown = bill.tax_breakdown || [];
-
-  // Calculate GST components
-  let cgst = 0, sgst = 0, igst = 0;
-  for (const tax of taxBreakdown) {
-    if (tax.title === 'CGST') cgst += tax.amount;
-    else if (tax.title === 'SGST') sgst += tax.amount;
-    else if (tax.title === 'IGST') igst += tax.amount;
+  let copiesHtml = '';
+  if (copyType === 'both') {
+    copiesHtml = `
+      ${renderSingleReceipt(bill, tenant, opts, 'Customer Copy')}
+      <div class="page-break-divider"></div>
+      ${renderSingleReceipt(bill, tenant, opts, 'Business Copy')}
+    `;
+  } else if (copyType === 'business') {
+    copiesHtml = renderSingleReceipt(bill, tenant, opts, 'Business Copy');
+  } else {
+    copiesHtml = renderSingleReceipt(bill, tenant, opts, 'Customer Copy');
   }
 
-  const items = order?.items ?? [];
-
-  return `
-<!DOCTYPE html>
-<html>
+  return `<!DOCTYPE html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Bill #${bill.bill_number}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Receipt - Order #${bill.order?.order_number || bill.bill_number}</title>
   <style>
-    ${styles}
+    /* CSS Reset */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* Print & Paper Setup for 80mm Thermal Printer */
+    @page {
+      size: 80mm auto;
+      margin: 0mm;
+    }
+
+    body {
+      background-color: #f3f4f6;
+      color: #000000;
+      font-family: 'Courier New', Courier, 'Lucida Console', Monaco, monospace;
+      font-size: 14px;
+      line-height: 1.3;
+      padding: 20px 0;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Screen view wrapper */
+    .receipt-screen-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      width: 100%;
+    }
+
+    /* Top control toolbar (hidden in print) */
+    .no-print {
+      margin-bottom: 8px;
+      display: flex;
+      gap: 8px;
+    }
+    .print-btn {
+      background: #111827;
+      color: #ffffff;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: sans-serif;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .print-btn:hover {
+      background: #374151;
+    }
+    .close-btn {
+      background: #e5e7eb;
+      color: #374151;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: sans-serif;
+    }
+
+    /* Thermal 80mm Receipt Card */
+    .receipt-card {
+      width: 72mm;
+      max-width: 72mm;
+      background: #ffffff;
+      padding: 5mm 3mm;
+      margin: 0 auto;
+      border: 1px solid #e5e7eb;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+
+    /* Screen Tear-off indicator */
+    .page-break-divider {
+      width: 72mm;
+      border-top: 2px dashed #9ca3af;
+      margin: 12px auto;
+      text-align: center;
+      position: relative;
+    }
+    .page-break-divider::after {
+      content: "✂ Tear / Second Copy ✂";
+      position: absolute;
+      top: -8px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #f3f4f6;
+      padding: 0 8px;
+      font-size: 10px;
+      font-family: sans-serif;
+      color: #6b7280;
+    }
+
+    /* Header */
+    .receipt-header {
+      text-align: center;
+      margin-bottom: 6px;
+    }
+    .restaurant-name {
+      font-size: 26px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      line-height: 1.15;
+      margin-bottom: 2px;
+    }
+    .copy-label {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 4px;
+      text-transform: capitalize;
+    }
+    .header-info-line {
+      font-size: 14px;
+      line-height: 1.35;
+      margin: 1px 0;
+    }
+
+    /* Separators */
+    .dashed-line {
+      border: none;
+      border-top: 1px dashed #000000;
+      margin: 6px 0;
+      width: 100%;
+    }
+
+    /* 3-Column Items Table */
+    .items-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      margin: 2px 0 6px 0;
+    }
+    .items-table thead th {
+      font-size: 14px;
+      font-weight: bold;
+      padding: 4px 0;
+      border-bottom: 1px dashed #000000;
+    }
+    .items-table tbody td {
+      font-size: 14px;
+      padding: 3px 0;
+      vertical-align: top;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+
+    .col-item {
+      text-align: left;
+      width: 58%;
+      padding-right: 4px;
+    }
+    .col-qty {
+      text-align: right;
+      width: 18%;
+      padding-right: 4px;
+      font-weight: 600;
+    }
+    .col-price {
+      text-align: right;
+      width: 24%;
+      font-weight: 600;
+    }
+
+    .item-name {
+      font-weight: 500;
+      line-height: 1.25;
+    }
+    .item-addon {
+      font-size: 12px;
+      padding-left: 8px;
+      line-height: 1.25;
+    }
+    .item-note {
+      font-size: 12px;
+      padding-left: 8px;
+      font-style: italic;
+      line-height: 1.25;
+    }
+
+    /* Calculation breakdown rows */
+    .breakdown-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      line-height: 1.35;
+      padding: 1px 0;
+    }
+
+    /* Prominent Centered Total */
+    .total-section {
+      text-align: center;
+      margin: 6px 0;
+    }
+    .total-amount {
+      font-size: 22px;
+      font-weight: 900;
+      letter-spacing: 0.5px;
+    }
+
+    /* Payment & Contact Info */
+    .payment-info {
+      font-size: 13.5px;
+      line-height: 1.4;
+      margin-top: 4px;
+      text-align: left;
+    }
+
+    /* Thank You */
+    .thank-you {
+      font-size: 17px;
+      font-weight: bold;
+      text-align: center;
+      margin-top: 8px;
+      margin-bottom: 2px;
+    }
+
+    /* Print Media Query */
     @media print {
-      @page { margin: 3mm; size: auto; }
-      .no-print { display: none !important; }
-      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      body {
+        background: #ffffff !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        width: 80mm !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+      .receipt-screen-wrapper {
+        gap: 0 !important;
+        width: 80mm !important;
+      }
+      .receipt-card {
+        width: 72mm !important;
+        max-width: 72mm !important;
+        margin: 0 auto !important;
+        padding: 2mm 1mm !important;
+        border: none !important;
+        box-shadow: none !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+      }
+      .page-break-divider {
+        page-break-after: always !important;
+        break-after: page !important;
+        height: 0 !important;
+        margin: 0 !important;
+        border: none !important;
+      }
+      .page-break-divider::after {
+        display: none !important;
+      }
     }
   </style>
 </head>
 <body>
-  <div class="bill-container">
-    <!-- Header -->
-    <div class="header">
-      ${displayName ? `<h1>${displayName}</h1>` : ''}
-      ${address ? `<p>${address.replace(/\n/g, '<br>')}</p>` : ''}
-      ${phone ? `<p>Ph: ${phone}</p>` : ''}
-      ${gstin ? `<p>GSTIN: ${gstin}</p>` : ''}
+  <div class="receipt-screen-wrapper">
+    <div class="no-print">
+      <button class="print-btn" onclick="window.print()">🖨️ Print Receipt</button>
+      <button class="close-btn" onclick="window.close()">Close</button>
     </div>
 
-    <!-- Bill Details -->
-    <div class="bill-details">
-      <table>
-        <tr>
-          <td><strong>Bill #:</strong> ${bill.bill_number}</td>
-          <td><strong>Date:</strong> ${formatDate(order?.created_at)}</td>
-        </tr>
-        ${order?.table?.name ? `<tr><td><strong>Table:</strong> ${order.table.name}</td><td></td></tr>` : ''}
-        ${order?.customer?.name ? `<tr><td><strong>Customer:</strong> ${order.customer.name}${order.customer.phone ? ` (${order.customer.phone})` : ''}</td><td></td></tr>` : ''}
-      </table>
-    </div>
-
-    <!-- Items Table -->
-    <table class="items-table">
-      <thead>
-        <tr>
-          <th>Item</th>
-          <th class="text-right">Qty</th>
-          <th class="text-right">Rate</th>
-          <th class="text-right">Amount</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${items.map(item => `
-          <tr>
-            <td>
-              ${item.product_name}
-              ${item.addons && item.addons.length > 0 ? `<br><small class="text-muted">${item.addons.map(a => `+ ${a.name}`).join(', ')}</small>` : ''}
-              ${item.special_instructions ? `<br><small class="text-italic">${item.special_instructions}</small>` : ''}
-            </td>
-            <td class="text-right">${item.quantity}</td>
-            <td class="text-right">${formatAmount(Number(item.unit_price), currency)}</td>
-            <td class="text-right">${formatAmount(item.total, currency)}</td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-
-    <!-- Tax Breakdown (GST) -->
-    ${includeGst && taxBreakdown.length > 0 ? `
-    <table class="tax-table">
-      <thead>
-        <tr><th colspan="2">Tax Details</th></tr>
-      </thead>
-      <tbody>
-        ${igst > 0 ? `
-          <tr><td>IGST @${taxBreakdown.find(t => t.title === 'IGST')?.rate || 12}%</td><td class="text-right">${formatAmount(igst, currency)}</td></tr>
-        ` : `
-          ${cgst > 0 ? `<tr><td>CGST @${taxBreakdown.find(t => t.title === 'CGST')?.rate || 6}%</td><td class="text-right">${formatAmount(cgst, currency)}</td></tr>` : ''}
-          ${sgst > 0 ? `<tr><td>SGST @${taxBreakdown.find(t => t.title === 'SGST')?.rate || 6}%</td><td class="text-right">${formatAmount(sgst, currency)}</td></tr>` : ''}
-        `}
-      </tbody>
-    </table>
-    ` : ''}
-
-    <!-- Totals -->
-    <table class="totals-table">
-      <tr><td>Subtotal</td><td class="text-right">${formatAmount(bill.subtotal, currency)}</td></tr>
-      ${Number(bill.discount_amount) > 0 ? `<tr><td>Discount</td><td class="text-right">-${formatAmount(bill.discount_amount, currency)}</td></tr>` : ''}
-      ${Number(bill.tax_amount) > 0 ? `<tr><td>Total Tax</td><td class="text-right">${formatAmount(bill.tax_amount, currency)}</td></tr>` : ''}
-      ${Number(bill.service_charge) > 0 ? `<tr><td>Service Charge</td><td class="text-right">${formatAmount(bill.service_charge, currency)}</td></tr>` : ''}
-      ${Number(bill.delivery_charge) > 0 ? `<tr><td>Delivery Charge</td><td class="text-right">${formatAmount(bill.delivery_charge, currency)}</td></tr>` : ''}
-      <tr class="total-row"><td><strong>Grand Total</strong></td><td class="text-right"><strong>${formatAmount(bill.total, currency)}</strong></td></tr>
-    </table>
-
-    <!-- Payments -->
-    ${bill.payment_details && bill.payment_details.length > 0 ? `
-    <table class="payments-table">
-      <thead>
-        <tr><th colspan="2">Payments</th></tr>
-      </thead>
-      <tbody>
-        ${bill.payment_details.map(p => `
-          <tr><td>${capitalize(p.method)}</td><td class="text-right">${formatAmount(p.amount, currency)}</td></tr>
-        `).join('')}
-      </tbody>
-    </table>
-    ` : ''}
-
-    <!-- Footer -->
-    <div class="footer">
-      ${footerNote ? `<p>${footerNote}</p>` : '<p>Thank you for your visit!</p>'}
-      ${includeGst ? '<p>Rates inclusive of GST</p>' : ''}
-    </div>
-  </div>
-
-  <div class="no-print" style="text-align:center;margin-top:20px;">
-    <button onclick="window.print()" style="padding:10px 20px;font-size:16px;cursor:pointer;">Print Bill</button>
+    ${copiesHtml}
   </div>
 </body>
-</html>
+</html>`;
+}
+
+/**
+ * Render a single receipt block (Customer Copy or Business Copy)
+ */
+function renderSingleReceipt(
+  bill: Bill,
+  tenant: Pick<Tenant, 'business_name' | 'currency'>,
+  opts: WebPrintOptions,
+  copyLabel: 'Customer Copy' | 'Business Copy'
+): string {
+  const order = bill.order;
+  const displayName = opts.businessName || tenant.business_name || 'PIZZA MAFIA';
+  const orderNumber = order?.order_number || bill.bill_number || '1';
+
+  // Format date and time
+  const createdDate = order?.created_at ? new Date(order.created_at) : ((bill as any)?.created_at ? new Date((bill as any).created_at) : new Date());
+  const dateFormatted = formatReceiptDate(createdDate);
+  const timeFormatted = formatReceiptTime(createdDate);
+
+  // Order type: Takeaway, Dine-in, Delivery, etc.
+  const orderType = formatOrderType(order?.type || (order as any)?.order_type);
+
+  // Customer Name
+  const customerName = order?.customer?.name || (order as any)?.customer_name || 'Walk-in';
+
+  // Items
+  const items = order?.items || [];
+
+  // Totals & charges
+  const subtotal = Number(bill.subtotal || order?.subtotal || bill.total || 0);
+  const total = Number(bill.total || order?.total || 0);
+  const discount = Number(bill.discount_amount || order?.discount_amount || 0);
+  const delivery = Number(bill.delivery_charge || (order as any)?.delivery_charge || 0);
+  const tax = Number(bill.tax_amount || order?.tax_amount || 0);
+
+  const hasBreakdown = discount > 0 || delivery > 0 || tax > 0;
+
+  // Payment Details & Contact Info from settings
+  const easypaisaNumber = opts.easypaisaNumber || '';
+  const easypaisaTitle = opts.easypaisaTitle || '';
+  const complaintNumber = opts.complaintNumber || opts.phone || '';
+
+  return `
+    <div class="receipt-card">
+      <!-- 2. Receipt Header -->
+      <div class="receipt-header">
+        <div class="restaurant-name">${escapeHtml(displayName)}</div>
+        <div class="copy-label">${escapeHtml(copyLabel)}</div>
+        <div class="header-info-line">Order #: ${escapeHtml(String(orderNumber))}</div>
+        <div class="header-info-line">Date: ${escapeHtml(dateFormatted)}</div>
+        <div class="header-info-line">Time: ${escapeHtml(timeFormatted)}</div>
+        <div class="header-info-line">Type: ${escapeHtml(orderType)}</div>
+        <div class="header-info-line">Name: ${escapeHtml(customerName)}</div>
+      </div>
+
+      <!-- 3. Items Table -->
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th class="col-item">Item</th>
+            <th class="col-qty">Quantity</th>
+            <th class="col-price">Price</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map((item) => renderItemRow(item)).join('')}
+        </tbody>
+      </table>
+
+      <!-- Breakdown if discount or taxes exist -->
+      ${hasBreakdown ? `
+        <div style="margin: 4px 0;">
+          <div class="breakdown-row"><span>Subtotal:</span><span>${formatPrice(subtotal)}</span></div>
+          ${discount > 0 ? `<div class="breakdown-row"><span>Discount:</span><span>-${formatPrice(discount)}</span></div>` : ''}
+          ${delivery > 0 ? `<div class="breakdown-row"><span>Delivery:</span><span>${formatPrice(delivery)}</span></div>` : ''}
+          ${tax > 0 ? `<div class="breakdown-row"><span>Tax:</span><span>${formatPrice(tax)}</span></div>` : ''}
+        </div>
+      ` : ''}
+
+      <hr class="dashed-line" />
+
+      <!-- 4. Total Section -->
+      <div class="total-section">
+        <div class="total-amount">TOTAL: Rs ${formatPrice(total)}</div>
+      </div>
+
+      <hr class="dashed-line" />
+
+      <!-- 5. Payment and Footer -->
+      <div class="payment-info">
+        ${easypaisaNumber ? `<div>EasyPaisa: ${escapeHtml(easypaisaNumber)}</div>` : ''}
+        ${easypaisaTitle ? `<div>${escapeHtml(easypaisaTitle)}</div>` : ''}
+        ${complaintNumber ? `<div>Complaint: ${escapeHtml(complaintNumber)}</div>` : ''}
+        ${opts.footerNote ? `<div style="margin-top:2px;">${escapeHtml(opts.footerNote)}</div>` : ''}
+      </div>
+
+      <div class="thank-you">Thank You!</div>
+    </div>
+  `;
+}
+
+/**
+ * Render individual product item row with modifiers and special instructions.
+ */
+function renderItemRow(item: OrderItem): string {
+  const name = item.product_name || 'Item';
+  const qty = item.quantity || 1;
+  const itemTotal = Number(item.total ?? (Number(item.unit_price || 0) * qty));
+
+  // Parse addons
+  let addonsHtml = '';
+  if (item.addons) {
+    const parsedAddons = Array.isArray(item.addons)
+      ? item.addons
+      : typeof item.addons === 'string'
+      ? (() => { try { return JSON.parse(item.addons); } catch { return []; } })()
+      : [];
+
+    if (Array.isArray(parsedAddons) && parsedAddons.length > 0) {
+      addonsHtml = parsedAddons
+        .map((a: any) => {
+          const addonPrice = a.price ? ` (Rs ${formatPrice(a.price)})` : '';
+          return `<div class="item-addon">+ ${escapeHtml(a.name || a.addon_name || 'Addon')}${addonPrice}</div>`;
+        })
+        .join('');
+    }
+  }
+
+  // Instructions
+  const noteHtml = item.special_instructions
+    ? `<div class="item-note">>> ${escapeHtml(item.special_instructions)}</div>`
+    : '';
+
+  return `
+    <tr>
+      <td class="col-item">
+        <div class="item-name">${escapeHtml(name)}</div>
+        ${addonsHtml}
+        ${noteHtml}
+      </td>
+      <td class="col-qty">${qty}</td>
+      <td class="col-price">${formatPrice(itemTotal)}</td>
+    </tr>
   `;
 }
 
@@ -201,75 +507,56 @@ export function generateBillHtml(
 // Helpers
 // ---------------------------------------------------------------------------
 
-function getPaperStyles(size: PaperSize): string {
-  const baseStyles = `
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; line-height: 1.4; color: #333; }
-    .bill-container { max-width: 100%; margin: 0 auto; }
-    .header { text-align: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #ccc; }
-    .header h1 { font-size: 24px; margin-bottom: 5px; }
-    .bill-details { margin-bottom: 15px; }
-    .bill-details table { width: 100%; }
-    .items-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
-    .items-table th, .items-table td { padding: 8px; border-bottom: 1px solid #eee; text-align: left; }
-    .items-table th { background: #f5f5f5; font-weight: bold; }
-    .tax-table, .payments-table { width: 50%; margin-left: 50%; border-collapse: collapse; margin-bottom: 15px; }
-    .tax-table th, .tax-table td, .payments-table th, .payments-table td { padding: 6px 8px; }
-    .tax-table th, .payments-table th { background: #f9f9f9; text-align: left; }
-    .totals-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
-    .totals-table td { padding: 6px 8px; }
-    .total-row { border-top: 2px solid #333; font-size: 16px; }
-    .footer { text-align: center; margin-top: 30px; padding-top: 15px; border-top: 1px solid #ccc; }
-    .text-right { text-align: right !important; }
-    .text-muted { color: #666; }
-    .text-italic { font-style: italic; color: #888; }
-  `;
+function formatReceiptDate(d: Date): string {
+  if (!d || isNaN(d.getTime())) return '';
+  const month = d.getMonth() + 1;
+  const day = d.getDate();
+  const year = d.getFullYear();
+  return `${month}/${day}/${year}`;
+}
 
-  switch (size) {
-    case 'a4':
-      return baseStyles + `
-        .bill-container { padding: 20px; max-width: 210mm; }
-      `;
-    case 'a5':
-      return baseStyles + `
-        .bill-container { padding: 15px; max-width: 148mm; font-size: 11px; }
-        .header h1 { font-size: 18px; }
-      `;
-    case 'thermal58':
-      return baseStyles + `
-        .bill-container { padding: 5px; max-width: 58mm; font-size: 10px; }
-        .header h1 { font-size: 14px; }
-        .items-table th, .items-table td, .tax-table td, .totals-table td, .payments-table td { padding: 2px 4px; }
-      `;
-    case 'thermal80':
-      return baseStyles + `
-        .bill-container { padding: 10px; max-width: 80mm; font-size: 11px; }
-        .header h1 { font-size: 16px; }
-      `;
-    default:
-      return baseStyles;
+function formatReceiptTime(d: Date): string {
+  if (!d || isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  });
+}
+
+function formatOrderType(type?: string): string {
+  if (!type) return 'Takeaway';
+  const clean = type.toLowerCase().replace(/[_\s-]+/g, '');
+  if (clean.includes('take') || clean.includes('pickup') || clean.includes('togo')) {
+    return 'Takeaway';
   }
-}
-
-function formatAmount(value: number | string, currency: string): string {
-  return `${currency}${Number(value).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function capitalize(str: string): string {
-  return str.charAt(0).toUpperCase() + str.slice(1);
-}
-
-function formatDate(iso?: string): string {
-  if (!iso) return '';
-  try {
-    return new Date(iso).toLocaleString('en', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return iso;
+  if (clean.includes('dine') || clean.includes('table')) {
+    return 'Dine-in';
   }
+  if (clean.includes('delivery')) {
+    return 'Delivery';
+  }
+  if (clean.includes('online')) {
+    return 'Online';
+  }
+  return type.charAt(0).toUpperCase() + type.slice(1);
+}
+
+function formatPrice(amount: number | string): string {
+  const n = Number(amount) || 0;
+  // If whole number, show integer, else 2 decimals
+  if (Number.isInteger(n)) {
+    return String(n);
+  }
+  return n.toFixed(2);
+}
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }

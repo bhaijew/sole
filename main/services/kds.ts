@@ -15,6 +15,22 @@ interface KdsClient {
 
 const clients: Map<WebSocket, KdsClient> = new Map();
 
+let kdsPingInterval: NodeJS.Timeout | null = null;
+
+export function stopKdsIntervals(): void {
+  if (kdsPingInterval) {
+    clearInterval(kdsPingInterval);
+    kdsPingInterval = null;
+  }
+  clients.forEach((_, ws) => {
+    try {
+      ws.terminate();
+    } catch {}
+  });
+  clients.clear();
+  console.log('[KDS] WebSocket intervals stopped and clients disconnected');
+}
+
 export function setupKdsWebSocket(wss: WebSocketServer): void {
   wss.on('connection', (ws: WebSocket, req) => {
     console.log('[KDS] New client connection');
@@ -57,13 +73,17 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
     }));
   });
 
-  setInterval(() => {
+  if (kdsPingInterval) {
+    clearInterval(kdsPingInterval);
+  }
+  kdsPingInterval = setInterval(() => {
     clients.forEach((client, ws) => {
       if (client.userId && ws.readyState === WebSocket.OPEN) {
         ws.ping();
       }
     });
   }, 30000);
+  kdsPingInterval.unref();
 
   console.log('[KDS] WebSocket server setup complete');
 }

@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as bcrypt from 'bcryptjs';
 
 // Bump this whenever the schema changes incompatibly
-const SCHEMA_VERSION = 13;
+const SCHEMA_VERSION = 14;
 
 let db: Database.Database;
 
@@ -356,6 +356,18 @@ function runIncrementalMigrations(fromVersion: number): void {
     console.log('[DB] v13 migration complete: shop_id ensured on all tables.');
   }
 
+  // Migration from version 13 to 14 (Dual thermal printers: counter + kitchen printer & receipt copies)
+  if (fromVersion < 14) {
+    console.log('[DB] Running migration to v14 (Dual thermal printers & receipt preferences)...');
+
+    if (!columnExists('printers', 'is_kitchen')) {
+      db.exec(`ALTER TABLE printers ADD COLUMN is_kitchen INTEGER DEFAULT 0`);
+    }
+    insert('receipt_copies', 'customer');
+    insert('kitchen_printer_id', '');
+    console.log('[DB] v14 migration complete: is_kitchen column and receipt_copies setting ensured.');
+  }
+
 
   // Update schema version
   db.prepare(`
@@ -692,6 +704,7 @@ function createSchema(): void {
       port INTEGER DEFAULT 9100,
       usb_device_path TEXT,
       is_default INTEGER DEFAULT 0,
+      is_kitchen INTEGER DEFAULT 0,
       paper_width TEXT DEFAULT '80mm',
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -736,6 +749,8 @@ function seedData(): void {
   insert('cloud_auto_print_kot','1');
   insert('cloud_last_sync',     '');
   insert('pizza_system_mode',   'integrated');
+  insert('receipt_copies',      'customer');
+  insert('kitchen_printer_id',  '');
 
   // Note: All POS staff accounts are synchronized from Pizza Management Super Admin (Supabase pos_staff)
   db.exec("DELETE FROM users WHERE id IN ('user-1', 'user-2', 'user-3', 'user-4') OR email LIKE '%@flo.local';");

@@ -59,7 +59,23 @@ export default function RootLayout({
             __html: `
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', () => {
-                  navigator.serviceWorker.register('/sw.js');
+                  navigator.serviceWorker.register('/sw.js').then((reg) => {
+                    setInterval(() => {
+                      reg.update().catch(() => {});
+                    }, 5 * 60 * 1000);
+
+                    reg.addEventListener('updatefound', () => {
+                      const newWorker = reg.installing;
+                      if (newWorker) {
+                        newWorker.addEventListener('statechange', () => {
+                          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                            console.log('[Flo Mobile] Updated version available. Auto-refreshing...');
+                            window.location.reload();
+                          }
+                        });
+                      }
+                    });
+                  }).catch(() => {});
                 });
               }
             `,

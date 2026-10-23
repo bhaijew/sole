@@ -175,3 +175,173 @@ export function createTestCustomer(overrides?: Partial<Customer>): Customer {
     ...overrides,
   };
 }
+
+/**
+ * Exact Pizza Mafia Reference Receipt Data
+ */
+export function createPizzaMafiaTestOrder(): Order {
+  return {
+    id: 4,
+    order_number: '4',
+    type: 'takeaway',
+    status: 'completed',
+    subtotal: 170,
+    total: 170,
+    tax_amount: 0,
+    discount_amount: 0,
+    delivery_charge: 0,
+    table_id: null,
+    customer_id: 10,
+    guest_count: 1,
+    special_instructions: null,
+    created_by: 1,
+    created_at: '2026-09-09T15:31:04.000Z',
+    customer: {
+      id: 10,
+      name: 'mubeen',
+      phone: '03001234567',
+      country_code: '+92',
+      email: 'mubeen@example.com',
+      visits_count: 1,
+      total_spent: 170,
+      last_visit_at: '2026-09-09T15:31:04.000Z',
+    },
+    items: [
+      {
+        id: 1,
+        order_id: 4,
+        product_id: 101,
+        product_name: '1L 7UP',
+        product_sku: '7UP-1L',
+        quantity: 1,
+        unit_price: 170,
+        subtotal: 170,
+        tax_amount: 0,
+        total: 170,
+        addons: null,
+        special_instructions: null,
+        status: 'served',
+      },
+    ],
+  };
+}
+
+export function createPizzaMafiaTestBill(): Bill {
+  const order = createPizzaMafiaTestOrder();
+  return {
+    id: 4,
+    bill_number: '4',
+    order_id: 4,
+    subtotal: 170,
+    total: 170,
+    tax_amount: 0,
+    discount_amount: 0,
+    service_charge: 0,
+    delivery_charge: 0,
+    paid_amount: 170,
+    balance: 0,
+    payment_status: 'paid',
+    payment_details: [{ method: 'EasyPaisa', amount: 170, timestamp: '2026-09-09T15:31:04.000Z' }],
+    order,
+  };
+}
+
+/**
+ * Multi-item test bill with long product names, modifiers/addons, and discounts
+ */
+export function createMultiItemTestBill(): Bill {
+  const multiOrder: Order = {
+    id: 18,
+    order_number: '18',
+    type: 'dine_in',
+    status: 'completed',
+    subtotal: 3120,
+    discount_amount: 300,
+    tax_amount: 150,
+    delivery_charge: 0,
+    table_id: null,
+    customer_id: 12,
+    guest_count: 2,
+    special_instructions: null,
+    created_by: 1,
+    total: 2970,
+    created_at: '2026-09-09T16:45:12.000Z',
+    customer: {
+      id: 12,
+      name: 'Hassan Raza',
+      phone: '03219876543',
+      country_code: '+92',
+      email: 'hassan@example.com',
+      visits_count: 3,
+      total_spent: 6500,
+      last_visit_at: '2026-09-09T16:45:12.000Z',
+    },
+    items: [
+      {
+        id: 1,
+        order_id: 18,
+        product_id: 201,
+        product_name: 'Chicken Tikka Supreme Large 16-inch Stuffed Crust',
+        product_sku: 'TIKKA-LG',
+        quantity: 1,
+        unit_price: 1850,
+        subtotal: 1850,
+        tax_amount: 90,
+        total: 1850,
+        addons: [
+          { id: 1, name: 'Extra Cheese', price: 200 },
+          { id: 2, name: 'Dip Sauce', price: 70 },
+        ],
+        special_instructions: 'Well done crust, extra oregano',
+        status: 'served',
+      },
+      {
+        id: 2,
+        order_id: 18,
+        product_id: 202,
+        product_name: 'Loaded Spicy Fries with Garlic Mayo',
+        product_sku: 'FRIES-SP',
+        quantity: 2,
+        unit_price: 350,
+        subtotal: 700,
+        tax_amount: 40,
+        total: 700,
+        addons: null,
+        special_instructions: null,
+        status: 'served',
+      },
+      {
+        id: 3,
+        order_id: 18,
+        product_id: 203,
+        product_name: '1.5L Mountain Dew',
+        product_sku: 'DEW-1.5L',
+        quantity: 2,
+        unit_price: 150,
+        subtotal: 300,
+        tax_amount: 20,
+        total: 300,
+        addons: null,
+        special_instructions: null,
+        status: 'served',
+      },
+    ],
+  };
+
+  return {
+    id: 18,
+    bill_number: '18',
+    order_id: 18,
+    subtotal: 3120,
+    discount_amount: 300,
+    tax_amount: 150,
+    service_charge: 0,
+    delivery_charge: 0,
+    total: 2970,
+    paid_amount: 2970,
+    balance: 0,
+    payment_status: 'paid',
+    payment_details: [{ method: 'Cash', amount: 2970, timestamp: '2026-09-09T16:45:12.000Z' }],
+    order: multiOrder,
+  };
+}
