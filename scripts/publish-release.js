@@ -11,7 +11,7 @@ const owner = pkg.build?.publish?.owner || 'bhaijew';
 const repo = pkg.build?.publish?.repo || 'sole';
 
 console.log('=====================================================');
-console.log(`Flo POS - GitHub Release Publisher`);
+console.log(`Sole What POS - GitHub Release Publisher`);
 console.log(`Target Repo: ${owner}/${repo}`);
 console.log(`Version:     ${version} (${tag})`);
 console.log('=====================================================\n');

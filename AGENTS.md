@@ -1,4 +1,4 @@
-# FloDesktop Development Guidelines
+# Sole What Development Guidelines
 
 ## Non-Negotiable Rules
 

@@ -719,8 +719,8 @@ export default function OrdersPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filteredOrders.map((order) => {
             const isOnline = (order as any).order_source === 'online' || order.type === 'online';
-            const customerName = order.customer?.name || (order.special_instructions?.match(/Customer:\s*([^|]+)/)?.[1]?.trim());
-            const customerPhone = order.customer?.phone || (order.special_instructions?.match(/Phone:\s*([^|]+)/)?.[1]?.trim());
+            const customerName = order.customer?.name || order.customer_name || (order.special_instructions?.match(/Customer:\s*([^|]+)/)?.[1]?.trim());
+            const customerPhone = order.customer?.phone || order.customer_phone || (order.special_instructions?.match(/Phone:\s*([^|]+)/)?.[1]?.trim());
 
             return (
               <div
@@ -933,8 +933,8 @@ export default function OrdersPage() {
               <tbody className="divide-y divide-slate-100 font-medium">
                 {filteredOrders.map((order) => {
                   const isOnline = (order as any).order_source === 'online' || order.type === 'online';
-                  const customerName = order.customer?.name || (order.special_instructions?.match(/Customer:\s*([^|]+)/)?.[1]?.trim());
-                  const customerPhone = order.customer?.phone || (order.special_instructions?.match(/Phone:\s*([^|]+)/)?.[1]?.trim());
+                  const customerName = order.customer?.name || order.customer_name || (order.special_instructions?.match(/Customer:\s*([^|]+)/)?.[1]?.trim());
+                  const customerPhone = order.customer?.phone || order.customer_phone || (order.special_instructions?.match(/Phone:\s*([^|]+)/)?.[1]?.trim());
 
                   return (
                     <tr key={order.id} className="hover:bg-slate-50/80 transition-colors">
@@ -1042,16 +1042,16 @@ export default function OrdersPage() {
                   <span className="text-slate-500 font-medium">Order Type:</span>
                   <span className="font-bold text-slate-800 capitalize">{selectedOrder.type}</span>
                 </div>
-                {selectedOrder.customer && (
+                {(selectedOrder.customer || selectedOrder.customer_name) && (
                   <>
                     <div className="flex justify-between">
                       <span className="text-slate-500 font-medium">Customer Name:</span>
-                      <span className="font-bold text-slate-800">{selectedOrder.customer.name}</span>
+                      <span className="font-bold text-slate-800">{selectedOrder.customer?.name || selectedOrder.customer_name}</span>
                     </div>
-                    {selectedOrder.customer.phone && (
+                    {(selectedOrder.customer?.phone || selectedOrder.customer_phone) && (
                       <div className="flex justify-between">
                         <span className="text-slate-500 font-medium">Phone:</span>
-                        <span className="font-mono font-bold text-slate-800">{selectedOrder.customer.phone}</span>
+                        <span className="font-mono font-bold text-slate-800">{selectedOrder.customer?.phone || selectedOrder.customer_phone}</span>
                       </div>
                     )}
                   </>

@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as bcrypt from 'bcryptjs';
 
 // Bump this whenever the schema changes incompatibly
-const SCHEMA_VERSION = 14;
+const SCHEMA_VERSION = 15;
 
 let db: Database.Database;
 
@@ -131,6 +131,7 @@ function runMigrations(): void {
     { table: 'products', column: 'shop_id', type: 'INTEGER' },
     { table: 'products', column: 'cloud_id', type: 'TEXT' },
     { table: 'orders', column: 'shop_id', type: 'INTEGER' },
+    { table: 'orders', column: 'customer_name', type: 'TEXT' },
     { table: 'users', column: 'shop_id', type: 'INTEGER' },
     { table: 'tables', column: 'shop_id', type: 'INTEGER' },
   ];
@@ -368,6 +369,16 @@ function runIncrementalMigrations(fromVersion: number): void {
     console.log('[DB] v14 migration complete: is_kitchen column and receipt_copies setting ensured.');
   }
 
+  // Migration from version 14 to 15 (Customer name field on orders for POS & Receipts)
+  if (fromVersion < 15) {
+    console.log('[DB] Running migration to v15 (Customer name field on orders)...');
+
+    if (!columnExists('orders', 'customer_name')) {
+      db.exec(`ALTER TABLE orders ADD COLUMN customer_name TEXT`);
+    }
+    console.log('[DB] v15 migration complete: customer_name ensured on orders table.');
+  }
+
 
   // Update schema version
   db.prepare(`
@@ -536,6 +547,7 @@ function createSchema(): void {
       is_synced INTEGER DEFAULT 0,
       table_id TEXT,
       customer_id TEXT,
+      customer_name TEXT,
       user_id TEXT,
       type TEXT DEFAULT 'takeaway',
       guest_count INTEGER,

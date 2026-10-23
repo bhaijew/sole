@@ -954,15 +954,16 @@ export async function handleIncomingCloudOrder(cloudOrder: any): Promise<boolean
         INSERT INTO orders (
           order_number, cloud_order_id, order_source, type, status,
           subtotal, total, delivery_charge, delivery_fee, delivery_address,
-          special_instructions, customer_id, shop_id, is_synced, created_at
+          special_instructions, customer_id, customer_name, shop_id, is_synced, created_at
         ) VALUES (
           ?, ?, 'online', ?, ?,
           ?, ?, ?, ?, ?,
-          ?, ?, ?, 1, ?
+          ?, ?, ?, ?, 1, ?
         )
       `);
 
       const createdAt = cloudOrder.created_at ? new Date(cloudOrder.created_at).toISOString() : new Date().toISOString();
+      const onlineCustName = cloudOrder.customer_name ? String(cloudOrder.customer_name).trim() : null;
       const notes = [
         cloudOrder.notes,
         cloudOrder.customer_name ? `Customer: ${cloudOrder.customer_name}` : null,
@@ -982,6 +983,7 @@ export async function handleIncomingCloudOrder(cloudOrder: any): Promise<boolean
         cloudOrder.delivery_address || null,
         notes || null,
         customerId,
+        onlineCustName,
         cloudOrder.shop_id ? Number(cloudOrder.shop_id) : (currentShopId ? Number(currentShopId) : null),
         createdAt
       );
@@ -1229,13 +1231,13 @@ export async function pushOrderToCloud(order: any, rawItems: any[]): Promise<boo
     }
 
     // Customer details if any
-    let customerName: string | null = null;
-    let customerPhone: string | null = null;
+    let customerName: string | null = order.customer_name || null;
+    let customerPhone: string | null = order.customer_phone || null;
     if (order.customer_id) {
       const cust = db.prepare('SELECT name, phone FROM customers WHERE id = ?').get(order.customer_id) as any;
       if (cust) {
-        customerName = cust.name;
-        customerPhone = cust.phone;
+        customerName = customerName || cust.name;
+        customerPhone = customerPhone || cust.phone;
       }
     }
 

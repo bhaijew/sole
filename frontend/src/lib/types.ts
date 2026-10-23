@@ -142,6 +142,8 @@ export interface Order {
   order_number: string;
   table_id: number | string | null;
   customer_id: number | null;
+  customer_name?: string | null;
+  customer_phone?: string | null;
   type: 'dine_in' | 'takeaway' | 'delivery' | 'online';
   status: 'pending' | 'preparing' | 'ready' | 'served' | 'completed' | 'cancelled';
   subtotal: number;

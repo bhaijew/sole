@@ -382,9 +382,19 @@ router.post('/print-bill', async (req: Request, res: Response) => {
 
     let order: any;
     if (bill) {
-      order = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id);
+      order = db.prepare(`
+        SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name, c.phone as customer_phone
+        FROM orders o
+        LEFT JOIN customers c ON o.customer_id = c.id
+        WHERE o.id = ?
+      `).get(bill.order_id) || db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id);
     } else if (orderId) {
-      order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+      order = db.prepare(`
+        SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name, c.phone as customer_phone
+        FROM orders o
+        LEFT JOIN customers c ON o.customer_id = c.id
+        WHERE o.id = ?
+      `).get(orderId) || db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
     }
 
     if (!order) {
@@ -485,7 +495,7 @@ router.post('/print-kot', async (req: Request, res: Response) => {
     }
 
     const order: any = db.prepare(`
-      SELECT o.*, c.name as customer_name, c.phone as customer_phone
+      SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name, c.phone as customer_phone
       FROM orders o
       LEFT JOIN customers c ON o.customer_id = c.id
       WHERE o.id = ?
@@ -538,7 +548,7 @@ router.post('/print-order', async (req: Request, res: Response) => {
     }
 
     const order: any = db.prepare(`
-      SELECT o.*, c.name as customer_name, c.phone as customer_phone
+      SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name, c.phone as customer_phone
       FROM orders o
       LEFT JOIN customers c ON o.customer_id = c.id
       WHERE o.id = ?

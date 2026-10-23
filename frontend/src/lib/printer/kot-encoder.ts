@@ -47,8 +47,9 @@ export function buildKotBytes(
   const orderType = order.type.replace('_', ' ').toUpperCase();
   enc.text(`Type: ${orderType}`).newline();
 
-  if (order.customer) {
-    enc.text(`Customer: ${order.customer.name}`).newline();
+  const customerName = order.customer?.name || (order as any).customer_name;
+  if (customerName) {
+    enc.text(`Customer: ${customerName}`).newline();
   }
 
   enc.bold(false);

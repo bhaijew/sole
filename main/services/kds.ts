@@ -258,9 +258,10 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[]): void {
   const activeShop = (db.prepare("SELECT value FROM settings WHERE key = 'cloud_shop_id'").get() as any)?.value;
 
   let query = `
-    SELECT o.*, t.number as table_name
+    SELECT o.*, t.number as table_name, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name
     FROM orders o
     LEFT JOIN tables t ON o.table_id = t.id
+    LEFT JOIN customers c ON o.customer_id = c.id
     WHERE o.status NOT IN ('completed', 'cancelled')
   `;
   const params: any[] = [];

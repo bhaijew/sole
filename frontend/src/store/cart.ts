@@ -7,6 +7,7 @@ interface CartState {
   tableId: number | null;
   customerId: number | null;
   customer: Customer | null;
+  customerName: string;
   guestCount: number;
 
   addItem: (product: Product, quantity?: number, addons?: Addon[], specialInstructions?: string) => void;
@@ -18,6 +19,7 @@ interface CartState {
   setTableId: (id: number | null) => void;
   setCustomerId: (id: number | null) => void;
   setCustomer: (customer: Customer | null) => void;
+  setCustomerName: (name: string) => void;
   setGuestCount: (count: number) => void;
 
   subtotal: () => number;
@@ -41,6 +43,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   tableId: null,
   customerId: null,
   customer: null,
+  customerName: '',
   guestCount: 1,
 
   addItem: (product, quantity = 1, addons = [], specialInstructions = '') => {
@@ -78,7 +81,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   },
 
   clearCart: () => {
-    set({ items: [], tableId: null, customerId: null, customer: null, guestCount: 1 });
+    set({ items: [], tableId: null, customerId: null, customer: null, customerName: '', guestCount: 1 });
   },
 
   loadItems: (items, tableId, customerId, guestCount) => {
@@ -88,7 +91,8 @@ export const useCartStore = create<CartState>((set, get) => ({
   setOrderType: (type) => set({ orderType: type }),
   setTableId: (id) => set({ tableId: id }),
   setCustomerId: (id) => set({ customerId: id }),
-  setCustomer: (customer) => set({ customer, customerId: customer?.id ?? null }),
+  setCustomer: (customer) => set({ customer, customerId: customer?.id ?? null, customerName: customer?.name || get().customerName }),
+  setCustomerName: (name) => set({ customerName: name }),
   setGuestCount: (count) => set({ guestCount: count }),
 
   subtotal: () => {

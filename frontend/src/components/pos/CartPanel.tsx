@@ -2,7 +2,7 @@
 
 import {
   ShoppingCart, UtensilsCrossed, Package, Truck,
-  Plus, Minus, Trash2,
+  Plus, Minus, Trash2, User, X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/store/cart';
@@ -40,8 +40,8 @@ export default function CartPanel({
           : 'w-full h-full bg-white rounded-xl border border-gray-100 flex flex-col shadow-sm'
       }
     >
-      {/* Order Type */}
-      <div className="p-4 border-b border-gray-100 space-y-2">
+      {/* Order Type & Customer */}
+      <div className="p-3.5 border-b border-gray-100 space-y-2">
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
           {(['dine_in', 'takeaway', 'delivery'] as const).map((type) => {
             const Icon = orderTypeIcons[type];
@@ -49,7 +49,7 @@ export default function CartPanel({
               <button
                 key={type}
                 onClick={() => cart.setOrderType(type)}
-                className={`flex-1 flex items-center justify-center gap-1 py-2 rounded-md text-xs font-medium transition-colors ${
+                className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-xs font-medium transition-colors ${
                   cart.orderType === type
                     ? 'bg-white text-brand shadow-sm'
                     : 'text-gray-500 hover:text-gray-700'
@@ -60,6 +60,30 @@ export default function CartPanel({
               </button>
             );
           })}
+        </div>
+
+        {/* Customer Name Input Option */}
+        <div className="relative flex items-center">
+          <div className="absolute left-2.5 text-gray-400 pointer-events-none">
+            <User size={13} />
+          </div>
+          <input
+            type="text"
+            value={cart.customerName}
+            onChange={(e) => cart.setCustomerName(e.target.value)}
+            placeholder="Customer Name (Optional)"
+            className="w-full pl-7 pr-7 py-1.5 text-xs bg-gray-50 hover:bg-gray-100/70 focus:bg-white border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand transition-all"
+          />
+          {cart.customerName && (
+            <button
+              type="button"
+              onClick={() => cart.setCustomerName('')}
+              className="absolute right-2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
+              title="Clear Name"
+            >
+              <X size={12} />
+            </button>
+          )}
         </div>
       </div>
 

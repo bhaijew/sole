@@ -70,9 +70,11 @@ router.post('/generate', (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const existingBill = db.prepare('SELECT * FROM bills WHERE order_id = ?').get(order_id);
+    const existingBill = db.prepare('SELECT * FROM bills WHERE order_id = ?').get(order_id) as any;
     if (existingBill) {
-      // Return existing bill instead of error
+      const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order_id);
+      const customer = order.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) : (order.customer_name ? { name: order.customer_name } : null);
+      existingBill.order = { ...order, items, customer };
       return res.json({ bill: existingBill });
     }
 
@@ -96,7 +98,10 @@ router.post('/generate', (req: Request, res: Response) => {
       deliveryCharge, packagingCharge, roundOff, total, 0, total, now(), now()
     );
 
-    const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(result.lastInsertRowid);
+    const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(result.lastInsertRowid) as any;
+    const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order_id);
+    const customer = order.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) : (order.customer_name ? { name: order.customer_name } : null);
+    bill.order = { ...order, items, customer };
     res.status(201).json({ bill });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -189,7 +194,15 @@ router.post('/:id/payment', async (req: Request, res: Response) => {
       } catch {}
     }
 
-    const updatedBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id);
+    const updatedBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id) as any;
+    if (updatedBill) {
+      const billOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(updatedBill.order_id) as any;
+      if (billOrder) {
+        const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(billOrder.id);
+        const customer = billOrder.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(billOrder.customer_id) : (billOrder.customer_name ? { name: billOrder.customer_name } : null);
+        updatedBill.order = { ...billOrder, items, customer };
+      }
+    }
     res.json({ bill: updatedBill, walletDebited });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

@@ -239,7 +239,7 @@ router.get('/recentOrders', (req: Request, res: Response) => {
     const shopId = getActiveShopId(db, req.query.shop_id);
 
     let recentOrdersQuery = `
-      SELECT o.*, t.name as table_name, c.name as customer_name
+      SELECT o.*, t.name as table_name, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name
       FROM orders o
       LEFT JOIN tables t ON o.table_id = t.id
       LEFT JOIN customers c ON o.customer_id = c.id

@@ -1,7 +1,7 @@
 # Desktop-to-Cloud Sync Plan
 
 ## Overview
-Sync frontend and API changes from FloDesktop → FloCloud, keeping ~95% shared code in sync. FloDesktop is public, FloCloud is private.
+Sync frontend and API changes from Sole What Desktop → Cloud, keeping ~95% shared code in sync.
 
 ---
 

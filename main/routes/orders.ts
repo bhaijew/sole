@@ -56,7 +56,10 @@ router.get('/', async (req: Request, res: Response) => {
       const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson);
       const tableRow = order.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id) as any : null;
       const table = tableRow ? { ...tableRow, name: tableRow.number } : null;
-      const customer = order.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) : null;
+      let customer = order.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) : null;
+      if (!customer && order.customer_name) {
+        customer = { name: order.customer_name };
+      }
       const bill = db.prepare('SELECT * FROM bills WHERE order_id = ?').get(order.id) as any;
       return { ...order, items, table, customer, bill };
     });
@@ -78,7 +81,10 @@ router.get('/:id', (req: Request, res: Response) => {
     const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson);
     const tableRow = (order as any).table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get((order as any).table_id) as any : null;
     const table = tableRow ? { ...tableRow, name: tableRow.number } : null;
-    const customer = (order as any).customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get((order as any).customer_id) : null;
+    let customer = (order as any).customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get((order as any).customer_id) : null;
+    if (!customer && (order as any).customer_name) {
+      customer = { name: (order as any).customer_name };
+    }
     const bill = db.prepare('SELECT * FROM bills WHERE order_id = ?').get(req.params.id);
 
     res.json({ order: { ...order, items, table, customer, bill } });
@@ -89,7 +95,7 @@ router.get('/:id', (req: Request, res: Response) => {
 
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { table_id, customer_id, user_id, type, guest_count, special_instructions, packaging_charge, items } = req.body;
+    const { table_id, customer_id, customer_name, user_id, type, guest_count, special_instructions, packaging_charge, items } = req.body;
 
     if (!items || items.length === 0) {
       return res.status(400).json({ error: 'At least one item is required' });
@@ -117,12 +123,13 @@ router.post('/', async (req: Request, res: Response) => {
     // Create order
     const activeShop = req.body.shop_id || settings.cloud_shop_id || (db.prepare("SELECT value FROM settings WHERE key = 'cloud_shop_id'").get() as any)?.value;
     const shopIdNum = activeShop ? parseInt(activeShop, 10) : null;
+    const cleanCustomerName = customer_name ? String(customer_name).trim() : null;
 
     const orderResult = db.prepare(`
-      INSERT INTO orders (order_number, table_id, customer_id, user_id, type, guest_count, special_instructions,
+      INSERT INTO orders (order_number, table_id, customer_id, customer_name, user_id, type, guest_count, special_instructions,
         packaging_charge, status, shop_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
-    `).run(orderNumber, table_id || null, customer_id || null, user_id || null, type, guest_count || null,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+    `).run(orderNumber, table_id || null, customer_id || null, cleanCustomerName || null, user_id || null, type, guest_count || null,
       special_instructions || null, packaging_charge || 0, shopIdNum, now(), now());
 
     const orderId = orderResult.lastInsertRowid;
@@ -209,6 +216,9 @@ router.post('/', async (req: Request, res: Response) => {
 
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
     const orderItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson);
+    const customer = order.customer_id
+      ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id)
+      : (order.customer_name ? { name: order.customer_name } : null);
 
     notifyKdsUpdate();
 
@@ -218,7 +228,7 @@ router.post('/', async (req: Request, res: Response) => {
       pushOrderToCloud(order, orderItems).catch(() => {});
     } catch {}
 
-    res.status(201).json({ order: Object.assign({}, order, { items: orderItems }) });
+    res.status(201).json({ order: Object.assign({}, order, { items: orderItems, customer }) });
   } catch (error: any) {
     console.error('[Orders] Create error:', error);
     res.status(500).json({ error: error.message });

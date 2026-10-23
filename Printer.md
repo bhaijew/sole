@@ -1,8 +1,8 @@
-# FloDesktop Printing System
+# Sole What Printing System
 
 ## Overview
 
-FloDesktop supports two printing modes:
+Sole What supports two printing modes:
 
 1. **Desktop App (Electron)** - Uses Node.js `node-thermal-printer` library
 2. **Cloud POS (Future)** - Will use WebUSB from browser

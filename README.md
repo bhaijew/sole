@@ -1,238 +1,155 @@
-# Sole - Smart POS for Restaurants & Retail
+# Sole What - Smart Point of Sale (POS) System
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
-  <img src="https://img.shields.io/github/stars/FreeOpenSourcePOS/FloDesktop" alt="Stars">
-  <img src="https://img.shields.io/github/contributors/FreeOpenSourcePOS/FloDesktop" alt="Contributors">
+  <img src="https://img.shields.io/github/stars/bhaijew/sole" alt="Stars">
+  <img src="https://img.shields.io/github/contributors/bhaijew/sole" alt="Contributors">
 </p>
 
-Flo Desktop is a **free, open-source, offline-first Point of Sale (POS) system** designed for restaurants, cafes, salons, and retail shops. Runs on your own computer with no internet required - perfect for small businesses in India and Southeast Asia.
+**Sole What** is a high-performance, offline-first Point of Sale (POS) system designed for restaurants, cafes, pizza shops, fast food, and retail. It operates seamlessly offline on your local machine with automatic cloud synchronization, dual-printer support, thermal printing, and Kitchen Display System (KDS).
 
-## 🌟 Why Flo Desktop?
+## 🌟 Why Sole What?
 
-- **💰 Completely Free** - No subscriptions, no licenses, no hidden costs
-- **📴 Works Offline** - Full functionality without internet connection
-- **🔒 Your Data, Your Server** - Self-hosted on your own machine
-- **🍽️ Restaurant Ready** - Table management, KDS, thermal printing
-- **🛒 Retail Ready** - Product catalog, inventory, billing
-- **🖥️ Cross-Platform** - Windows, macOS, Linux
+- **💰 Completely Free & Open** - No forced subscriptions, self-hosted on your own computer
+- **📴 Offline-First** - Full POS operations without internet requirement
+- **⚡ Super Fast Ordering** - Instant cart, modifier selection, and 1-click billing
+- **🍽️ Restaurant & Pizza Ready** - Real-time tables, recipe inventory, and KDS
+- **🧾 Dual Thermal Printers** - Supports counter receipt printer + kitchen KOT printer (58mm/80mm)
+- **☁️ Cloud Sync** - Seamless real-time online order reception and menu sync
+- **🖥️ Cross-Platform** - Windows (.exe), macOS, and Linux
 
 ## 📦 Downloads
 
 | Platform | File | Description |
 |----------|------|-------------|
-| **macOS (Intel)** | `Flo-1.5.1.dmg` | For Intel Macs |
-| **macOS (Apple Silicon)** | `Flo-1.5.1-arm64.dmg` | For M1/M2/M3 Macs |
-| **Windows** | `Flo Setup 1.5.1.exe` | Windows installer |
-| **Linux (AppImage)** | `Flo-1.5.1.AppImage` | Portable Linux binary |
-| **Linux (Debian)** | `flo-desktop_1.5.1_amd64.deb` | Debian/Ubuntu package |
+| **Windows** | `Sole What Setup 1.6.1.exe` | Windows 64-bit Installer |
+| **macOS (Intel)** | `Sole-What-1.6.1.dmg` | For Intel Macs |
+| **macOS (Apple Silicon)** | `Sole-What-1.6.1-arm64.dmg` | For Apple Silicon (M1/M2/M3) Macs |
+| **Linux (AppImage)** | `Sole-What-1.6.1.AppImage` | Portable Linux binary |
+| **Linux (Debian)** | `sole-what_1.6.1_amd64.deb` | Debian/Ubuntu package |
 
-**Latest Version:** v1.5.1
+**Latest Version:** v1.6.1  
+Check all releases: [Sole What Releases](https://github.com/bhaijew/sole/releases)
 
 ## 🚀 Features
 
 ### Core POS
-- [x] Fast order entry with product search
-- [x] Multiple order types (Dine-in, Takeaway, Delivery)
-- [x] Table management with real-time status
-- [x] Cart with modifiers and addons
-- [x] Billing with multiple payment methods (Cash, UPI, Card)
-- [x] GST-compliant invoice generation
+- [x] Fast touchscreen & keyboard order entry
+- [x] Customer name field option for manual orders & receipts
+- [x] Multiple order modes (Dine-in, Takeaway, Delivery, Online)
+- [x] Real-time table floor-plan management
+- [x] Addons, variants, modifiers, and custom kitchen notes
+- [x] Instant checkout with Cash, Card, EasyPaisa, and custom methods
 
-### Restaurant Features
-- [x] Kitchen Display System (KDS)
-- [x] Kitchen Order Tickets (KOT) printing
-- [x] Table tracking and management
-- [x] Multi-station kitchen support
-- [x] Real-time order updates
+### Restaurant & Kitchen
+- [x] Real-time Kitchen Display System (KDS) with WebSocket updates
+- [x] Kitchen Order Tickets (KOT) auto-printing and reprinting
+- [x] Multi-station kitchen routing
+- [x] Recipe & Raw Material Inventory tracking with wastage logs
 
-### Thermal Printing
-- [x] ESC/POS thermal receipt printing
-- [x] USB printer support
-- [x] Network/Bluetooth printer support
-- [x] Auto-detect printers (Epson, Xprinter, Star, etc.)
-- [x] Multiple bill templates (Classic, Compact, Detailed)
-- [x] Configurable character widths (58mm/80mm paper)
+### Dual Thermal Printing
+- [x] ESC/POS direct thermal receipt printing (USB, Network IP/TCP, WebUSB)
+- [x] Independent Counter Printer + Kitchen Printer assignment
+- [x] Configurable paper widths (58mm and 80mm)
+- [x] Customer Copy & Business Copy options
+- [x] Prominent Customer Name display on receipts and KOTs
 
-### Business Management
-- [x] Product catalog with categories
-- [x] Addon groups for modifiers
-- [x] Staff management with roles
-- [x] Customer database
-- [x] Low stock alerts
-
-### Integrations
-- [x] WhatsApp bill sharing
-- [x] Thermal printer support
-- [x] Network printing
+### Cloud Sync & Online Orders
+- [x] Real-time online order reception with audio alert
+- [x] Multi-tenant shop and branch isolation
+- [x] Cloud menu synchronization
 
 ## 🖥️ Tech Stack
 
 - **Runtime:** Electron 31
 - **Backend:** Express.js + TypeScript
-- **Frontend:** Next.js 16 (React 19, TypeScript)
-- **Database:** SQLite (better-sqlite3)
-- **Styling:** Tailwind CSS + shadcn/ui
-- **Real-time:** WebSocket for KDS updates
+- **Frontend:** Next.js (React, TypeScript)
+- **Database:** SQLite (better-sqlite3) with WAL mode & automated backups
+- **Styling:** Tailwind CSS + Radix UI / shadcn
+- **Real-time:** WebSockets for live KDS & Cloud Events
 
-## 💾 Requirements
+## 💾 System Requirements
 
-### Minimum System Requirements
-- **OS:** Windows 10+, macOS 11+, Ubuntu 20.04+
-- **RAM:** 4GB
-- **Disk:** 500MB
-- **Node.js:** 20+ (for development only)
+### Minimum Requirements
+- **OS:** Windows 10/11 (64-bit), macOS 11+, or modern Linux
+- **RAM:** 4 GB minimum (8 GB recommended)
+- **Disk:** 500 MB free space
+- **Node.js:** 20+ (for source development only)
 
-### Hardware (Optional)
-- **Thermal Printer:** ESC/POS compatible (Epson TM series, Xprinter, Star, etc.)
-- **USB:** For USB-connected printers
-
-## 🚀 Quick Start
-
-### 1. Download & Install
-
-Download the appropriate installer from the [Releases](https://github.com/FreeOpenSourcePOS/FloDesktop/releases) page.
-
-### 2. First Launch
-
-On first run, the app will:
-1. Initialize the SQLite database
-2. Load demo data (optional)
-
-### 3. Login
-
-Default credentials:
-
-| Role | Email | Password |
-|------|-------|----------|
-| **Admin/Owner** | `admin@flo.local` | `admin123` |
-| **Kitchen (KDS)** | `chef@flo.local` | `chef123` |
-
-### 4. Configure Printer
-
-1. Go to **Settings** → **Printers**
-2. Click **Detect Printers**
-3. Select your thermal printer
-4. Test the connection
+### Hardware Supported
+- Standard ESC/POS Thermal Printers (Epson, Xprinter, Star, Rongta, etc.)
+- USB, Network (LAN / Wi-Fi), and Serial thermal receipt printers
+- Barcode scanners & cash drawers (RJ11 / RJ12 via printer kick-out)
 
 ## 🔧 Development Setup
 
 ```bash
 # Clone the repository
-git clone https://github.com/FreeOpenSourcePOS/FloDesktop.git
-cd FloDesktop
+git clone https://github.com/bhaijew/sole.git
+cd sole
 
-# Install dependencies
+# Install root dependencies
 npm install
 
-# Start development server
+# Install frontend dependencies
+cd frontend && npm install && cd ..
+
+# Start in development mode
 npm run dev
 
-# Build for production
-npm run build:mac    # macOS
-npm run build:win    # Windows
-npm run build:linux  # Linux
-npm run build:all    # All platforms
+# Fast backend development with pre-built UI
+npm run dev:fast
 ```
 
-### Environment Variables
+### Build Installers
 
-Create a `.env` file for production:
+```bash
+# Windows Installer (.exe)
+npm run build:win
 
-```env
-JWT_SECRET=your-secure-secret-key-here
-PORT=3088
+# macOS Installer (.dmg)
+npm run build:mac
+
+# Linux (.AppImage, .deb)
+npm run build:linux
 ```
-
-## 📱 Screenshots
-
-*(Coming soon)*
 
 ## 🏗️ Architecture
 
 ```
-FloDesktop/
-├── main/                    # Electron main process
-│   ├── db.ts              # SQLite database setup
-│   ├── routes/            # API routes
-│   ├── printers/          # Thermal printing logic
-│   └── services/          # Business logic
-├── frontend/               # Next.js frontend (submodule)
+sole/
+├── main/                   # Electron backend & local API
+│   ├── db.ts               # SQLite schema & incremental migrations
+│   ├── server.ts           # Express HTTP & WebSocket server
+│   ├── routes/             # REST API endpoints (orders, bills, printers, etc.)
+│   ├── printers/           # ESC/POS thermal encoders & print drivers
+│   └── services/           # Cloud sync, KDS, inventory & tax services
+├── frontend/               # Next.js POS UI
 │   └── src/
-│       ├── app/           # Next.js App Router
-│       ├── components/    # React components
-│       ├── hooks/         # Custom React hooks
-│       └── lib/           # Utilities
-└── release/               # Built applications
+│       ├── app/            # App router pages (pos, orders, tables, settings)
+│       ├── components/     # UI components (CartPanel, ProductGrid, modals)
+│       ├── hooks/          # React hooks (usePrinter, etc.)
+│       └── store/          # Zustand state stores (cart, auth, settings)
+└── release/                # Generated installer packages (.exe)
 ```
-
-### Database
-
-Flo Desktop uses **SQLite** for local storage:
-- `business` - Business profile
-- `products` - Product catalog
-- `categories` - Product categories
-- `tables` - Restaurant tables
-- `orders` - Order records
-- `bills` - Billing/payments
-- `printers` - Printer configurations
-- `staff` - Employee records
-- `customers` - Customer database
-
-## 🌐 Related Projects
-
-| Project | Description | Tech |
-|---------|-------------|------|
-| **[FloPOS](https://github.com/FreeOpenSourcePOS/FloPOS)** | Full-featured cloud POS with multi-tenancy | Laravel + Next.js (SaaS) |
 
 ## 🤝 Contributing
 
 Contributions are welcome!
 
-1. **Fork** the repository
-2. **Clone** your fork: `git clone https://github.com/YOUR_NAME/FloDesktop.git`
-3. **Create** a branch: `git checkout -b feature/amazing-feature`
-4. **Commit** your changes: `git commit -m 'Add amazing feature'`
-5. **Push** to the branch: `git push origin feature/amazing-feature`
-6. **Open** a Pull Request
-
-## 🐛 Troubleshooting
-
-### Printer not detected?
-- Ensure the printer is connected and powered on
-- Check USB connection
-- For network printers, ensure they're on the same network
-
-### App crashes on startup?
-- Delete the database file and restart (data will be lost)
-- Check logs in the application directory
-
-### Printing issues?
-- Verify printer supports ESC/POS protocol
-- Test with the built-in print test page
-- Check paper and ribbon/thermal head
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'feat: Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## 📄 License
 
-This project is open source under the **MIT License**.
-
-## 🙏 Acknowledgments
-
-Built with ❤️ using:
-- Electron
-- Next.js
-- SQLite
-- Tailwind CSS
-- shadcn/ui
-
-## 📞 Support
-
-- **GitHub Issues:** https://github.com/FreeOpenSourcePOS/FloDesktop/issues
-- **Community:** [Discord](https://discord.gg/flopos) | [Telegram](https://t.me/flopos)
+This project is licensed under the **MIT License**.
 
 ---
 
 <p align="center">
-  <strong>Bringing professional POS software to every small business!</strong><br>
-  ⭐ Star us on GitHub | 🐛 Report bugs | 💡 Suggest features | 📢 Share with others
+  <strong>Sole What POS</strong> - Fast, reliable, and intelligent Point of Sale.<br>
+  ⭐ Star us on GitHub: <a href="https://github.com/bhaijew/sole">https://github.com/bhaijew/sole</a>
 </p>

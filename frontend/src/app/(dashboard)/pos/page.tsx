@@ -84,12 +84,15 @@ export default function POSPage() {
       return;
     }
 
+    const customerName = cart.customerName.trim() || undefined;
+
     setSubmitting(true);
     try {
       const { data } = await api.post('/orders', {
         shop_id: (currentTenant as any)?.shop_id || undefined,
         table_id: null,
         customer_id: null,
+        customer_name: customerName,
         type: cart.orderType || 'takeaway',
         guest_count: 1,
         items: cart.items.map((item) => ({
@@ -119,15 +122,32 @@ export default function POSPage() {
             });
             const paidBill = payRes.data?.bill || generatedBill;
 
+            const billToPrint = {
+              ...paidBill,
+              order: {
+                ...(paidBill.order || data.order),
+                customer_name: data.order?.customer_name || customerName,
+                customer: (paidBill.order?.customer || data.order?.customer) || (customerName ? { name: customerName } : undefined),
+              },
+            };
+
             if (currentTenant) {
-              await printBill(paidBill, {
+              await printBill(billToPrint, {
                 business_name: currentTenant.business_name,
                 currency,
               });
             }
           } catch {
+            const billToPrint = {
+              ...generatedBill,
+              order: {
+                ...(generatedBill.order || data.order),
+                customer_name: data.order?.customer_name || customerName,
+                customer: (generatedBill.order?.customer || data.order?.customer) || (customerName ? { name: customerName } : undefined),
+              },
+            };
             if (currentTenant) {
-              await printBill(generatedBill, {
+              await printBill(billToPrint, {
                 business_name: currentTenant.business_name,
                 currency,
               });
@@ -140,7 +160,12 @@ export default function POSPage() {
 
       if (autoPrintKot) {
         try {
-          await printKot(data.order as Order);
+          const orderForKot = {
+            ...data.order,
+            customer_name: data.order?.customer_name || customerName,
+            customer: data.order?.customer || (customerName ? { name: customerName } : undefined),
+          };
+          await printKot(orderForKot as Order);
         } catch {
           toast.error('KOT print failed — check printer connection');
         }

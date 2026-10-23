@@ -506,8 +506,11 @@ function formatSingleReceiptCopy(
   if (!customerName && order?.notes && order.notes.includes('Customer: ')) {
     customerName = order.notes.split('Customer: ')[1]?.split('|')[0]?.trim();
   }
-  if (!customerName) {
-    customerName = order?.order_source === 'online' ? 'Online Customer' : 'Walk-in';
+  if (!customerName && order?.special_instructions && order.special_instructions.includes('Customer: ')) {
+    customerName = order.special_instructions.split('Customer: ')[1]?.split('|')[0]?.trim();
+  }
+  if (!customerName && order?.order_source === 'online') {
+    customerName = 'Online Customer';
   }
   const restaurantName = (biz.name || biz.business_name || 'PIZZA MAFIA').toUpperCase();
 
@@ -521,7 +524,9 @@ function formatSingleReceiptCopy(
   lines.push('{CENTER}Date: ' + dateStr + '{/CENTER}');
   lines.push('{CENTER}Time: ' + timeStr + '{/CENTER}');
   lines.push('{CENTER}Type: ' + orderType + '{/CENTER}');
-  lines.push('{CENTER}Name: ' + customerName + '{/CENTER}');
+  if (customerName) {
+    lines.push('{CENTER}Name: ' + customerName + '{/CENTER}');
+  }
 
   // 2. Separator
   lines.push(dash);
@@ -722,8 +727,14 @@ function formatKOT(order: any, items: any[], stationName: string, cols: number =
   if (!customerName && order?.notes && order.notes.includes('Customer: ')) {
     customerName = order.notes.split('Customer: ')[1]?.split('|')[0]?.trim();
   }
+  if (!customerName && order?.special_instructions && order.special_instructions.includes('Customer: ')) {
+    customerName = order.special_instructions.split('Customer: ')[1]?.split('|')[0]?.trim();
+  }
   if (!customerPhone && order?.notes && order.notes.includes('Phone: ')) {
     customerPhone = order.notes.split('Phone: ')[1]?.split('|')[0]?.trim();
+  }
+  if (!customerPhone && order?.special_instructions && order.special_instructions.includes('Phone: ')) {
+    customerPhone = order.special_instructions.split('Phone: ')[1]?.split('|')[0]?.trim();
   }
   if (!customerName && order?.order_source === 'online') {
     customerName = 'Online Customer';

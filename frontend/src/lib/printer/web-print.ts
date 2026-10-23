@@ -380,7 +380,13 @@ function renderSingleReceipt(
   const orderType = formatOrderType(order?.type || (order as any)?.order_type);
 
   // Customer Name
-  const customerName = order?.customer?.name || (order as any)?.customer_name || 'Walk-in';
+  let customerName = order?.customer?.name || (order as any)?.customer_name || '';
+  if (!customerName && order?.special_instructions && order.special_instructions.includes('Customer: ')) {
+    customerName = order.special_instructions.split('Customer: ')[1]?.split('|')[0]?.trim();
+  }
+  if (!customerName && (order as any)?.order_source === 'online') {
+    customerName = 'Online Customer';
+  }
 
   // Items
   const items = order?.items || [];
@@ -409,7 +415,7 @@ function renderSingleReceipt(
         <div class="header-info-line">Date: ${escapeHtml(dateFormatted)}</div>
         <div class="header-info-line">Time: ${escapeHtml(timeFormatted)}</div>
         <div class="header-info-line">Type: ${escapeHtml(orderType)}</div>
-        <div class="header-info-line">Name: ${escapeHtml(customerName)}</div>
+        ${customerName ? `<div class="header-info-line">Name: ${escapeHtml(customerName)}</div>` : ''}
       </div>
 
       <!-- 3. Items Table -->

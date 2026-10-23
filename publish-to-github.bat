@@ -1,9 +1,9 @@
 @echo off
 setlocal enabledelayedexpansion
-title Flo POS - Publish Release to GitHub
+title Sole What POS - Publish Release to GitHub
 
 echo ====================================================================
-echo             FLO POS - GITHUB RELEASE ^& AUTO-UPDATE UPLOADER
+echo          SOLE WHAT POS - GITHUB RELEASE ^& AUTO-UPDATE UPLOADER
 echo ====================================================================
 echo.
 echo Is script ke zariye aap naya version GitHub per upload kar sakte hain.
