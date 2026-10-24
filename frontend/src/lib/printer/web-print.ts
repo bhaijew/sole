@@ -392,6 +392,15 @@ function renderSingleReceipt(
     customerName = 'Online Customer';
   }
 
+  let customerPhone = order?.customer?.phone || (order as any)?.customer_phone || '';
+  if (!customerPhone && (order as any)?.notes && (order as any).notes.includes('Phone: ')) {
+    customerPhone = (order as any).notes.split('Phone: ')[1]?.split('|')[0]?.trim();
+  }
+  if (!customerPhone && order?.special_instructions && order.special_instructions.includes('Phone: ')) {
+    customerPhone = order.special_instructions.split('Phone: ')[1]?.split('|')[0]?.trim();
+  }
+  const deliveryAddress = (order as any)?.delivery_address || (order as any)?.address || '';
+
   // Items
   const items = order?.items || [];
 
@@ -420,6 +429,8 @@ function renderSingleReceipt(
         <div class="header-info-line">Time: ${escapeHtml(timeFormatted)}</div>
         <div class="header-info-line">Type: ${escapeHtml(orderType)}</div>
         ${customerName ? `<div class="header-info-line">Name: ${escapeHtml(customerName)}</div>` : ''}
+        ${customerPhone ? `<div class="header-info-line">Contact: ${escapeHtml(customerPhone)}</div>` : ''}
+        ${deliveryAddress ? `<div class="header-info-line">Address: ${escapeHtml(deliveryAddress)}</div>` : ''}
       </div>
 
       <!-- 3. Items Table -->

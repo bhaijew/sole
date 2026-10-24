@@ -2,7 +2,7 @@
 
 import {
   ShoppingCart, UtensilsCrossed, Package, Truck,
-  Plus, Minus, Trash2, User, X,
+  Plus, Minus, Trash2, User, X, Phone, Hash,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCartStore, getProductPriceForSize, hasProductSizes } from '@/store/cart';
@@ -62,25 +62,45 @@ export default function CartPanel({
           })}
         </div>
 
-        {/* Order Type specific number field (Table / Token / Rider / Phone) */}
+        {/* Order Type specific field (Table # for Dine-in, Customer Contact / Phone # for Delivery & Takeaway) */}
         <div className="relative flex items-center">
+          <div className="absolute left-2.5 text-gray-400 pointer-events-none">
+            {cart.orderType === 'dine_in' ? (
+              <Hash size={13} />
+            ) : (
+              <Phone size={13} className={cart.orderType === 'delivery' ? 'text-emerald-600' : 'text-gray-400'} />
+            )}
+          </div>
           <input
             type="text"
             value={cart.orderNumberInput || ''}
-            onChange={(e) => cart.setOrderNumberInput(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              cart.setOrderNumberInput(val);
+              if (cart.orderType === 'delivery' || cart.orderType === 'takeaway') {
+                cart.setCustomerPhone(val);
+              }
+            }}
             placeholder={
               cart.orderType === 'dine_in'
                 ? 'Table # / Token # (Optional)'
                 : cart.orderType === 'delivery'
-                ? 'Rider / Contact # (Optional)'
-                : 'Takeaway Token / Phone # (Optional)'
+                ? 'Customer Contact / Phone # (Optional)'
+                : 'Customer Contact / Token # (Optional)'
             }
-            className="w-full px-3 py-1.5 text-xs bg-gray-50 hover:bg-gray-100/70 focus:bg-white border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand transition-all"
+            className={`w-full pl-7 pr-7 py-1.5 text-xs border rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 transition-all ${
+              cart.orderType === 'delivery'
+                ? 'bg-emerald-50/30 border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500'
+                : 'bg-gray-50 hover:bg-gray-100/70 focus:bg-white border-gray-200 focus:ring-brand focus:border-brand'
+            }`}
           />
           {cart.orderNumberInput && (
             <button
               type="button"
-              onClick={() => cart.setOrderNumberInput('')}
+              onClick={() => {
+                cart.setOrderNumberInput('');
+                cart.setCustomerPhone('');
+              }}
               className="absolute right-2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
               title="Clear"
             >

@@ -147,6 +147,14 @@ function buildSingleCopyBytes(
     customerName = 'Online Customer';
   }
 
+  let customerPhone = order?.customer?.phone || (order as any)?.customer_phone || '';
+  if (!customerPhone && (order as any)?.notes && (order as any).notes.includes('Phone: ')) {
+    customerPhone = (order as any).notes.split('Phone: ')[1]?.split('|')[0]?.trim();
+  }
+  if (!customerPhone && order?.special_instructions && order.special_instructions.includes('Phone: ')) {
+    customerPhone = order.special_instructions.split('Phone: ')[1]?.split('|')[0]?.trim();
+  }
+
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
   // 1. Initialize
@@ -169,6 +177,13 @@ function buildSingleCopyBytes(
   enc.text(`Type: ${orderType}`).newline();
   if (customerName) {
     enc.text(`Customer: ${customerName}`).newline();
+  }
+  if (customerPhone) {
+    enc.text(`Contact: ${customerPhone}`).newline();
+  }
+  const deliveryAddress = order?.delivery_address || (order as any)?.address;
+  if (deliveryAddress && String(deliveryAddress).trim().toLowerCase() !== 'null') {
+    enc.text(`Address: ${String(deliveryAddress).trim()}`).newline();
   }
   enc.bold(false);
 

@@ -88,7 +88,21 @@ export default function POSPage() {
     const isDelivery = cart.orderType === 'delivery' || Boolean(cart.deliveryAddress.trim());
     const finalOrderType = isDelivery ? 'delivery' : (cart.orderType || 'takeaway');
     const safeDeliveryFee = isDelivery ? Math.max(0, Number(cart.deliveryFee) || 0) : 0;
-    const orderNumberNote = cart.orderNumberInput?.trim() ? `[#:${cart.orderNumberInput.trim()}]` : '';
+    const customerPhone = (cart.customerPhone?.trim() || (finalOrderType === 'delivery' || finalOrderType === 'takeaway' ? cart.orderNumberInput?.trim() : '')) || undefined;
+
+    const notesParts: string[] = [];
+    if (finalOrderType === 'dine_in' && cart.orderNumberInput?.trim()) {
+      notesParts.push(`Table: ${cart.orderNumberInput.trim()}`);
+    } else if (cart.orderNumberInput?.trim() && !customerPhone) {
+      notesParts.push(`Token: ${cart.orderNumberInput.trim()}`);
+    }
+    if (customerName) {
+      notesParts.push(`Customer: ${customerName}`);
+    }
+    if (customerPhone) {
+      notesParts.push(`Phone: ${customerPhone}`);
+    }
+    const orderSpecialInstructions = notesParts.length > 0 ? notesParts.join(' | ') : null;
 
     setSubmitting(true);
     try {
@@ -97,12 +111,14 @@ export default function POSPage() {
         table_id: null,
         customer_id: null,
         customer_name: customerName,
+        customer_phone: customerPhone,
+        phone: customerPhone,
         type: finalOrderType,
         guest_count: 1,
         delivery_charge: safeDeliveryFee,
         delivery_fee: safeDeliveryFee,
         delivery_address: cart.deliveryAddress.trim() || null,
-        special_instructions: orderNumberNote || null,
+        special_instructions: orderSpecialInstructions,
         items: cart.items.map((item) => {
           const itemSize = item.size ? `Size: ${item.size}` : '';
           const instructionsCombined = [itemSize, item.special_instructions].filter(Boolean).join(' | ');
@@ -138,12 +154,14 @@ export default function POSPage() {
             });
             const paidBill = payRes.data?.bill || generatedBill;
 
+            const finalCustomerObj = (paidBill.order?.customer || data.order?.customer) || (customerName || customerPhone ? { name: customerName || '', phone: customerPhone || '' } : undefined);
             const billToPrint = {
               ...paidBill,
               order: {
                 ...(paidBill.order || data.order),
                 customer_name: data.order?.customer_name || customerName,
-                customer: (paidBill.order?.customer || data.order?.customer) || (customerName ? { name: customerName } : undefined),
+                customer_phone: data.order?.customer_phone || customerPhone,
+                customer: finalCustomerObj,
               },
             };
 
@@ -154,12 +172,14 @@ export default function POSPage() {
               });
             }
           } catch {
+            const finalCustomerObj = (generatedBill.order?.customer || data.order?.customer) || (customerName || customerPhone ? { name: customerName || '', phone: customerPhone || '' } : undefined);
             const billToPrint = {
               ...generatedBill,
               order: {
                 ...(generatedBill.order || data.order),
                 customer_name: data.order?.customer_name || customerName,
-                customer: (generatedBill.order?.customer || data.order?.customer) || (customerName ? { name: customerName } : undefined),
+                customer_phone: data.order?.customer_phone || customerPhone,
+                customer: finalCustomerObj,
               },
             };
             if (currentTenant) {
@@ -176,10 +196,12 @@ export default function POSPage() {
 
       if (autoPrintKot) {
         try {
+          const finalCustomerObj = data.order?.customer || (customerName || customerPhone ? { name: customerName || '', phone: customerPhone || '' } : undefined);
           const orderForKot = {
             ...data.order,
             customer_name: data.order?.customer_name || customerName,
-            customer: data.order?.customer || (customerName ? { name: customerName } : undefined),
+            customer_phone: data.order?.customer_phone || customerPhone,
+            customer: finalCustomerObj,
           };
           await printKot(orderForKot as Order);
         } catch {

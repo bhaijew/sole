@@ -57,8 +57,8 @@ router.get('/', async (req: Request, res: Response) => {
       const tableRow = order.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id) as any : null;
       const table = tableRow ? { ...tableRow, name: tableRow.number } : null;
       let customer = order.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) : null;
-      if (!customer && order.customer_name) {
-        customer = { name: order.customer_name };
+      if (!customer && (order.customer_name || order.customer_phone)) {
+        customer = { name: order.customer_name || '', phone: order.customer_phone || '' };
       }
       const bill = db.prepare('SELECT * FROM bills WHERE order_id = ?').get(order.id) as any;
       return { ...order, items, table, customer, bill };
@@ -82,8 +82,8 @@ router.get('/:id', (req: Request, res: Response) => {
     const tableRow = (order as any).table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get((order as any).table_id) as any : null;
     const table = tableRow ? { ...tableRow, name: tableRow.number } : null;
     let customer = (order as any).customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get((order as any).customer_id) : null;
-    if (!customer && (order as any).customer_name) {
-      customer = { name: (order as any).customer_name };
+    if (!customer && ((order as any).customer_name || (order as any).customer_phone)) {
+      customer = { name: (order as any).customer_name || '', phone: (order as any).customer_phone || '' };
     }
     const bill = db.prepare('SELECT * FROM bills WHERE order_id = ?').get(req.params.id);
 
@@ -126,19 +126,21 @@ router.post('/', async (req: Request, res: Response) => {
     const activeShop = req.body.shop_id || settings.cloud_shop_id || (db.prepare("SELECT value FROM settings WHERE key = 'cloud_shop_id'").get() as any)?.value;
     const shopIdNum = activeShop ? parseInt(activeShop, 10) : null;
     const cleanCustomerName = customer_name ? String(customer_name).trim() : null;
+    const cleanCustomerPhone = (req.body.customer_phone || req.body.phone || req.body.customer_contact) ? String(req.body.customer_phone || req.body.phone || req.body.customer_contact).trim() : null;
 
     const orderResult = db.prepare(`
       INSERT INTO orders (
-        order_number, table_id, customer_id, customer_name, user_id, type, guest_count,
+        order_number, table_id, customer_id, customer_name, customer_phone, user_id, type, guest_count,
         special_instructions, packaging_charge, delivery_charge, delivery_fee, delivery_address,
         status, shop_id, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
     `).run(
       orderNumber,
       table_id || null,
       customer_id || null,
       cleanCustomerName || null,
+      cleanCustomerPhone || null,
       user_id || null,
       type,
       guest_count || null,
@@ -262,7 +264,7 @@ router.post('/', async (req: Request, res: Response) => {
     const orderItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson);
     const customer = order.customer_id
       ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id)
-      : (order.customer_name ? { name: order.customer_name } : null);
+      : ((order.customer_name || order.customer_phone) ? { name: order.customer_name || '', phone: order.customer_phone || '' } : null);
 
     notifyKdsUpdate();
 

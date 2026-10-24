@@ -8,6 +8,7 @@ interface CartState {
   customerId: number | null;
   customer: Customer | null;
   customerName: string;
+  customerPhone: string;
   orderNumberInput: string;
   deliveryFee: number;
   deliveryAddress: string;
@@ -24,6 +25,7 @@ interface CartState {
   setCustomerId: (id: number | null) => void;
   setCustomer: (customer: Customer | null) => void;
   setCustomerName: (name: string) => void;
+  setCustomerPhone: (phone: string) => void;
   setOrderNumberInput: (num: string) => void;
   setDeliveryFee: (fee: number) => void;
   setDeliveryAddress: (address: string) => void;
@@ -88,6 +90,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   customerId: null,
   customer: null,
   customerName: '',
+  customerPhone: '',
   orderNumberInput: '',
   deliveryFee: 0,
   deliveryAddress: '',
@@ -172,6 +175,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       customerId: null,
       customer: null,
       customerName: '',
+      customerPhone: '',
       orderNumberInput: '',
       guestCount: 1,
       deliveryFee: 0,
@@ -186,8 +190,14 @@ export const useCartStore = create<CartState>((set, get) => ({
   setOrderType: (type) => set({ orderType: type }),
   setTableId: (id) => set({ tableId: id }),
   setCustomerId: (id) => set({ customerId: id }),
-  setCustomer: (customer) => set({ customer, customerId: customer?.id ?? null, customerName: customer?.name || get().customerName }),
+  setCustomer: (customer) => set({
+    customer,
+    customerId: customer?.id ?? null,
+    customerName: customer?.name || get().customerName,
+    customerPhone: customer?.phone || get().customerPhone,
+  }),
   setCustomerName: (name) => set({ customerName: name }),
+  setCustomerPhone: (phone) => set({ customerPhone: phone }),
   setOrderNumberInput: (num) => set({ orderNumberInput: num }),
   setDeliveryFee: (fee) => set({ deliveryFee: Math.max(0, Number(fee) || 0) }),
   setDeliveryAddress: (address) => set({ deliveryAddress: address }),

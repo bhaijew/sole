@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as bcrypt from 'bcryptjs';
 
 // Bump this whenever the schema changes incompatibly
-const SCHEMA_VERSION = 15;
+const SCHEMA_VERSION = 16;
 
 let db: Database.Database;
 
@@ -379,6 +379,16 @@ function runIncrementalMigrations(fromVersion: number): void {
     console.log('[DB] v15 migration complete: customer_name ensured on orders table.');
   }
 
+  // Migration from version 15 to 16 (Customer phone field on orders for Delivery & POS)
+  if (fromVersion < 16) {
+    console.log('[DB] Running migration to v16 (Customer phone field on orders)...');
+
+    if (!columnExists('orders', 'customer_phone')) {
+      db.exec(`ALTER TABLE orders ADD COLUMN customer_phone TEXT`);
+    }
+    console.log('[DB] v16 migration complete: customer_phone ensured on orders table.');
+  }
+
 
   // Update schema version
   db.prepare(`
@@ -548,6 +558,7 @@ function createSchema(): void {
       table_id TEXT,
       customer_id TEXT,
       customer_name TEXT,
+      customer_phone TEXT,
       user_id TEXT,
       type TEXT DEFAULT 'takeaway',
       guest_count INTEGER,

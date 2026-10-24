@@ -56,6 +56,17 @@ export function buildKotBytes(
     enc.text(`Customer: ${customerName}`).newline();
   }
 
+  let customerPhone = order.customer?.phone || (order as any).customer_phone;
+  if (!customerPhone && (order as any).notes && (order as any).notes.includes('Phone: ')) {
+    customerPhone = (order as any).notes.split('Phone: ')[1]?.split('|')[0]?.trim();
+  }
+  if (!customerPhone && order.special_instructions && order.special_instructions.includes('Phone: ')) {
+    customerPhone = order.special_instructions.split('Phone: ')[1]?.split('|')[0]?.trim();
+  }
+  if (customerPhone) {
+    enc.text(`Contact: ${customerPhone}`).newline();
+  }
+
   const deliveryAddr = order.delivery_address || (order as any).address;
   if (deliveryAddr && String(deliveryAddr).trim().toLowerCase() !== 'null') {
     enc.text(`Delivery: ${String(deliveryAddr).trim()}`).newline();

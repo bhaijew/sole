@@ -512,6 +512,14 @@ function formatSingleReceiptCopy(
   if (!customerName && order?.order_source === 'online') {
     customerName = 'Online Customer';
   }
+
+  let customerPhone = order?.customer?.phone || order?.customer_phone || '';
+  if (!customerPhone && order?.notes && order.notes.includes('Phone: ')) {
+    customerPhone = order.notes.split('Phone: ')[1]?.split('|')[0]?.trim();
+  }
+  if (!customerPhone && order?.special_instructions && order.special_instructions.includes('Phone: ')) {
+    customerPhone = order.special_instructions.split('Phone: ')[1]?.split('|')[0]?.trim();
+  }
   // Resolve shop name directly from database settings if not explicitly provided or if default
   let restaurantName = (biz?.name || biz?.business_name || '').trim();
   let shopAddress = (biz?.address || '').trim();
@@ -555,6 +563,13 @@ function formatSingleReceiptCopy(
   lines.push('{CENTER}{BOLD}Type: ' + orderType + '{/BOLD}{/CENTER}');
   if (customerName) {
     lines.push('{CENTER}{BOLD}Customer: ' + customerName + '{/BOLD}{/CENTER}');
+  }
+  if (customerPhone) {
+    lines.push('{CENTER}{BOLD}Contact: ' + customerPhone + '{/BOLD}{/CENTER}');
+  }
+  const deliveryAddr = order?.delivery_address || order?.address;
+  if (deliveryAddr && String(deliveryAddr).trim().toLowerCase() !== 'null') {
+    lines.push('{CENTER}{BOLD}Address: ' + String(deliveryAddr).trim() + '{/BOLD}{/CENTER}');
   }
 
   // 2. Separator
