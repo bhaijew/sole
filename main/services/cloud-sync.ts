@@ -1440,9 +1440,38 @@ export function startRealtimeOrderListener(): void {
               .run(localStatus, String(updated.id), updated.order_number);
             notifyKdsUpdate();
             broadcastCloudEvent('order-status-updated', { orderNumber: updated.order_number, status: localStatus });
-            broadcastCloudEvent('tables-updated');
           } catch (e) {
             console.error('[CloudSync] Error updating local order status from cloud:', e);
+          }
+        }
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'orders' }, async (payload) => {
+        const deleted = payload.old;
+        console.log('[CloudSync] Realtime DELETE event received from Supabase orders:', deleted);
+        if (deleted) {
+          try {
+            const db = getDatabase();
+            if (deleted.id) {
+              const localOrder = db.prepare('SELECT id FROM orders WHERE cloud_order_id = ? OR id = ?').get(String(deleted.id), deleted.id) as any;
+              if (localOrder) {
+                db.prepare('DELETE FROM order_items WHERE order_id = ?').run(localOrder.id);
+                db.prepare('DELETE FROM bills WHERE order_id = ?').run(localOrder.id);
+                db.prepare('DELETE FROM orders WHERE id = ?').run(localOrder.id);
+              }
+            }
+            if (deleted.order_number) {
+              const localOrder = db.prepare('SELECT id FROM orders WHERE order_number = ?').get(deleted.order_number) as any;
+              if (localOrder) {
+                db.prepare('DELETE FROM order_items WHERE order_id = ?').run(localOrder.id);
+                db.prepare('DELETE FROM bills WHERE order_id = ?').run(localOrder.id);
+                db.prepare('DELETE FROM orders WHERE id = ?').run(localOrder.id);
+              }
+            }
+            notifyKdsUpdate();
+            broadcastCloudEvent('order-deleted', { cloudId: deleted.id, orderNumber: deleted.order_number });
+            broadcastCloudEvent('order-synced');
+          } catch (e) {
+            console.error('[CloudSync] Error deleting local order from cloud:', e);
           }
         }
       })

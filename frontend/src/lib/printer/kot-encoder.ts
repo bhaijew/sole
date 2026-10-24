@@ -81,10 +81,10 @@ export function buildKotBytes(
     const qtyName = `${item.quantity}x ${item.product_name}`;
     enc.bold(true).width(2).height(2).text(truncate(qtyName, maxDoubleCols)).width(1).height(1).newline();
 
-    // Variant / Variation (strictly eliminate "variant = null")
-    const vText = cleanVariant((item as any).variant_selection || (item as any).variant || (item as any).selected_variation);
-    if (vText && vText.toLowerCase() !== 'null' && vText.toLowerCase() !== 'undefined' && !/^(vraint|variant)\s*[:=]\s*null$/i.test(vText)) {
-      enc.bold(true).height(2).text(`  >> VARIANT: ${vText.toUpperCase()}`).height(1).newline();
+    // Variant / Variation / Size (Double Height Bold)
+    const vText = cleanVariant((item as any).variant_selection || (item as any).variant || (item as any).size || (item as any).selected_variation);
+    if (vText) {
+      enc.bold(true).height(2).text(`  >> SIZE / VARIANT: ${vText.toUpperCase()}`).height(1).newline();
     }
 
     // Addons
@@ -95,12 +95,12 @@ export function buildKotBytes(
     }
 
     // Special instructions (eliminate any "vraint = null" or null)
-    const cleanNotes = item.special_instructions ? String(item.special_instructions).trim() : '';
+    const cleanNotes = cleanNotesText(item.special_instructions);
     if (
       cleanNotes &&
       cleanNotes.toLowerCase() !== 'null' &&
       cleanNotes.toLowerCase() !== 'undefined' &&
-      !/^(vraint|variant)\s*[:=]\s*null$/i.test(cleanNotes)
+      cleanNotes.toUpperCase() !== vText?.toUpperCase()
     ) {
       enc.bold(true).height(2).text(`  ⚠️ NOTE: ${truncate(cleanNotes.toUpperCase(), cols - 12)}`).height(1).newline();
     }
@@ -125,10 +125,20 @@ export function buildKotBytes(
 // Helpers
 // ---------------------------------------------------------------------------
 
+export function cleanNotesText(notes: any): string {
+  if (!notes) return '';
+  let str = String(notes).trim();
+  str = str.replace(/(?:vraint|variant)\s*[:=]\s*null/gi, '');
+  str = str.replace(/\bnull\b/gi, '');
+  str = str.replace(/\|\s*\|/g, '|').replace(/^[\s|]+|[\s|]+$/g, '').trim();
+  return str;
+}
+
 export function cleanVariant(v: any): string {
   if (!v) return '';
   if (typeof v === 'string') {
-    const trimmed = v.trim();
+    let trimmed = v.trim();
+    trimmed = trimmed.replace(/(?:vraint|variant)\s*[:=]\s*null/gi, '').trim();
     if (
       !trimmed ||
       trimmed.toLowerCase() === 'null' ||
@@ -144,9 +154,11 @@ export function cleanVariant(v: any): string {
       if (!parsed || parsed === 'null' || parsed === 'undefined') return '';
       if (typeof parsed === 'string') return cleanVariant(parsed);
       if (typeof parsed === 'object') {
-        if (parsed.name) return String(parsed.name).trim();
-        if (parsed.title) return String(parsed.title).trim();
-        const vals = Object.values(parsed).filter((x) => x && String(x).toLowerCase() !== 'null' && String(x).toLowerCase() !== 'undefined');
+        if (parsed.name) return cleanVariant(String(parsed.name));
+        if (parsed.title) return cleanVariant(String(parsed.title));
+        const vals = Object.values(parsed)
+          .map((x) => cleanVariant(x))
+          .filter(Boolean);
         return vals.join(', ');
       }
     } catch {
@@ -155,9 +167,11 @@ export function cleanVariant(v: any): string {
     return trimmed;
   }
   if (typeof v === 'object') {
-    if (v.name) return String(v.name).trim();
-    if (v.title) return String(v.title).trim();
-    const vals = Object.values(v).filter((x) => x && String(x).toLowerCase() !== 'null' && String(x).toLowerCase() !== 'undefined');
+    if (v.name) return cleanVariant(String(v.name));
+    if (v.title) return cleanVariant(String(v.title));
+    const vals = Object.values(v)
+      .map((x) => cleanVariant(x))
+      .filter(Boolean);
     return vals.join(', ');
   }
   return String(v);

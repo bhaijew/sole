@@ -8,7 +8,7 @@ import type { Product, Addon, AddonGroup } from '@/lib/types';
 interface Props {
   product: Product;
   currency: string;
-  onAdd: (product: Product, quantity: number, addons: Addon[], specialInstructions: string) => void;
+  onAdd: (product: Product, quantity: number, addons: Addon[], specialInstructions: string, size?: string) => void;
   onClose: () => void;
 }
 
@@ -16,6 +16,7 @@ export default function AddonModal({ product, currency, onAdd, onClose }: Props)
   const [selected, setSelected] = useState<Record<number, Addon[]>>({});
   const [quantity, setQuantity] = useState(1);
   const [instructions, setInstructions] = useState('');
+  const [selectedSize, setSelectedSize] = useState<string>('Medium');
 
   const groups = product.addon_groups || [];
 
@@ -47,7 +48,7 @@ export default function AddonModal({ product, currency, onAdd, onClose }: Props)
 
   const handleAdd = () => {
     if (!isValid) return;
-    onAdd(product, quantity, allAddons, instructions);
+    onAdd(product, quantity, allAddons, instructions, selectedSize);
     onClose();
   };
 
@@ -62,6 +63,29 @@ export default function AddonModal({ product, currency, onAdd, onClose }: Props)
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X size={20} />
           </button>
+        </div>
+
+        {/* Pizza / Item Size Selector */}
+        <div className="px-5 pt-3 pb-1 border-b border-gray-100 bg-gray-50/70">
+          <label className="text-xs font-bold text-gray-700 block mb-1.5 uppercase tracking-wider">
+            Select Size:
+          </label>
+          <div className="grid grid-cols-4 gap-1.5">
+            {(['Small', 'Medium', 'Large', 'Extra Large'] as const).map((sz) => (
+              <button
+                key={sz}
+                type="button"
+                onClick={() => setSelectedSize(sz)}
+                className={`py-1.5 px-2 rounded-lg text-xs font-bold transition-all ${
+                  selectedSize === sz
+                    ? 'bg-orange-600 text-white shadow-xs'
+                    : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-100'
+                }`}
+              >
+                {sz === 'Extra Large' ? 'XL' : sz}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-5">

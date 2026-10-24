@@ -37,6 +37,13 @@ export default function CloudSyncStatus() {
         } else if (data.event === 'online-order-received') {
           toast.success(`🔔 New Online Order #${data.orderNumber || ''}! Printing KOT...`, { duration: 5000 });
           window.dispatchEvent(new Event('flo:order-synced'));
+        } else if (data.event === 'order-deleted') {
+          toast('🗑️ Order removed from Pizza Admin', { icon: 'ℹ️' });
+          window.dispatchEvent(new Event('flo:order-deleted'));
+          window.dispatchEvent(new Event('flo:order-synced'));
+        } else if (data.event === 'order-status-updated') {
+          window.dispatchEvent(new Event('flo:order-status-updated'));
+          window.dispatchEvent(new Event('flo:order-synced'));
         } else if (data.event === 'connection-status') {
           fetchStatus();
         }
@@ -61,6 +68,9 @@ export default function CloudSyncStatus() {
               window.dispatchEvent(new Event('flo:staff-synced'));
             } else if (data?.type === 'cloud:online-order-received') {
               toast.success(`🔔 Online Order #${data.payload?.orderNumber || ''} received!`, { duration: 5000 });
+              window.dispatchEvent(new Event('flo:order-synced'));
+            } else if (data?.type === 'cloud:order-deleted') {
+              window.dispatchEvent(new Event('flo:order-deleted'));
               window.dispatchEvent(new Event('flo:order-synced'));
             } else if (data?.type === 'orders_updated') {
               window.dispatchEvent(new Event('flo:order-synced'));

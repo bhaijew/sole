@@ -191,6 +191,17 @@ function buildSingleCopyBytes(
       enc.text(l).newline();
     }
 
+    // Variant / Size display (Bold)
+    const variantOrSize = (item as any).variant_selection || (item as any).variant || (item as any).size;
+    let cleanVar = '';
+    if (variantOrSize) {
+      const vStr = String(variantOrSize).replace(/(?:vraint|variant)\s*[:=]\s*null/gi, '').trim();
+      if (vStr && vStr.toLowerCase() !== 'null' && vStr.toLowerCase() !== 'undefined') {
+        cleanVar = vStr;
+        enc.text(truncate(`  >> SIZE: ${vStr.toUpperCase()}`, cols)).newline();
+      }
+    }
+
     // Addons
     if (item.addons) {
       const addons = Array.isArray(item.addons)
@@ -206,9 +217,15 @@ function buildSingleCopyBytes(
       }
     }
 
-    // Instructions
+    // Instructions (Filter nulls and avoid duplicating size)
     if (item.special_instructions) {
-      enc.text(truncate(`  >> ${item.special_instructions}`, cols)).newline();
+      let inst = String(item.special_instructions)
+        .replace(/(?:vraint|variant)\s*[:=]\s*null/gi, '')
+        .replace(/\bnull\b/gi, '')
+        .trim();
+      if (inst && inst.toLowerCase() !== 'null' && inst.toLowerCase() !== 'undefined' && inst.toUpperCase() !== cleanVar.toUpperCase()) {
+        enc.text(truncate(`  >> ${inst}`, cols)).newline();
+      }
     }
     enc.bold(false);
   }

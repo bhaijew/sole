@@ -584,6 +584,12 @@ function formatSingleReceiptCopy(
         lines.push('{BOLD}' + wrappedLines[i] + '{/BOLD}');
       }
 
+      // Format variant/size clearly
+      const variantOrSize = cleanVariant(item.variant_selection || item.variant || item.size || item.selected_variation);
+      if (variantOrSize) {
+        lines.push('{BOLD}  >> SIZE / VARIANT: ' + variantOrSize.toUpperCase() + '{/BOLD}');
+      }
+
       // Addons
       const addons = parseAddons(item.addons);
       for (const addon of addons) {
@@ -592,8 +598,9 @@ function formatSingleReceiptCopy(
       }
 
       // Special instructions
-      if (item.special_instructions) {
-        lines.push('{BOLD}  >> ' + item.special_instructions + '{/BOLD}');
+      const cleanInstruction = cleanNotesText(item.special_instructions);
+      if (cleanInstruction && cleanInstruction.toUpperCase() !== variantOrSize?.toUpperCase()) {
+        lines.push('{BOLD}  >> ' + cleanInstruction + '{/BOLD}');
       }
     }
   }
@@ -742,10 +749,21 @@ function truncate(text: string, length: number): string {
   return text.length > length ? text.substring(0, length - 2) + '..' : text;
 }
 
+export function cleanNotesText(notes: any): string {
+  if (!notes) return '';
+  let str = String(notes).trim();
+  // Strip any variant=null or vraint=null anywhere in text
+  str = str.replace(/(?:vraint|variant)\s*[:=]\s*null/gi, '');
+  str = str.replace(/\bnull\b/gi, '');
+  str = str.replace(/\|\s*\|/g, '|').replace(/^[\s|]+|[\s|]+$/g, '').trim();
+  return str;
+}
+
 export function cleanVariant(v: any): string {
   if (!v) return '';
   if (typeof v === 'string') {
-    const trimmed = v.trim();
+    let trimmed = v.trim();
+    trimmed = trimmed.replace(/(?:vraint|variant)\s*[:=]\s*null/gi, '').trim();
     if (
       !trimmed ||
       trimmed.toLowerCase() === 'null' ||
@@ -761,9 +779,11 @@ export function cleanVariant(v: any): string {
       if (!parsed || parsed === 'null' || parsed === 'undefined') return '';
       if (typeof parsed === 'string') return cleanVariant(parsed);
       if (typeof parsed === 'object') {
-        if (parsed.name) return String(parsed.name).trim();
-        if (parsed.title) return String(parsed.title).trim();
-        const vals = Object.values(parsed).filter((x) => x && String(x).toLowerCase() !== 'null' && String(x).toLowerCase() !== 'undefined');
+        if (parsed.name) return cleanVariant(String(parsed.name));
+        if (parsed.title) return cleanVariant(String(parsed.title));
+        const vals = Object.values(parsed)
+          .map((x) => cleanVariant(x))
+          .filter(Boolean);
         return vals.join(', ');
       }
     } catch {
@@ -772,9 +792,11 @@ export function cleanVariant(v: any): string {
     return trimmed;
   }
   if (typeof v === 'object') {
-    if (v.name) return String(v.name).trim();
-    if (v.title) return String(v.title).trim();
-    const vals = Object.values(v).filter((x) => x && String(x).toLowerCase() !== 'null' && String(x).toLowerCase() !== 'undefined');
+    if (v.name) return cleanVariant(String(v.name));
+    if (v.title) return cleanVariant(String(v.title));
+    const vals = Object.values(v)
+      .map((x) => cleanVariant(x))
+      .filter(Boolean);
     return vals.join(', ');
   }
   return String(v);
@@ -864,12 +886,12 @@ function formatKOT(order: any, items: any[], stationName: string, cols: number =
     }
 
     // Special instructions (Alert in Double Height Bold - eliminate any "vraint = null" or null)
-    const cleanNotes = item.special_instructions ? String(item.special_instructions).trim() : '';
+    const cleanNotes = cleanNotesText(item.special_instructions);
     if (
       cleanNotes &&
       cleanNotes.toLowerCase() !== 'null' &&
       cleanNotes.toLowerCase() !== 'undefined' &&
-      !/^(vraint|variant)\s*[:=]\s*null$/i.test(cleanNotes)
+      cleanNotes.toUpperCase() !== vText?.toUpperCase()
     ) {
       lines.push('{DOUBLE_HEIGHT}{BOLD}  ⚠️ NOTE: ' + cleanNotes.toUpperCase() + '{/BOLD}{/DOUBLE_HEIGHT}');
     }

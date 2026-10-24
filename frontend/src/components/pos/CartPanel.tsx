@@ -62,6 +62,33 @@ export default function CartPanel({
           })}
         </div>
 
+        {/* Order Type specific number field (Table / Token / Rider / Phone) */}
+        <div className="relative flex items-center">
+          <input
+            type="text"
+            value={cart.orderNumberInput || ''}
+            onChange={(e) => cart.setOrderNumberInput(e.target.value)}
+            placeholder={
+              cart.orderType === 'dine_in'
+                ? 'Table # / Token # (Optional)'
+                : cart.orderType === 'delivery'
+                ? 'Rider / Contact # (Optional)'
+                : 'Takeaway Token / Phone # (Optional)'
+            }
+            className="w-full px-3 py-1.5 text-xs bg-gray-50 hover:bg-gray-100/70 focus:bg-white border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand transition-all"
+          />
+          {cart.orderNumberInput && (
+            <button
+              type="button"
+              onClick={() => cart.setOrderNumberInput('')}
+              className="absolute right-2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
+              title="Clear"
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
+
         {/* Customer Name Input */}
         <div className="relative flex items-center">
           <div className="absolute left-2.5 text-gray-400 pointer-events-none">
@@ -179,11 +206,33 @@ export default function CartPanel({
         ) : (
           <div className="space-y-3">
             {cart.items.map((item) => (
-              <div key={item.id} className="flex items-start gap-3">
+              <div key={item.id} className="flex items-start gap-3 border-b border-gray-50 pb-2.5 last:border-0 last:pb-0">
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">
+                  <p className="text-sm font-bold text-gray-900 truncate">
                     {item.product.name}
                   </p>
+
+                  {/* Size Selector: Small, Medium, Large, Extra Large */}
+                  <div className="flex items-center gap-1 my-1 flex-wrap">
+                    {(['Small', 'Medium', 'Large', 'Extra Large'] as const).map((sz) => {
+                      const isCurrentSize = item.size?.toLowerCase() === sz.toLowerCase();
+                      return (
+                        <button
+                          key={sz}
+                          type="button"
+                          onClick={() => cart.updateItemSize(item.id, sz)}
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-all ${
+                            isCurrentSize
+                              ? 'bg-orange-600 text-white shadow-xs'
+                              : 'bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-200'
+                          }`}
+                        >
+                          {sz === 'Extra Large' ? 'XL' : sz}
+                        </button>
+                      );
+                    })}
+                  </div>
+
                   {item.addons.length > 0 && (
                     <div className="mt-0.5">
                       {item.addons.map((a) => (
@@ -196,7 +245,7 @@ export default function CartPanel({
                   {item.special_instructions && (
                     <p className="text-xs text-gray-400 italic mt-0.5">{item.special_instructions}</p>
                   )}
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm font-semibold text-gray-600 mt-0.5">
                     {currency}{Number(item.product.price).toLocaleString()}
                   </p>
                 </div>

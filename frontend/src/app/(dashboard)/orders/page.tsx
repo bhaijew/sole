@@ -344,11 +344,15 @@ export default function OrdersPage() {
 
     window.addEventListener('flo:order-synced', handleOrderSynced);
     window.addEventListener('flo:online-order-received', handleOrderSynced);
+    window.addEventListener('flo:order-deleted', handleOrderSynced);
+    window.addEventListener('flo:order-status-updated', handleOrderSynced);
     window.addEventListener('flo:menu-synced', handleOrderSynced);
 
     return () => {
       window.removeEventListener('flo:order-synced', handleOrderSynced);
       window.removeEventListener('flo:online-order-received', handleOrderSynced);
+      window.removeEventListener('flo:order-deleted', handleOrderSynced);
+      window.removeEventListener('flo:order-status-updated', handleOrderSynced);
       window.removeEventListener('flo:menu-synced', handleOrderSynced);
     };
   }, [fetchOrders]);

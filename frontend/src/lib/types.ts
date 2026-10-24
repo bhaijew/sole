@@ -231,4 +231,7 @@ export interface CartItem {
   quantity: number;
   addons: Addon[];
   special_instructions: string;
+  variant_selection?: string;
+  size?: 'Small' | 'Medium' | 'Large' | 'Extra Large' | string;
 }
+

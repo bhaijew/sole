@@ -74,8 +74,8 @@ export default function POSPage() {
     }
   };
 
-  const handleAddonAdd = (product: Product, quantity: number, addons: Addon[], instructions: string) => {
-    cart.addItem(product, quantity, addons, instructions);
+  const handleAddonAdd = (product: Product, quantity: number, addons: Addon[], instructions: string, size?: string) => {
+    cart.addItem(product, quantity, addons, instructions, size);
   };
 
   const handlePlaceOrder = async () => {
@@ -88,6 +88,7 @@ export default function POSPage() {
     const isDelivery = cart.orderType === 'delivery' || Boolean(cart.deliveryAddress.trim());
     const finalOrderType = isDelivery ? 'delivery' : (cart.orderType || 'takeaway');
     const safeDeliveryFee = isDelivery ? Math.max(0, Number(cart.deliveryFee) || 0) : 0;
+    const orderNumberNote = cart.orderNumberInput?.trim() ? `[#:${cart.orderNumberInput.trim()}]` : '';
 
     setSubmitting(true);
     try {
@@ -101,14 +102,21 @@ export default function POSPage() {
         delivery_charge: safeDeliveryFee,
         delivery_fee: safeDeliveryFee,
         delivery_address: cart.deliveryAddress.trim() || null,
-        items: cart.items.map((item) => ({
-          product_id: item.product.id,
-          quantity: item.quantity,
-          addons: item.addons.length > 0
-            ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price }))
-            : null,
-          special_instructions: item.special_instructions || null,
-        })),
+        special_instructions: orderNumberNote || null,
+        items: cart.items.map((item) => {
+          const itemSize = item.size ? `Size: ${item.size}` : '';
+          const instructionsCombined = [itemSize, item.special_instructions].filter(Boolean).join(' | ');
+
+          return {
+            product_id: item.product.id,
+            quantity: item.quantity,
+            addons: item.addons.length > 0
+              ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price }))
+              : null,
+            special_instructions: instructionsCombined || null,
+            variant_selection: item.size || null,
+          };
+        }),
       });
 
       toast.success(`Order #${data.order.order_number} placed!`);
