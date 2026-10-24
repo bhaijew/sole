@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
-import { useCartStore, getProductPriceForSize } from '@/store/cart';
+import { useCartStore, getProductPriceForSize, hasProductSizes } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import toast from 'react-hot-toast';
 import { ShoppingCart } from 'lucide-react';
@@ -67,7 +67,7 @@ export default function POSPage() {
   }, []);
 
   const handleProductClick = (product: Product) => {
-    if (product.addon_groups && product.addon_groups.length > 0) {
+    if ((product.addon_groups && product.addon_groups.length > 0) || hasProductSizes(product)) {
       setAddonProduct(product);
     } else {
       cart.addItem(product);

@@ -47,6 +47,14 @@ function generateCartItemId(productId: number, addons: Addon[], specialInstructi
   return parts.join('-');
 }
 
+export function hasProductSizes(product: Product): boolean {
+  return Boolean(
+    product.variations &&
+    Array.isArray(product.variations) &&
+    product.variations.length > 0
+  );
+}
+
 export function getProductPriceForSize(product: Product, size?: string): number {
   const basePrice = Number(product.price) || 0;
   if (!size) return basePrice;
@@ -87,9 +95,11 @@ export const useCartStore = create<CartState>((set, get) => ({
 
   addItem: (product, quantity = 1, addons = [], specialInstructions = '', size = '') => {
     const items = get().items;
-    const itemId = generateCartItemId(product.id, addons, specialInstructions, size);
+    const isSized = hasProductSizes(product);
+    const effectiveSize = isSized ? (size || 'Medium') : undefined;
+    const itemId = generateCartItemId(product.id, addons, specialInstructions, effectiveSize);
     const existing = items.find((i) => i.id === itemId);
-    const unitPrice = getProductPriceForSize(product, size);
+    const unitPrice = isSized ? getProductPriceForSize(product, effectiveSize) : (Number(product.price) || 0);
 
     if (existing) {
       set({
@@ -107,8 +117,8 @@ export const useCartStore = create<CartState>((set, get) => ({
             quantity,
             addons,
             special_instructions: specialInstructions,
-            size: size || undefined,
-            variant_selection: size || undefined,
+            size: effectiveSize,
+            variant_selection: effectiveSize,
             unit_price: unitPrice,
           },
         ],

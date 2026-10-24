@@ -5,7 +5,7 @@ import {
   Plus, Minus, Trash2, User, X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useCartStore, getProductPriceForSize } from '@/store/cart';
+import { useCartStore, getProductPriceForSize, hasProductSizes } from '@/store/cart';
 import type { Table } from '@/lib/types';
 
 interface Props {
@@ -212,28 +212,30 @@ export default function CartPanel({
                     {item.product.name}
                   </p>
 
-                  {/* Size Selector: Small, Medium, Large, Extra Large */}
-                  <div className="flex items-center gap-1 my-1 flex-wrap">
-                    {(['Small', 'Medium', 'Large', 'Extra Large'] as const).map((sz) => {
-                      const isCurrentSize = item.size?.toLowerCase() === sz.toLowerCase();
-                      const szPrice = getProductPriceForSize(item.product, sz);
-                      return (
-                        <button
-                          key={sz}
-                          type="button"
-                          onClick={() => cart.updateItemSize(item.id, sz)}
-                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-all ${
-                            isCurrentSize
-                              ? 'bg-orange-600 text-white shadow-xs'
-                              : 'bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-200'
-                          }`}
-                          title={`${sz}: ${currency}${szPrice}`}
-                        >
-                          {sz === 'Extra Large' ? 'XL' : sz} {szPrice > 0 && `(${currency}${szPrice})`}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {/* Size Selector: Small, Medium, Large, Extra Large (Only for Pizza / products with variations) */}
+                  {hasProductSizes(item.product) && (
+                    <div className="flex items-center gap-1 my-1 flex-wrap">
+                      {(['Small', 'Medium', 'Large', 'Extra Large'] as const).map((sz) => {
+                        const isCurrentSize = item.size?.toLowerCase() === sz.toLowerCase();
+                        const szPrice = getProductPriceForSize(item.product, sz);
+                        return (
+                          <button
+                            key={sz}
+                            type="button"
+                            onClick={() => cart.updateItemSize(item.id, sz)}
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-all ${
+                              isCurrentSize
+                                ? 'bg-orange-600 text-white shadow-xs'
+                                : 'bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-200'
+                            }`}
+                            title={`${sz}: ${currency}${szPrice}`}
+                          >
+                            {sz === 'Extra Large' ? 'XL' : sz} {szPrice > 0 && `(${currency}${szPrice})`}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
 
                   {item.addons.length > 0 && (
                     <div className="mt-0.5">
