@@ -5,7 +5,7 @@ import {
   Plus, Minus, Trash2, User, X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useCartStore } from '@/store/cart';
+import { useCartStore, getProductPriceForSize } from '@/store/cart';
 import type { Table } from '@/lib/types';
 
 interface Props {
@@ -216,6 +216,7 @@ export default function CartPanel({
                   <div className="flex items-center gap-1 my-1 flex-wrap">
                     {(['Small', 'Medium', 'Large', 'Extra Large'] as const).map((sz) => {
                       const isCurrentSize = item.size?.toLowerCase() === sz.toLowerCase();
+                      const szPrice = getProductPriceForSize(item.product, sz);
                       return (
                         <button
                           key={sz}
@@ -226,8 +227,9 @@ export default function CartPanel({
                               ? 'bg-orange-600 text-white shadow-xs'
                               : 'bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-200'
                           }`}
+                          title={`${sz}: ${currency}${szPrice}`}
                         >
-                          {sz === 'Extra Large' ? 'XL' : sz}
+                          {sz === 'Extra Large' ? 'XL' : sz} {szPrice > 0 && `(${currency}${szPrice})`}
                         </button>
                       );
                     })}
@@ -245,8 +247,8 @@ export default function CartPanel({
                   {item.special_instructions && (
                     <p className="text-xs text-gray-400 italic mt-0.5">{item.special_instructions}</p>
                   )}
-                  <p className="text-sm font-semibold text-gray-600 mt-0.5">
-                    {currency}{Number(item.product.price).toLocaleString()}
+                  <p className="text-sm font-bold text-gray-800 mt-0.5">
+                    {currency}{Number(item.unit_price ?? getProductPriceForSize(item.product, item.size)).toLocaleString()}
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">

@@ -50,7 +50,26 @@ router.get('/', (req: Request, res: Response) => {
         return { ...group, addons };
       });
 
-      return { ...product, category, addon_groups: addonGroupsWithAddons };
+      // Parse variations and extra toppings stored in tags
+      let variations: any[] = [];
+      let extraToppings: any[] = [];
+      if (product.tags) {
+        try {
+          const parsed = JSON.parse(product.tags);
+          if (parsed && typeof parsed === 'object') {
+            if (Array.isArray(parsed.variations)) variations = parsed.variations;
+            if (Array.isArray(parsed.extra_toppings)) extraToppings = parsed.extra_toppings;
+          }
+        } catch {}
+      }
+
+      return {
+        ...product,
+        category,
+        addon_groups: addonGroupsWithAddons,
+        variations,
+        extra_toppings: extraToppings,
+      };
     });
 
     res.json({ products: productsWithRelations });

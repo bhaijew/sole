@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
-import { useCartStore } from '@/store/cart';
+import { useCartStore, getProductPriceForSize } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import toast from 'react-hot-toast';
 import { ShoppingCart } from 'lucide-react';
@@ -106,10 +106,12 @@ export default function POSPage() {
         items: cart.items.map((item) => {
           const itemSize = item.size ? `Size: ${item.size}` : '';
           const instructionsCombined = [itemSize, item.special_instructions].filter(Boolean).join(' | ');
+          const effectivePrice = item.unit_price ?? getProductPriceForSize(item.product, item.size);
 
           return {
             product_id: item.product.id,
             quantity: item.quantity,
+            unit_price: effectivePrice,
             addons: item.addons.length > 0
               ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price }))
               : null,

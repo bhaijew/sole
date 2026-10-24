@@ -47,6 +47,32 @@ function generateCartItemId(productId: number, addons: Addon[], specialInstructi
   return parts.join('-');
 }
 
+export function getProductPriceForSize(product: Product, size?: string): number {
+  const basePrice = Number(product.price) || 0;
+  if (!size) return basePrice;
+
+  // 1. Check if product has variations from database
+  if (product.variations && Array.isArray(product.variations) && product.variations.length > 0) {
+    const sLower = size.toLowerCase().trim();
+    // Normalize size matching
+    const match = product.variations.find((v: any) => {
+      const vName = String(v.name || '').toLowerCase().trim();
+      if (vName === sLower) return true;
+      if (sLower.includes('small') && vName.includes('small')) return true;
+      if (sLower.includes('medium') && (vName.includes('medium') || vName.includes('big'))) return true;
+      if (sLower === 'large' && vName === 'large') return true;
+      if ((sLower.includes('extra') || sLower === 'xl') && (vName.includes('extra') || vName.includes('xl'))) return true;
+      return false;
+    });
+
+    if (match && Number(match.price) > 0) {
+      return Number(match.price);
+    }
+  }
+
+  return basePrice;
+}
+
 export const useCartStore = create<CartState>((set, get) => ({
   items: [],
   orderType: 'dine_in',
@@ -63,11 +89,12 @@ export const useCartStore = create<CartState>((set, get) => ({
     const items = get().items;
     const itemId = generateCartItemId(product.id, addons, specialInstructions, size);
     const existing = items.find((i) => i.id === itemId);
+    const unitPrice = getProductPriceForSize(product, size);
 
     if (existing) {
       set({
         items: items.map((i) =>
-          i.id === itemId ? { ...i, quantity: i.quantity + quantity } : i
+          i.id === itemId ? { ...i, quantity: i.quantity + quantity, unit_price: unitPrice } : i
         ),
       });
     } else {
@@ -82,6 +109,7 @@ export const useCartStore = create<CartState>((set, get) => ({
             special_instructions: specialInstructions,
             size: size || undefined,
             variant_selection: size || undefined,
+            unit_price: unitPrice,
           },
         ],
       });
@@ -94,6 +122,8 @@ export const useCartStore = create<CartState>((set, get) => ({
     if (!targetItem) return;
 
     const newId = generateCartItemId(targetItem.product.id, targetItem.addons, targetItem.special_instructions, newSize);
+    const newUnitPrice = getProductPriceForSize(targetItem.product, newSize);
+
     set({
       items: items.map((i) =>
         i.id === cartItemId
@@ -102,6 +132,7 @@ export const useCartStore = create<CartState>((set, get) => ({
               id: newId,
               size: newSize || undefined,
               variant_selection: newSize || undefined,
+              unit_price: newUnitPrice,
             }
           : i
       ),
@@ -154,8 +185,9 @@ export const useCartStore = create<CartState>((set, get) => ({
 
   subtotal: () => {
     return get().items.reduce((sum, item) => {
+      const itemBase = item.unit_price ?? getProductPriceForSize(item.product, item.size);
       const addonTotal = item.addons.reduce((a, addon) => a + Number(addon.price), 0);
-      return sum + (Number(item.product.price) + addonTotal) * item.quantity;
+      return sum + (itemBase + addonTotal) * item.quantity;
     }, 0);
   },
 

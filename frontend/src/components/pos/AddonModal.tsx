@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { X, Plus, Minus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { getProductPriceForSize } from '@/store/cart';
 import type { Product, Addon, AddonGroup } from '@/lib/types';
 
 interface Props {
@@ -36,9 +37,10 @@ export default function AddonModal({ product, currency, onAdd, onClose }: Props)
   const isSelected = (groupId: number, addonId: number) =>
     (selected[groupId] || []).some((a) => a.id === addonId);
 
+  const currentBasePrice = getProductPriceForSize(product, selectedSize);
   const allAddons = Object.values(selected).flat();
   const addonTotal = allAddons.reduce((sum, a) => sum + Number(a.price), 0);
-  const itemTotal = (Number(product.price) + addonTotal) * quantity;
+  const itemTotal = (currentBasePrice + addonTotal) * quantity;
 
   const isValid = groups.every((g) => {
     if (!g.is_required) return true;
@@ -58,33 +60,39 @@ export default function AddonModal({ product, currency, onAdd, onClose }: Props)
         <div className="flex justify-between items-center p-5 border-b border-gray-100">
           <div>
             <h2 className="text-lg font-bold text-gray-900">{product.name}</h2>
-            <p className="text-brand font-semibold">{currency}{Number(product.price).toLocaleString()}</p>
+            <p className="text-brand font-semibold">{currency}{currentBasePrice.toLocaleString()}</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X size={20} />
           </button>
         </div>
 
-        {/* Pizza / Item Size Selector */}
-        <div className="px-5 pt-3 pb-1 border-b border-gray-100 bg-gray-50/70">
+        {/* Pizza / Item Size Selector with Real Database Prices */}
+        <div className="px-5 pt-3 pb-2 border-b border-gray-100 bg-gray-50/70">
           <label className="text-xs font-bold text-gray-700 block mb-1.5 uppercase tracking-wider">
-            Select Size:
+            Select Size & Price:
           </label>
           <div className="grid grid-cols-4 gap-1.5">
-            {(['Small', 'Medium', 'Large', 'Extra Large'] as const).map((sz) => (
-              <button
-                key={sz}
-                type="button"
-                onClick={() => setSelectedSize(sz)}
-                className={`py-1.5 px-2 rounded-lg text-xs font-bold transition-all ${
-                  selectedSize === sz
-                    ? 'bg-orange-600 text-white shadow-xs'
-                    : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-100'
-                }`}
-              >
-                {sz === 'Extra Large' ? 'XL' : sz}
-              </button>
-            ))}
+            {(['Small', 'Medium', 'Large', 'Extra Large'] as const).map((sz) => {
+              const szPrice = getProductPriceForSize(product, sz);
+              return (
+                <button
+                  key={sz}
+                  type="button"
+                  onClick={() => setSelectedSize(sz)}
+                  className={`py-1.5 px-1.5 rounded-lg text-xs font-bold transition-all flex flex-col items-center justify-center ${
+                    selectedSize === sz
+                      ? 'bg-orange-600 text-white shadow-xs'
+                      : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-100'
+                  }`}
+                >
+                  <span>{sz === 'Extra Large' ? 'XL' : sz}</span>
+                  <span className={`text-[10px] ${selectedSize === sz ? 'text-white/90' : 'text-orange-600'} font-black`}>
+                    {currency}{szPrice}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
 

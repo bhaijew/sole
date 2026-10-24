@@ -68,6 +68,8 @@ export interface Product {
   tags: string[] | null;
   variants: Record<string, unknown>[] | null;
   modifiers: Record<string, unknown>[] | null;
+  variations?: { id: string; name: string; price: number; is_default?: boolean }[];
+  extra_toppings?: { id: string; name: string; price: number }[];
   sort_order: number;
   category?: Category;
   addon_groups?: AddonGroup[];
@@ -233,5 +235,7 @@ export interface CartItem {
   special_instructions: string;
   variant_selection?: string;
   size?: 'Small' | 'Medium' | 'Large' | 'Extra Large' | string;
+  unit_price?: number;
 }
+
 

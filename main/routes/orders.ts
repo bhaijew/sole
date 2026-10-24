@@ -177,7 +177,31 @@ router.post('/', async (req: Request, res: Response) => {
         throw new Error(`Insufficient stock for ${product.name}`);
       }
 
-      const unitPrice = parseFloat(product.price);
+      // Determine real price according to database variation or size
+      let unitPrice = parseFloat(product.price) || 0;
+      if (item.unit_price && Number(item.unit_price) > 0) {
+        unitPrice = Number(item.unit_price);
+      } else if (item.variant_selection && product.tags) {
+        try {
+          const parsed = JSON.parse(product.tags);
+          if (parsed && Array.isArray(parsed.variations)) {
+            const sLower = String(item.variant_selection).toLowerCase().trim();
+            const match = parsed.variations.find((v: any) => {
+              const vName = String(v.name || '').toLowerCase().trim();
+              if (vName === sLower) return true;
+              if (sLower.includes('small') && vName.includes('small')) return true;
+              if (sLower.includes('medium') && (vName.includes('medium') || vName.includes('big'))) return true;
+              if (sLower === 'large' && vName === 'large') return true;
+              if ((sLower.includes('extra') || sLower === 'xl') && (vName.includes('extra') || vName.includes('xl'))) return true;
+              return false;
+            });
+            if (match && Number(match.price) > 0) {
+              unitPrice = Number(match.price);
+            }
+          }
+        } catch {}
+      }
+
       const quantity = item.quantity;
       const itemDiscount = item.discount_amount || 0;
 
