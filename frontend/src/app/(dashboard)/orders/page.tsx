@@ -28,6 +28,7 @@ import {
   Eye,
   X,
   Receipt,
+  Truck,
   ArrowUpRight,
   Copy,
   Check,
@@ -64,6 +65,39 @@ export default function OrdersPage() {
   const [printingMap, setPrintingMap] = useState<Record<string, boolean>>({});
   // Track updating order status: { [orderId]: boolean }
   const [updatingStatusMap, setUpdatingStatusMap] = useState<Record<number | string, boolean>>({});
+  const [modalDeliveryFee, setModalDeliveryFee] = useState<number>(0);
+  const [savingDeliveryFee, setSavingDeliveryFee] = useState(false);
+
+  // Sync modal delivery fee when selectedOrder opens
+  useEffect(() => {
+    if (selectedOrder) {
+      setModalDeliveryFee(Number((selectedOrder as any).delivery_charge || (selectedOrder as any).delivery_fee || 0));
+    }
+  }, [selectedOrder?.id]);
+
+  const handleUpdateDeliveryFee = async (newFee: number) => {
+    if (!selectedOrder) return;
+    setSavingDeliveryFee(true);
+    const safeFee = Math.max(0, Number(newFee) || 0);
+    try {
+      const res = await api.patch(`/orders/${selectedOrder.id}/delivery`, {
+        delivery_charge: safeFee,
+        delivery_fee: safeFee,
+      });
+      if (res.data?.success) {
+        const updated = res.data.order;
+        setSelectedOrder((prev) => (prev ? { ...prev, ...updated, delivery_charge: safeFee, delivery_fee: safeFee } : null));
+        setOrders((prev) => prev.map((o) => (String(o.id) === String(selectedOrder.id) ? { ...o, ...updated, delivery_charge: safeFee, delivery_fee: safeFee } : o)));
+        toast.success(`Delivery charges updated to ${currency}${safeFee}`);
+      }
+    } catch {
+      // Local fallback if offline
+      setSelectedOrder((prev: any) => prev ? { ...prev, delivery_charge: safeFee, total: Math.max(0, (prev.subtotal || 0) + safeFee) } : null);
+      toast.success(`Delivery charges set to ${currency}${safeFee}`);
+    } finally {
+      setSavingDeliveryFee(false);
+    }
+  };
 
   // Optimistic status cache to completely prevent polling from reverting user's status updates
   const optimisticStatusMapRef = useRef<Record<string, { status: string; timestamp: number }>>({});
@@ -181,23 +215,30 @@ export default function OrdersPage() {
                 } catch {}
               }
 
-              const formattedItems: OrderItem[] = parsedItems.map((it, idx) => ({
-                id: idx + 1000,
-                order_id: co.id,
-                product_id: it.id || idx,
-                product_name: it.name || it.title || it.product_name || 'Pizza Item',
-                product_sku: null,
-                unit_price: Number(it.price || it.unit_price) || 0,
-                quantity: Number(it.qty || it.quantity) || 1,
-                subtotal: Number(it.subtotal) || ((Number(it.price) || 0) * (Number(it.qty || it.quantity) || 1)),
-                tax_amount: 0,
-                total: Number(it.subtotal) || ((Number(it.price) || 0) * (Number(it.qty || it.quantity) || 1)),
-                addons: null,
-                special_instructions: it.selected_variation
+              const formattedItems: OrderItem[] = parsedItems.map((it, idx) => {
+                const rawVar = it.selected_variation
                   ? (typeof it.selected_variation === 'object' ? it.selected_variation.name : String(it.selected_variation))
-                  : (it.variant_selection || null),
-                status: effectiveStatus as any,
-              }));
+                  : (it.variant_selection || null);
+                const cleanVar = rawVar && String(rawVar).toLowerCase() !== 'null' && String(rawVar).toLowerCase() !== 'undefined'
+                  ? String(rawVar)
+                  : null;
+
+                return {
+                  id: idx + 1000,
+                  order_id: co.id,
+                  product_id: it.id || idx,
+                  product_name: it.name || it.title || it.product_name || 'Pizza Item',
+                  product_sku: null,
+                  unit_price: Number(it.price || it.unit_price) || 0,
+                  quantity: Number(it.qty || it.quantity) || 1,
+                  subtotal: Number(it.subtotal) || ((Number(it.price) || 0) * (Number(it.qty || it.quantity) || 1)),
+                  tax_amount: 0,
+                  total: Number(it.subtotal) || ((Number(it.price) || 0) * (Number(it.qty || it.quantity) || 1)),
+                  addons: null,
+                  special_instructions: cleanVar,
+                  status: effectiveStatus as any,
+                };
+              });
 
               const syntheticOrder: Order = {
                 id: co.id,
@@ -236,7 +277,7 @@ export default function OrdersPage() {
                 shop_id: co.shop_id,
               };
 
-              fetched.unshift(syntheticOrder);
+              fetched.push(syntheticOrder);
             }
           }
         }
@@ -257,6 +298,14 @@ export default function OrdersPage() {
         return fo;
       });
 
+      // Sort newest first always so incoming live orders appear on top while previous orders remain intact
+      finalOrders.sort((a, b) => {
+        const timeA = new Date(a.created_at || 0).getTime();
+        const timeB = new Date(b.created_at || 0).getTime();
+        if (timeB !== timeA) return timeB - timeA;
+        return Number(b.id || 0) - Number(a.id || 0);
+      });
+
       // Check for incoming new online orders to trigger sound chime
       const currentOnlineCount = finalOrders.filter(
         (o) => (o as any).order_source === 'online' || o.type === 'online'
@@ -269,7 +318,7 @@ export default function OrdersPage() {
       previousOnlineCountRef.current = currentOnlineCount;
 
       const branchOrders = activeBranchId
-        ? finalOrders.filter((fo) => !fo.shop_id || String(fo.shop_id) === String(activeBranchId))
+        ? finalOrders.filter((fo) => !fo.shop_id || fo.shop_id === 0 || String(fo.shop_id) === String(activeBranchId))
         : finalOrders;
       setOrders(branchOrders);
     } catch (err: any) {
@@ -1096,12 +1145,60 @@ export default function OrdersPage() {
                   <span>Subtotal:</span>
                   <span className="font-mono">{currency}{Number(selectedOrder.subtotal).toLocaleString()}</span>
                 </div>
-                {selectedOrder.delivery_charge > 0 && (
-                  <div className="flex justify-between text-slate-600">
-                    <span>Delivery Fee:</span>
-                    <span className="font-mono">{currency}{Number(selectedOrder.delivery_charge).toLocaleString()}</span>
+                {/* POS Print-Time Delivery Fee Adjuster */}
+                <div className="pt-1.5 pb-1 border-t border-b border-slate-200/80 my-1 space-y-1.5">
+                  <div className="flex items-center justify-between text-slate-700">
+                    <span className="font-bold flex items-center gap-1 text-xs">
+                      <Truck size={13} className="text-emerald-600" />
+                      Delivery Charges (Rs.):
+                    </span>
+                    <span className="font-mono font-bold text-emerald-700 text-xs">
+                      {Number(selectedOrder.delivery_charge || 0) > 0 ? `${currency}${Number(selectedOrder.delivery_charge).toLocaleString()}` : 'FREE'}
+                    </span>
                   </div>
-                )}
+
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min="0"
+                      step="10"
+                      value={modalDeliveryFee === 0 ? '' : modalDeliveryFee}
+                      placeholder="0 (Free Delivery)"
+                      onChange={(e) => setModalDeliveryFee(Math.max(0, Number(e.target.value) || 0))}
+                      className="flex-1 h-7 px-2 text-xs font-bold bg-white border border-slate-300 rounded-md text-slate-900 focus:outline-none focus:border-emerald-500"
+                    />
+                    <button
+                      type="button"
+                      disabled={savingDeliveryFee}
+                      onClick={() => handleUpdateDeliveryFee(modalDeliveryFee)}
+                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-md transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      {savingDeliveryFee ? 'Saving...' : 'Apply Fee'}
+                    </button>
+                  </div>
+
+                  {/* Quick Preset Buttons for Cashier / Staff */}
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <span className="text-[10px] font-semibold text-slate-500 mr-0.5">Presets:</span>
+                    {[0, 50, 100, 150, 200].map((fee) => (
+                      <button
+                        key={fee}
+                        type="button"
+                        onClick={() => {
+                          setModalDeliveryFee(fee);
+                          handleUpdateDeliveryFee(fee);
+                        }}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                          Number(selectedOrder.delivery_charge || 0) === fee
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {fee === 0 ? 'Free (0)' : `Rs. ${fee}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="flex justify-between text-base font-black text-slate-900 pt-2 border-t border-slate-200">
                   <span>Grand Total:</span>
                   <span className="font-mono">{currency}{Number(selectedOrder.total).toLocaleString()}</span>

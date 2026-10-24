@@ -561,6 +561,12 @@ export default function SettingsPage() {
       if (d.gstin) posSettings.setBillGstin(d.gstin);
       if (d.business_address) posSettings.setBillAddress(d.business_address);
       if (d.business_phone) posSettings.setBillPhone(d.business_phone);
+
+      if (loaded.businessName && currentTenant && currentTenant.business_name !== loaded.businessName) {
+        const updated = { ...currentTenant, business_name: loaded.businessName };
+        useAuthStore.setState({ currentTenant: updated });
+        localStorage.setItem('tenant', JSON.stringify(updated));
+      }
     }).catch(() => {});
 
     fetchHardwarePrinters();
@@ -602,6 +608,13 @@ export default function SettingsPage() {
       posSettings.setBillShowAddress(form.billShowAddress);
       posSettings.setBillShowPhone(form.billShowPhone);
       posSettings.setBillShowGstn(form.billShowGstn);
+
+      if (currentTenant) {
+        const updated = { ...currentTenant, business_name: form.businessName };
+        useAuthStore.setState({ currentTenant: updated });
+        localStorage.setItem('tenant', JSON.stringify(updated));
+      }
+
       toast.success('Store details saved');
     } catch {
       toast.error('Failed to save');

@@ -436,27 +436,27 @@ router.post('/print-bill', async (req: Request, res: Response) => {
       }
     }
 
-    // Fetch business settings for bill template
-    const businessName = db.prepare("SELECT value FROM settings WHERE key = 'business_name'").get() as any;
-    const businessAddress = db.prepare("SELECT value FROM settings WHERE key = 'address'").get() as any || db.prepare("SELECT value FROM settings WHERE key = 'business_address'").get() as any;
-    const businessPhone = db.prepare("SELECT value FROM settings WHERE key = 'phone'").get() as any || db.prepare("SELECT value FROM settings WHERE key = 'business_phone'").get() as any;
-    const gstin = db.prepare("SELECT value FROM settings WHERE key = 'gstin'").get() as any;
-    const billTemplate = db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as any;
-    const easypaisaNumber = db.prepare("SELECT value FROM settings WHERE key = 'easypaisa_number'").get() as any;
-    const easypaisaTitle = db.prepare("SELECT value FROM settings WHERE key = 'easypaisa_title'").get() as any;
-    const complaintNumber = db.prepare("SELECT value FROM settings WHERE key = 'complaint_number'").get() as any;
-    const footerMsg = db.prepare("SELECT value FROM settings WHERE key = 'bill_footer_message'").get() as any;
+    // Helper to fetch live business info from database settings
+    const getSetting = (k: string): string => {
+      try {
+        const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(k) as any;
+        return (row?.value || '').trim();
+      } catch {
+        return '';
+      }
+    };
 
     const business = {
-      name: businessName?.value || 'PIZZA MAFIA',
-      address: businessAddress?.value || '',
-      phone: businessPhone?.value || '',
-      gstin: gstin?.value || '',
-      easypaisa_number: easypaisaNumber?.value || '',
-      easypaisa_title: easypaisaTitle?.value || '',
-      complaint_number: complaintNumber?.value || '',
-      footer_message: footerMsg?.value || '',
+      name: getSetting('business_name') || getSetting('cloud_shop_name') || getSetting('shop_name') || 'Sole What POS',
+      address: getSetting('business_address') || getSetting('address') || '',
+      phone: getSetting('business_phone') || getSetting('phone') || '',
+      gstin: getSetting('gstin'),
+      easypaisa_number: getSetting('easypaisa_number'),
+      easypaisa_title: getSetting('easypaisa_title'),
+      complaint_number: getSetting('complaint_number') || getSetting('business_phone') || getSetting('phone') || '',
+      footer_message: getSetting('bill_footer_message'),
     };
+    const billTemplate = db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as any;
     const copySetting = db.prepare("SELECT value FROM settings WHERE key = 'receipt_copies'").get() as any;
     const copyType = req.body.copyType || copySetting?.value || 'customer';
     console.log('[Print Bill] Business:', business.name, 'Template:', billTemplate?.value || 'classic', 'CopyType:', copyType);
@@ -536,7 +536,10 @@ router.post('/print-kot', async (req: Request, res: Response) => {
 // POST /api/printers/print-order — one-click print for order (receipt, KOT, or both)
 router.post('/print-order', async (req: Request, res: Response) => {
   try {
-    const { orderId, printType = 'bill' } = req.body;
+    const { orderId, printType = 'bill', delivery_charge, delivery_fee } = req.body;
+    const overrideFee = delivery_charge !== undefined || delivery_fee !== undefined
+      ? Math.max(0, Number(delivery_charge ?? delivery_fee ?? 0))
+      : null;
     if (!orderId) {
       return res.status(400).json({ error: 'orderId is required' });
     }
@@ -590,26 +593,26 @@ router.post('/print-order', async (req: Request, res: Response) => {
         };
       }
 
-      const businessName = db.prepare("SELECT value FROM settings WHERE key = 'business_name'").get() as any;
-      const businessAddress = db.prepare("SELECT value FROM settings WHERE key = 'address'").get() as any || db.prepare("SELECT value FROM settings WHERE key = 'business_address'").get() as any;
-      const businessPhone = db.prepare("SELECT value FROM settings WHERE key = 'phone'").get() as any || db.prepare("SELECT value FROM settings WHERE key = 'business_phone'").get() as any;
-      const gstin = db.prepare("SELECT value FROM settings WHERE key = 'gstin'").get() as any;
-      const billTemplate = db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as any;
-      const easypaisaNumber = db.prepare("SELECT value FROM settings WHERE key = 'easypaisa_number'").get() as any;
-      const easypaisaTitle = db.prepare("SELECT value FROM settings WHERE key = 'easypaisa_title'").get() as any;
-      const complaintNumber = db.prepare("SELECT value FROM settings WHERE key = 'complaint_number'").get() as any;
-      const footerMsg = db.prepare("SELECT value FROM settings WHERE key = 'bill_footer_message'").get() as any;
+      const getSetting = (k: string): string => {
+        try {
+          const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(k) as any;
+          return (row?.value || '').trim();
+        } catch {
+          return '';
+        }
+      };
 
       const business = {
-        name: businessName?.value || 'PIZZA MAFIA',
-        address: businessAddress?.value || '',
-        phone: businessPhone?.value || '',
-        gstin: gstin?.value || '',
-        easypaisa_number: easypaisaNumber?.value || '',
-        easypaisa_title: easypaisaTitle?.value || '',
-        complaint_number: complaintNumber?.value || '',
-        footer_message: footerMsg?.value || '',
+        name: getSetting('business_name') || getSetting('cloud_shop_name') || getSetting('shop_name') || 'Sole What POS',
+        address: getSetting('business_address') || getSetting('address') || '',
+        phone: getSetting('business_phone') || getSetting('phone') || '',
+        gstin: getSetting('gstin'),
+        easypaisa_number: getSetting('easypaisa_number'),
+        easypaisa_title: getSetting('easypaisa_title'),
+        complaint_number: getSetting('complaint_number') || getSetting('business_phone') || getSetting('phone') || '',
+        footer_message: getSetting('bill_footer_message'),
       };
+      const billTemplate = db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as any;
       const copySetting = db.prepare("SELECT value FROM settings WHERE key = 'receipt_copies'").get() as any;
       const copyType = req.body.copyType || copySetting?.value || 'customer';
 

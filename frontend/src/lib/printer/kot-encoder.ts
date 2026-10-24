@@ -34,31 +34,40 @@ export function buildKotBytes(
   enc.initialize();
 
   // KOT Banner
-  enc.align('center').bold(true).width(2).height(2).text('KOT').width(1).height(1).bold(false).newline();
+  enc.align('center').bold(true).width(2).height(2).text('KITCHEN TICKET').width(1).height(1).newline();
+  if (stationName) {
+    enc.align('center').bold(true).text(`STATION: ${stationName.toUpperCase()}`).newline();
+  }
+  enc.rule({ style: 'double' });
 
   // Order details
   enc.align('left').bold(true);
-  enc.text(`Order #${order.order_number}`).newline();
-
-  if (order.table) {
-    enc.text(`Table: ${order.table.name}`).newline();
-  }
+  enc.width(2).height(2).text(`ORDER #${order.order_number}`).width(1).height(1).newline();
 
   const orderType = order.type.replace('_', ' ').toUpperCase();
-  enc.text(`Type: ${orderType}`).newline();
+  enc.height(2).text(`TYPE: ${orderType}`).height(1).newline();
+
+  if (order.table) {
+    enc.height(2).text(`TABLE: ${order.table.name}`).height(1).newline();
+  }
 
   const customerName = order.customer?.name || (order as any).customer_name;
   if (customerName) {
     enc.text(`Customer: ${customerName}`).newline();
   }
 
-  enc.bold(false);
-  enc.text(formatTime(order.created_at)).newline();
+  const deliveryAddr = order.delivery_address || (order as any).address;
+  if (deliveryAddr && String(deliveryAddr).trim().toLowerCase() !== 'null') {
+    enc.text(`Delivery: ${String(deliveryAddr).trim()}`).newline();
+  }
+
+  enc.text(`Time: ${formatTime(order.created_at)}`).newline();
   enc.rule({ style: 'double' });
 
   // ── Items ────────────────────────────────────────────────────────────────────
   const items = order.items ?? [];
   let hasItems = false;
+  const maxDoubleCols = Math.floor(cols / 2);
 
   for (const item of items) {
     // Skip items that are already served/completed
@@ -68,33 +77,44 @@ export function buildKotBytes(
 
     hasItems = true;
 
-    // Item name with quantity
+    // Item name with quantity (Double Width & Double Height Bold)
     const qtyName = `${item.quantity}x ${item.product_name}`;
-    enc.bold(true).text(truncate(qtyName, cols)).newline();
-    enc.bold(false);
+    enc.bold(true).width(2).height(2).text(truncate(qtyName, maxDoubleCols)).width(1).height(1).newline();
+
+    // Variant / Variation (strictly eliminate "variant = null")
+    const vText = cleanVariant((item as any).variant_selection || (item as any).variant || (item as any).selected_variation);
+    if (vText && vText.toLowerCase() !== 'null' && vText.toLowerCase() !== 'undefined' && !/^(vraint|variant)\s*[:=]\s*null$/i.test(vText)) {
+      enc.bold(true).height(2).text(`  >> VARIANT: ${vText.toUpperCase()}`).height(1).newline();
+    }
 
     // Addons
     if (item.addons && item.addons.length > 0) {
       for (const addon of item.addons) {
-        enc.text(`   + ${truncate(addon.name, cols - 4)}`).newline();
+        enc.bold(true).text(`  + ADDON: ${truncate(addon.name.toUpperCase(), cols - 4)}`).newline();
       }
     }
 
-    // Special instructions
-    if (item.special_instructions) {
-      enc.text(`   >> ${truncate(item.special_instructions, cols - 6)}`).newline();
+    // Special instructions (eliminate any "vraint = null" or null)
+    const cleanNotes = item.special_instructions ? String(item.special_instructions).trim() : '';
+    if (
+      cleanNotes &&
+      cleanNotes.toLowerCase() !== 'null' &&
+      cleanNotes.toLowerCase() !== 'undefined' &&
+      !/^(vraint|variant)\s*[:=]\s*null$/i.test(cleanNotes)
+    ) {
+      enc.bold(true).height(2).text(`  ⚠️ NOTE: ${truncate(cleanNotes.toUpperCase(), cols - 12)}`).height(1).newline();
     }
 
-    enc.newline();
+    enc.rule({ style: 'single' });
   }
 
   if (!hasItems) {
-    enc.text('(No pending items)').newline();
+    enc.bold(true).text('(No pending items)').newline();
   }
 
   // ── Footer ─────────────────────────────────────────────────────────────────
-  enc.rule({ style: 'single' });
-  enc.align('center').text('--- End of KOT ---').newline();
+  enc.rule({ style: 'double' });
+  enc.align('center').bold(true).text('--- End of KOT ---').newline();
 
   enc.newline().cut();
 
@@ -104,6 +124,44 @@ export function buildKotBytes(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+export function cleanVariant(v: any): string {
+  if (!v) return '';
+  if (typeof v === 'string') {
+    const trimmed = v.trim();
+    if (
+      !trimmed ||
+      trimmed.toLowerCase() === 'null' ||
+      trimmed.toLowerCase() === 'undefined' ||
+      trimmed === '{}' ||
+      trimmed === '[]' ||
+      /^(vraint|variant)\s*[:=]\s*null$/i.test(trimmed)
+    ) {
+      return '';
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (!parsed || parsed === 'null' || parsed === 'undefined') return '';
+      if (typeof parsed === 'string') return cleanVariant(parsed);
+      if (typeof parsed === 'object') {
+        if (parsed.name) return String(parsed.name).trim();
+        if (parsed.title) return String(parsed.title).trim();
+        const vals = Object.values(parsed).filter((x) => x && String(x).toLowerCase() !== 'null' && String(x).toLowerCase() !== 'undefined');
+        return vals.join(', ');
+      }
+    } catch {
+      return trimmed;
+    }
+    return trimmed;
+  }
+  if (typeof v === 'object') {
+    if (v.name) return String(v.name).trim();
+    if (v.title) return String(v.title).trim();
+    const vals = Object.values(v).filter((x) => x && String(x).toLowerCase() !== 'null' && String(x).toLowerCase() !== 'undefined');
+    return vals.join(', ');
+  }
+  return String(v);
+}
 
 function truncate(str: string, max: number): string {
   return str.length > max ? str.slice(0, max - 1) + '…' : str;

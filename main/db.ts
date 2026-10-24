@@ -818,6 +818,7 @@ function seedData(): void {
     `).run(id, number, capacity);
   }
 
+  try { db.exec("UPDATE orders SET created_at = datetime('now') WHERE created_at IS NULL OR created_at = '0' OR created_at = 0;"); } catch {}
   console.log('[DB] Seed data loaded');
 }
 
@@ -846,8 +847,15 @@ export function now(): string {
  *  Returns actual JS value (array / object / null) so the frontend can map/iterate. */
 export function parseItemJson(item: any): any {
   const tryParse = (val: any) => {
+    if (!val || val === 'null' || val === 'undefined') return null;
     if (typeof val !== 'string') return val;
-    try { return JSON.parse(val); } catch { return val; }
+    try {
+      const parsed = JSON.parse(val);
+      if (parsed === 'null' || parsed === 'undefined') return null;
+      return parsed;
+    } catch {
+      return val;
+    }
   };
   return {
     ...item,

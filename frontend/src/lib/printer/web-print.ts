@@ -204,6 +204,7 @@ export function generateBillHtml(
     }
     .header-info-line {
       font-size: 14px;
+      font-weight: 700;
       line-height: 1.35;
       margin: 1px 0;
     }
@@ -231,6 +232,7 @@ export function generateBillHtml(
     }
     .items-table tbody td {
       font-size: 14px;
+      font-weight: 700;
       padding: 3px 0;
       vertical-align: top;
       word-wrap: break-word;
@@ -246,27 +248,28 @@ export function generateBillHtml(
       text-align: right;
       width: 18%;
       padding-right: 4px;
-      font-weight: 600;
+      font-weight: 700;
     }
     .col-price {
       text-align: right;
       width: 24%;
-      font-weight: 600;
+      font-weight: 700;
     }
 
     .item-name {
-      font-weight: 500;
+      font-weight: 700;
       line-height: 1.25;
     }
     .item-addon {
       font-size: 12px;
+      font-weight: 700;
       padding-left: 8px;
       line-height: 1.25;
     }
     .item-note {
       font-size: 12px;
+      font-weight: 700;
       padding-left: 8px;
-      font-style: italic;
       line-height: 1.25;
     }
 
@@ -275,6 +278,7 @@ export function generateBillHtml(
       display: flex;
       justify-content: space-between;
       font-size: 13px;
+      font-weight: 700;
       line-height: 1.35;
       padding: 1px 0;
     }
@@ -368,7 +372,7 @@ function renderSingleReceipt(
   copyLabel: 'Customer Copy' | 'Business Copy'
 ): string {
   const order = bill.order;
-  const displayName = opts.businessName || tenant.business_name || 'PIZZA MAFIA';
+  const displayName = opts.businessName || tenant.business_name || 'Sole What POS';
   const orderNumber = order?.order_number || bill.bill_number || '1';
 
   // Format date and time

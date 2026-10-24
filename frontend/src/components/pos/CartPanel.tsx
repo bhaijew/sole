@@ -62,7 +62,7 @@ export default function CartPanel({
           })}
         </div>
 
-        {/* Customer Name Input Option */}
+        {/* Customer Name Input */}
         <div className="relative flex items-center">
           <div className="absolute left-2.5 text-gray-400 pointer-events-none">
             <User size={13} />
@@ -83,6 +83,88 @@ export default function CartPanel({
             >
               <X size={12} />
             </button>
+          )}
+        </div>
+
+        {/* Delivery Field (Directly under Customer Name) */}
+        <div className="space-y-1.5">
+          <div className="relative flex items-center">
+            <div className="absolute left-2.5 text-gray-400 pointer-events-none">
+              <Truck size={13} className={cart.orderType === 'delivery' || cart.deliveryAddress ? 'text-emerald-600' : 'text-gray-400'} />
+            </div>
+            <input
+              type="text"
+              value={cart.deliveryAddress}
+              onChange={(e) => {
+                const val = e.target.value;
+                cart.setDeliveryAddress(val);
+                if (val.trim() && cart.orderType !== 'delivery') {
+                  cart.setOrderType('delivery');
+                }
+              }}
+              placeholder="Delivery Address / Details (Optional)"
+              className={`w-full pl-7 pr-7 py-1.5 text-xs border rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 transition-all ${
+                cart.orderType === 'delivery' || cart.deliveryAddress
+                  ? 'bg-emerald-50/50 border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500'
+                  : 'bg-gray-50 hover:bg-gray-100/70 focus:bg-white border-gray-200 focus:ring-brand focus:border-brand'
+              }`}
+            />
+            {cart.deliveryAddress && (
+              <button
+                type="button"
+                onClick={() => cart.setDeliveryAddress('')}
+                className="absolute right-2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
+                title="Clear Address"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
+          {/* Delivery Charges & Quick Chips (shown when Delivery is selected or address entered) */}
+          {(cart.orderType === 'delivery' || cart.deliveryAddress.trim().length > 0) && (
+            <div className="bg-emerald-50/90 border border-emerald-200 rounded-lg p-2 space-y-1.5">
+              <div className="flex items-center justify-between text-[10px] font-bold text-emerald-900">
+                <span className="flex items-center gap-1 uppercase tracking-wider text-emerald-800">
+                  Delivery Charges (Rs.)
+                </span>
+                <span className="font-extrabold text-emerald-700">
+                  {cart.deliveryFee > 0 ? `${currency}${cart.deliveryFee.toLocaleString()}` : 'Free (Rs. 0)'}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-bold text-emerald-800">Rs.</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="10"
+                  value={cart.deliveryFee === 0 ? '' : cart.deliveryFee}
+                  placeholder="0 (Free Delivery)"
+                  onChange={(e) => cart.setDeliveryFee(Math.max(0, Number(e.target.value) || 0))}
+                  className="w-full h-6 px-2 text-xs font-bold bg-white border border-emerald-300 rounded text-gray-900 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              {/* Quick Preset Buttons */}
+              <div className="flex items-center gap-1 flex-wrap pt-0.5">
+                <span className="text-[10px] font-semibold text-emerald-700 mr-0.5">Quick:</span>
+                {[0, 50, 100, 150, 200].map((fee) => (
+                  <button
+                    key={fee}
+                    type="button"
+                    onClick={() => cart.setDeliveryFee(fee)}
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                      cart.deliveryFee === fee
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'bg-white text-emerald-800 border border-emerald-200 hover:bg-emerald-100'
+                    }`}
+                  >
+                    {fee === 0 ? 'Free' : `${fee}`}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
         </div>
       </div>
@@ -147,14 +229,24 @@ export default function CartPanel({
 
       {/* Cart Footer */}
       <div className="p-4 border-t border-gray-100">
-        <div className="flex justify-between mb-1 text-sm">
-          <span className="text-gray-500">Items</span>
+        <div className="flex justify-between mb-1 text-xs text-gray-500">
+          <span>Items</span>
           <span className="font-medium">{cart.itemCount()}</span>
         </div>
-        <div className="flex justify-between mb-4 text-lg">
+        <div className="flex justify-between mb-1 text-xs text-gray-500">
+          <span>Subtotal</span>
+          <span className="font-medium">{currency}{cart.subtotal().toLocaleString()}</span>
+        </div>
+        {cart.orderType === 'delivery' && (
+          <div className="flex justify-between mb-1 text-xs font-semibold text-emerald-600">
+            <span>🛵 Delivery Fee</span>
+            <span>{cart.deliveryFee > 0 ? `+${currency}${cart.deliveryFee.toLocaleString()}` : 'FREE'}</span>
+          </div>
+        )}
+        <div className="flex justify-between mb-3 text-base pt-2 border-t border-gray-100">
           <span className="font-semibold text-gray-900">Total</span>
           <span className="font-bold text-brand">
-            {currency}{cart.subtotal().toLocaleString()}
+            {currency}{(cart.subtotal() + (cart.orderType === 'delivery' ? cart.deliveryFee : 0)).toLocaleString()}
           </span>
         </div>
         <div className="flex gap-2">

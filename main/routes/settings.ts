@@ -24,14 +24,14 @@ function upsertSettings(db: ReturnType<typeof getDatabase>, entries: Record<stri
 
 function businessShape(s: Record<string, string>) {
   return {
-    business_name:   s.business_name   || '',
+    business_name:   s.business_name   || s.cloud_shop_name || s.shop_name || '',
     timezone:        s.timezone        || 'Asia/Kolkata',
     currency:        s.currency        || 'INR',
     country:         s.country         || 'IN',
     gstin:           s.gstin           || '',
     state_code:      s.state_code      || '',
-    business_address: s.business_address || '',
-    business_phone:  s.business_phone  || '',
+    business_address: s.business_address || s.address || '',
+    business_phone:  s.business_phone  || s.phone || '',
     billing_type:    s.billing_type    || 'postpaid',
     bill_show_name:    s.bill_show_name    !== 'false',
     bill_show_address: s.bill_show_address !== 'false',
@@ -73,8 +73,15 @@ router.put('/business', (req: Request, res: Response) => {
 
     const db = getDatabase();
     upsertSettings(db, {
-      business_name, timezone, currency, country, gstin, state_code,
-      business_address, business_phone, billing_type,
+      business_name,
+      cloud_shop_name: business_name,
+      shop_name: business_name,
+      timezone, currency, country, gstin, state_code,
+      business_address,
+      address: business_address,
+      business_phone,
+      phone: business_phone,
+      billing_type,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_gstn,
     });
 

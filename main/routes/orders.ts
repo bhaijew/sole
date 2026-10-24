@@ -23,7 +23,7 @@ router.get('/', async (req: Request, res: Response) => {
     const params: any[] = [];
 
     if (activeShop) {
-      query += ' AND shop_id = ?';
+      query += ' AND (shop_id = ? OR shop_id IS NULL OR shop_id = 0)';
       params.push(parseInt(activeShop, 10));
     }
 
@@ -95,7 +95,9 @@ router.get('/:id', (req: Request, res: Response) => {
 
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { table_id, customer_id, customer_name, user_id, type, guest_count, special_instructions, packaging_charge, items } = req.body;
+    const { table_id, customer_id, customer_name, user_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, delivery_fee, delivery_address, items } = req.body;
+    const safeDeliveryFee = Math.max(0, Number(delivery_charge ?? delivery_fee ?? 0));
+    const cleanDeliveryAddress = delivery_address ? String(delivery_address).trim() : null;
 
     if (!items || items.length === 0) {
       return res.status(400).json({ error: 'At least one item is required' });
@@ -126,11 +128,29 @@ router.post('/', async (req: Request, res: Response) => {
     const cleanCustomerName = customer_name ? String(customer_name).trim() : null;
 
     const orderResult = db.prepare(`
-      INSERT INTO orders (order_number, table_id, customer_id, customer_name, user_id, type, guest_count, special_instructions,
-        packaging_charge, status, shop_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
-    `).run(orderNumber, table_id || null, customer_id || null, cleanCustomerName || null, user_id || null, type, guest_count || null,
-      special_instructions || null, packaging_charge || 0, shopIdNum, now(), now());
+      INSERT INTO orders (
+        order_number, table_id, customer_id, customer_name, user_id, type, guest_count,
+        special_instructions, packaging_charge, delivery_charge, delivery_fee, delivery_address,
+        status, shop_id, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+    `).run(
+      orderNumber,
+      table_id || null,
+      customer_id || null,
+      cleanCustomerName || null,
+      user_id || null,
+      type,
+      guest_count || null,
+      special_instructions || null,
+      packaging_charge || 0,
+      safeDeliveryFee,
+      safeDeliveryFee,
+      cleanDeliveryAddress,
+      shopIdNum,
+      now(),
+      now()
+    );
 
     const orderId = orderResult.lastInsertRowid;
 
@@ -185,7 +205,7 @@ router.post('/', async (req: Request, res: Response) => {
         orderId, product.id, product.name, product.sku, unitPrice, quantity,
         itemSubtotal, taxResult.tax_amount, JSON.stringify(taxResult.tax_breakdown),
         product.tax_type, itemDiscount, itemTotal,
-        JSON.stringify(item.variant_selection || null),
+        item.variant_selection ? JSON.stringify(item.variant_selection) : null,
         JSON.stringify(item.modifier_selection || null),
         JSON.stringify(item.addons || null),
         item.special_instructions || null, now(), now()
@@ -199,15 +219,15 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     // Calculate round off
-    const preRoundTotal = subtotal + totalTax + (packaging_charge || 0);
+    const preRoundTotal = subtotal + totalTax + (packaging_charge || 0) + safeDeliveryFee;
     const roundOff = Math.round(preRoundTotal) - preRoundTotal;
     const total = Math.round(preRoundTotal) + roundOff;
 
     // Update order totals
     db.prepare(`
       UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, total = ?,
-        round_off = ?, updated_at = ? WHERE id = ?
-    `).run(subtotal, totalTax, JSON.stringify(allTaxBreakdowns), total, roundOff, now(), orderId);
+        round_off = ?, delivery_charge = ?, delivery_fee = ?, delivery_address = ?, updated_at = ? WHERE id = ?
+    `).run(subtotal, totalTax, JSON.stringify(allTaxBreakdowns), total, roundOff, safeDeliveryFee, safeDeliveryFee, cleanDeliveryAddress, now(), orderId);
 
     // Mark table as occupied
     if (table_id && type === 'dine_in') {
@@ -302,7 +322,7 @@ router.post('/:id/items', (req: Request, res: Response) => {
         req.params.id, product.id, product.name, product.sku, unitPrice, quantity,
         itemSubtotal, taxResult.tax_amount, JSON.stringify(taxResult.tax_breakdown),
         product.tax_type, itemDiscount, itemTotal,
-        JSON.stringify(item.variant_selection || null),
+        item.variant_selection ? JSON.stringify(item.variant_selection) : null,
         JSON.stringify(item.modifier_selection || null),
         JSON.stringify(item.addons || null),
         item.special_instructions || null, now(), now()
@@ -437,3 +457,57 @@ router.patch('/:id/status', async (req: Request, res: Response) => {
 });
 
 export const orderRoutes = router;
+// PATCH /api/orders/:id/delivery — Adjust delivery fee and address on the fly (for POS printer/staff/admin)
+router.patch('/:id/delivery', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { delivery_charge, delivery_fee, delivery_address, type } = req.body;
+    const db = getDatabase();
+
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(id) as any;
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const fee = Math.max(0, Number(delivery_charge ?? delivery_fee ?? 0));
+    const cleanAddress = delivery_address !== undefined ? (delivery_address ? String(delivery_address).trim() : null) : order.delivery_address;
+    const newType = type || order.type;
+
+    const subtotal = Number(order.subtotal) || 0;
+    const taxAmount = Number(order.tax_amount) || 0;
+    const pkg = Number(order.packaging_charge) || 0;
+    const discount = Number(order.discount_amount) || 0;
+
+    const preRound = subtotal + taxAmount + pkg + fee - discount;
+    const roundOff = Math.round(preRound) - preRound;
+    const total = Math.max(0, Math.round(preRound) + roundOff);
+
+    db.prepare(`
+      UPDATE orders
+      SET delivery_charge = ?, delivery_fee = ?, delivery_address = ?, type = ?, total = ?, round_off = ?, updated_at = ?
+      WHERE id = ?
+    `).run(fee, fee, cleanAddress, newType, total, roundOff, now(), id);
+
+    // Also update existing bill if any
+    try {
+      db.prepare(`
+        UPDATE bills
+        SET delivery_charge = ?, total = ?, updated_at = ?
+        WHERE order_id = ?
+      `).run(fee, total, now(), id);
+    } catch {}
+
+    const updated = db.prepare('SELECT * FROM orders WHERE id = ?').get(id) as any;
+
+    // Push update to Cloud Supabase
+    try {
+      const { pushOrderToCloud } = await import('../services/cloud-sync');
+      const orderItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(id).map(parseItemJson);
+      pushOrderToCloud(updated, orderItems).catch(() => {});
+    } catch {}
+
+    res.json({ success: true, order: updated });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});

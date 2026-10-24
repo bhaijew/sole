@@ -85,6 +85,9 @@ export default function POSPage() {
     }
 
     const customerName = cart.customerName.trim() || undefined;
+    const isDelivery = cart.orderType === 'delivery' || Boolean(cart.deliveryAddress.trim());
+    const finalOrderType = isDelivery ? 'delivery' : (cart.orderType || 'takeaway');
+    const safeDeliveryFee = isDelivery ? Math.max(0, Number(cart.deliveryFee) || 0) : 0;
 
     setSubmitting(true);
     try {
@@ -93,8 +96,11 @@ export default function POSPage() {
         table_id: null,
         customer_id: null,
         customer_name: customerName,
-        type: cart.orderType || 'takeaway',
+        type: finalOrderType,
         guest_count: 1,
+        delivery_charge: safeDeliveryFee,
+        delivery_fee: safeDeliveryFee,
+        delivery_address: cart.deliveryAddress.trim() || null,
         items: cart.items.map((item) => ({
           product_id: item.product.id,
           quantity: item.quantity,

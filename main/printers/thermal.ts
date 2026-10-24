@@ -512,20 +512,49 @@ function formatSingleReceiptCopy(
   if (!customerName && order?.order_source === 'online') {
     customerName = 'Online Customer';
   }
-  const restaurantName = (biz.name || biz.business_name || 'PIZZA MAFIA').toUpperCase();
+  // Resolve shop name directly from database settings if not explicitly provided or if default
+  let restaurantName = (biz?.name || biz?.business_name || '').trim();
+  let shopAddress = (biz?.address || '').trim();
+  let shopPhone = (biz?.phone || '').trim();
+
+  try {
+    const db = getDatabase();
+    if (!restaurantName || restaurantName.toUpperCase() === 'PIZZA MAFIA') {
+      const row = db.prepare("SELECT value FROM settings WHERE key IN ('business_name', 'cloud_shop_name', 'shop_name') AND value IS NOT NULL AND value != '' ORDER BY CASE key WHEN 'business_name' THEN 1 WHEN 'cloud_shop_name' THEN 2 ELSE 3 END LIMIT 1").get() as any;
+      if (row?.value?.trim()) {
+        restaurantName = row.value.trim();
+      }
+    }
+    if (!shopAddress) {
+      const addrRow = db.prepare("SELECT value FROM settings WHERE key IN ('business_address', 'address') AND value IS NOT NULL AND value != '' LIMIT 1").get() as any;
+      if (addrRow?.value?.trim()) shopAddress = addrRow.value.trim();
+    }
+    if (!shopPhone) {
+      const phoneRow = db.prepare("SELECT value FROM settings WHERE key IN ('business_phone', 'phone') AND value IS NOT NULL AND value != '' LIMIT 1").get() as any;
+      if (phoneRow?.value?.trim()) shopPhone = phoneRow.value.trim();
+    }
+  } catch {}
+
+  if (!restaurantName) restaurantName = 'Sole What POS';
+  restaurantName = restaurantName.toUpperCase();
 
   const dash = '-'.repeat(cols);
 
   // 1. Initialize & Header
   lines.push('{INIT}');
-  lines.push('{CENTER}{DOUBLE_HEIGHT}{BOLD}' + restaurantName + '{/BOLD}{/DOUBLE_HEIGHT}{/CENTER}');
+  lines.push('{CENTER}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}{BOLD}' + restaurantName + '{/BOLD}{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/CENTER}');
+  if (shopAddress) {
+    lines.push('{CENTER}{BOLD}' + shopAddress + '{/BOLD}{/CENTER}');
+  }
+  if (shopPhone) {
+    lines.push('{CENTER}{BOLD}Tel: ' + shopPhone + '{/BOLD}{/CENTER}');
+  }
   lines.push('{CENTER}{BOLD}' + copyLabel + '{/BOLD}{/CENTER}');
-  lines.push('{CENTER}Order #: ' + orderNum + '{/CENTER}');
-  lines.push('{CENTER}Date: ' + dateStr + '{/CENTER}');
-  lines.push('{CENTER}Time: ' + timeStr + '{/CENTER}');
-  lines.push('{CENTER}Type: ' + orderType + '{/CENTER}');
+  lines.push('{CENTER}{BOLD}Order #: ' + orderNum + '{/BOLD}{/CENTER}');
+  lines.push('{CENTER}{BOLD}Date: ' + dateStr + '  Time: ' + timeStr + '{/BOLD}{/CENTER}');
+  lines.push('{CENTER}{BOLD}Type: ' + orderType + '{/BOLD}{/CENTER}');
   if (customerName) {
-    lines.push('{CENTER}Name: ' + customerName + '{/CENTER}');
+    lines.push('{CENTER}{BOLD}Customer: ' + customerName + '{/BOLD}{/CENTER}');
   }
 
   // 2. Separator
@@ -550,21 +579,21 @@ function formatSingleReceiptCopy(
 
       // Clean line wrapping for long names
       const wrappedLines = wrapText(name, itemColWidth);
-      lines.push(wrappedLines[0].padEnd(itemColWidth) + qty + price);
+      lines.push('{BOLD}' + wrappedLines[0].padEnd(itemColWidth) + qty + price + '{/BOLD}');
       for (let i = 1; i < wrappedLines.length; i++) {
-        lines.push(wrappedLines[i]);
+        lines.push('{BOLD}' + wrappedLines[i] + '{/BOLD}');
       }
 
       // Addons
       const addons = parseAddons(item.addons);
       for (const addon of addons) {
         const addonPrice = addon.price ? ` (Rs ${formatPriceNumber(addon.price)})` : '';
-        lines.push('  + ' + addon.name + addonPrice);
+        lines.push('{BOLD}  + ' + addon.name + addonPrice + '{/BOLD}');
       }
 
       // Special instructions
       if (item.special_instructions) {
-        lines.push('  >> ' + item.special_instructions);
+        lines.push('{BOLD}  >> ' + item.special_instructions + '{/BOLD}');
       }
     }
   }
@@ -579,21 +608,21 @@ function formatSingleReceiptCopy(
   const tax = Number(bill?.tax_amount || order?.tax_amount || 0);
 
   if (discount > 0 || delivery > 0 || tax > 0) {
-    lines.push('Subtotal' + rightAlign('Rs ' + formatPriceNumber(subtotal), cols - 8));
+    lines.push('{BOLD}Subtotal' + rightAlign('Rs ' + formatPriceNumber(subtotal), cols - 8) + '{/BOLD}');
     if (discount > 0) {
-      lines.push('Discount' + rightAlign('-Rs ' + formatPriceNumber(discount), cols - 8));
+      lines.push('{BOLD}Discount' + rightAlign('-Rs ' + formatPriceNumber(discount), cols - 8) + '{/BOLD}');
     }
     if (delivery > 0) {
-      lines.push('Delivery' + rightAlign('Rs ' + formatPriceNumber(delivery), cols - 8));
+      lines.push('{BOLD}Delivery' + rightAlign('Rs ' + formatPriceNumber(delivery), cols - 8) + '{/BOLD}');
     }
     if (tax > 0) {
-      lines.push('Tax' + rightAlign('Rs ' + formatPriceNumber(tax), cols - 3));
+      lines.push('{BOLD}Tax' + rightAlign('Rs ' + formatPriceNumber(tax), cols - 3) + '{/BOLD}');
     }
     lines.push(dash);
   }
 
   // 4. Prominent Centered Total
-  lines.push('{CENTER}{DOUBLE_HEIGHT}{BOLD}TOTAL: Rs ' + formatPriceNumber(total) + '{/BOLD}{/DOUBLE_HEIGHT}{/CENTER}');
+  lines.push('{CENTER}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}{BOLD}TOTAL: Rs ' + formatPriceNumber(total) + '{/BOLD}{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/CENTER}');
   lines.push(dash);
 
   // 5. Payment and Footer
@@ -602,20 +631,20 @@ function formatSingleReceiptCopy(
   const compNumber = biz.complaint_number || biz.complaint_phone || biz.phone || '';
 
   if (epNumber) {
-    lines.push('EasyPaisa: ' + epNumber);
+    lines.push('{BOLD}EasyPaisa: ' + epNumber + '{/BOLD}');
   }
   if (epTitle) {
-    lines.push(epTitle);
+    lines.push('{BOLD}' + epTitle + '{/BOLD}');
   }
   if (compNumber) {
-    lines.push('Complaint: ' + compNumber);
+    lines.push('{BOLD}Complaint: ' + compNumber + '{/BOLD}');
   }
   if (biz.footer_message) {
-    lines.push(biz.footer_message);
+    lines.push('{BOLD}' + biz.footer_message + '{/BOLD}');
   }
 
   lines.push('');
-  lines.push('{CENTER}{BOLD}Thank You!{/BOLD}{/CENTER}');
+  lines.push('{CENTER}{DOUBLE_HEIGHT}{BOLD}Thank You!{/BOLD}{/DOUBLE_HEIGHT}{/CENTER}');
   lines.push('{CUT}');
 
   return buildEscPos(lines);
@@ -713,6 +742,44 @@ function truncate(text: string, length: number): string {
   return text.length > length ? text.substring(0, length - 2) + '..' : text;
 }
 
+export function cleanVariant(v: any): string {
+  if (!v) return '';
+  if (typeof v === 'string') {
+    const trimmed = v.trim();
+    if (
+      !trimmed ||
+      trimmed.toLowerCase() === 'null' ||
+      trimmed.toLowerCase() === 'undefined' ||
+      trimmed === '{}' ||
+      trimmed === '[]' ||
+      /^(vraint|variant)\s*[:=]\s*null$/i.test(trimmed)
+    ) {
+      return '';
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (!parsed || parsed === 'null' || parsed === 'undefined') return '';
+      if (typeof parsed === 'string') return cleanVariant(parsed);
+      if (typeof parsed === 'object') {
+        if (parsed.name) return String(parsed.name).trim();
+        if (parsed.title) return String(parsed.title).trim();
+        const vals = Object.values(parsed).filter((x) => x && String(x).toLowerCase() !== 'null' && String(x).toLowerCase() !== 'undefined');
+        return vals.join(', ');
+      }
+    } catch {
+      return trimmed;
+    }
+    return trimmed;
+  }
+  if (typeof v === 'object') {
+    if (v.name) return String(v.name).trim();
+    if (v.title) return String(v.title).trim();
+    const vals = Object.values(v).filter((x) => x && String(x).toLowerCase() !== 'null' && String(x).toLowerCase() !== 'undefined');
+    return vals.join(', ');
+  }
+  return String(v);
+}
+
 function formatKOT(order: any, items: any[], stationName: string, cols: number = 48): Buffer {
   const lines: string[] = [];
   const bar = '='.repeat(cols);
@@ -744,44 +811,70 @@ function formatKOT(order: any, items: any[], stationName: string, cols: number =
   const timeStr = dateObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
 
   lines.push('{INIT}');
-  lines.push('{CENTER}{DOUBLE_HEIGHT}{BOLD}KITCHEN ORDER TICKET{/BOLD}{/DOUBLE_HEIGHT}{/CENTER}');
-  lines.push('{CENTER}Station: ' + (stationName || 'Kitchen') + '{/CENTER}');
-  lines.push(dash);
-  lines.push('{DOUBLE_HEIGHT}{BOLD}ORDER #: ' + orderNum + '{/BOLD}{/DOUBLE_HEIGHT}');
-  lines.push('{BOLD}Type: ' + orderType.toUpperCase() + '{/BOLD}');
+  // 1. KOT Banner: Large Double-Height & Double-Width Bold
+  lines.push('{CENTER}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}{BOLD}KITCHEN ORDER{/BOLD}{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/CENTER}');
+  lines.push('{CENTER}{BOLD}STATION: ' + (stationName || 'Kitchen').toUpperCase() + '{/BOLD}{/CENTER}');
+  lines.push(bar);
+
+  // 2. Large Order # & Type
+  lines.push('{DOUBLE_HEIGHT}{DOUBLE_WIDTH}{BOLD}ORDER #: ' + orderNum + '{/BOLD}{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}');
+  lines.push('{DOUBLE_HEIGHT}{BOLD}TYPE: ' + orderType.toUpperCase() + '{/BOLD}{/DOUBLE_HEIGHT}');
+
   if (order.table?.name || order.table) {
     const tName = typeof order.table === 'object' ? order.table.name : order.table;
-    lines.push('Table: ' + tName);
+    lines.push('{DOUBLE_HEIGHT}{BOLD}TABLE: ' + tName + '{/BOLD}{/DOUBLE_HEIGHT}');
   }
   if (customerName) {
     lines.push('{BOLD}Customer: ' + customerName + '{/BOLD}');
   }
   if (customerPhone) {
-    lines.push('Phone: ' + customerPhone);
+    lines.push('{BOLD}Phone: ' + customerPhone + '{/BOLD}');
   }
-  lines.push('Time: ' + timeStr);
+  const deliveryAddr = order?.delivery_address || order?.address;
+  if (deliveryAddr && String(deliveryAddr).trim().toLowerCase() !== 'null') {
+    lines.push('{DOUBLE_HEIGHT}{BOLD}Delivery: ' + String(deliveryAddr).trim() + '{/BOLD}{/DOUBLE_HEIGHT}');
+  }
+  lines.push('{BOLD}Time: ' + timeStr + '{/BOLD}');
   lines.push(bar);
   lines.push('');
 
+  // 3. Items (Large Double-Height + Double-Width & Bold for quick kitchen reading)
+  const maxCharsDouble = Math.floor(cols / 2); // 24 cols for 80mm, 16 for 58mm
   for (const item of (items || [])) {
     const qty = item.quantity || item.qty || 1;
     const name = item.product_name || item.name || 'Item';
-    lines.push('{DOUBLE_HEIGHT}{BOLD}' + qty + 'x  ' + name + '{/BOLD}{/DOUBLE_HEIGHT}');
+    const itemTitle = `${qty}x  ${name}`;
+
+    const wrapped = wrapText(itemTitle, maxCharsDouble);
+    for (const wl of wrapped) {
+      lines.push('{DOUBLE_HEIGHT}{DOUBLE_WIDTH}{BOLD}' + wl + '{/BOLD}{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}');
+    }
     
-    // Variant / Variation
-    if (item.variant_selection) {
-      lines.push('  [' + item.variant_selection + ']');
+    // Variant / Variation (strictly filtered to eliminate variant = null)
+    const vText = cleanVariant(item.variant_selection || item.variant || item.selected_variation || item.selectedVariation);
+    if (vText && vText.toLowerCase() !== 'null' && vText.toLowerCase() !== 'undefined' && !/^(vraint|variant)\s*[:=]\s*null$/i.test(vText)) {
+      lines.push('{DOUBLE_HEIGHT}{BOLD}  >> VARIANT: ' + vText.toUpperCase() + '{/BOLD}{/DOUBLE_HEIGHT}');
     }
 
     // Addons
     const addons = parseAddons(item.addons);
     for (const addon of addons) {
-      lines.push('  + ' + addon.name);
+      const addonQty = addon.quantity && addon.quantity > 1 ? ` x${addon.quantity}` : '';
+      lines.push('{BOLD}  + ADDON: ' + addon.name.toUpperCase() + addonQty + '{/BOLD}');
     }
 
-    if (item.special_instructions) {
-      lines.push('  ** ' + item.special_instructions + ' **');
+    // Special instructions (Alert in Double Height Bold - eliminate any "vraint = null" or null)
+    const cleanNotes = item.special_instructions ? String(item.special_instructions).trim() : '';
+    if (
+      cleanNotes &&
+      cleanNotes.toLowerCase() !== 'null' &&
+      cleanNotes.toLowerCase() !== 'undefined' &&
+      !/^(vraint|variant)\s*[:=]\s*null$/i.test(cleanNotes)
+    ) {
+      lines.push('{DOUBLE_HEIGHT}{BOLD}  ⚠️ NOTE: ' + cleanNotes.toUpperCase() + '{/BOLD}{/DOUBLE_HEIGHT}');
     }
+
+    lines.push(dash);
   }
 
   lines.push('');
@@ -821,6 +914,7 @@ function buildEscPos(lines: string[]): Buffer {
 
   const resetAllStyles = () => {
     buf.push(0x1B, 0x45, 0x00);
+    buf.push(0x1B, 0x47, 0x00);
     buf.push(0x1B, 0x21, 0x00);
     buf.push(0x1B, 0x61, 0x00);
   };
@@ -866,7 +960,11 @@ function buildEscPos(lines: string[]): Buffer {
     }
 
     if (lineBold) {
-      buf.push(0x1B, 0x45, 0x01);
+      buf.push(0x1B, 0x45, 0x01); // Emphasized mode ON
+      buf.push(0x1B, 0x47, 0x01); // Double-strike mode ON (solid bold)
+    } else {
+      buf.push(0x1B, 0x45, 0x00);
+      buf.push(0x1B, 0x47, 0x00);
     }
 
     buf.push(...Buffer.from(line, 'utf8'));

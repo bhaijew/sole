@@ -122,17 +122,34 @@ export async function syncMenuFromCloud(forcedShopId?: number | string): Promise
 
   try {
     let shopId = forcedShopId !== undefined ? String(forcedShopId) : getSetting('cloud_shop_id', '');
-    if (!shopId) {
-      try {
-        const { data: firstShop } = await client.from('shops').select('id, name, slug').limit(1).maybeSingle();
-        if (firstShop) {
-          shopId = String(firstShop.id);
-          setSetting('cloud_shop_id', shopId);
-          setSetting('cloud_shop_name', firstShop.name);
-          setSetting('cloud_shop_slug', firstShop.slug);
-          setSetting('business_name', firstShop.name);
+    try {
+      let targetShop: any = null;
+      if (shopId) {
+        const { data } = await client.from('shops').select('id, name, slug, address, phone').eq('id', Number(shopId)).maybeSingle();
+        targetShop = data;
+      }
+      if (!targetShop) {
+        const { data } = await client.from('shops').select('id, name, slug, address, phone').limit(1).maybeSingle();
+        targetShop = data;
+      }
+      if (targetShop) {
+        shopId = String(targetShop.id);
+        setSetting('cloud_shop_id', shopId);
+        setSetting('cloud_shop_name', targetShop.name);
+        setSetting('cloud_shop_slug', targetShop.slug);
+        setSetting('business_name', targetShop.name);
+        setSetting('shop_name', targetShop.name);
+        if (targetShop.address) {
+          setSetting('address', targetShop.address);
+          setSetting('business_address', targetShop.address);
         }
-      } catch {}
+        if (targetShop.phone) {
+          setSetting('phone', targetShop.phone);
+          setSetting('business_phone', targetShop.phone);
+        }
+      }
+    } catch (shopSyncErr: any) {
+      console.warn('[CloudSync] Notice while updating active shop details:', shopSyncErr?.message);
     }
     console.log(`[CloudSync] Starting Menu Sync from Pizza System (Branch Filter: ${shopId ? `Shop #${shopId}` : 'All Branches'})...`);
 
@@ -1246,6 +1263,8 @@ export async function pushOrderToCloud(order: any, rawItems: any[]): Promise<boo
       order_type: order.type || 'takeaway',
       status: mapLocalStatusToCloud(order.status || 'pending'),
       total: Number(order.total) || 0,
+      delivery_fee: Number(order.delivery_charge || order.delivery_fee || 0),
+      delivery_address: order.delivery_address || null,
       items: formattedItems,
       customer_name: customerName,
       customer_phone: customerPhone,
@@ -1574,11 +1593,23 @@ export async function fetchCloudShops(): Promise<{
 
     if (error) throw error;
 
+    let updatedShopName = currentShopName;
+    if (data && data.length > 0) {
+      const activeMatch = currentShopId ? data.find((s: any) => String(s.id) === String(currentShopId)) : data[0];
+      if (activeMatch) {
+        updatedShopName = activeMatch.name;
+        setSetting('cloud_shop_name', activeMatch.name);
+        setSetting('cloud_shop_slug', activeMatch.slug);
+        setSetting('business_name', activeMatch.name);
+        setSetting('shop_name', activeMatch.name);
+      }
+    }
+
     return {
       success: true,
       shops: (data || []) as any,
       currentShopId,
-      currentShopName,
+      currentShopName: updatedShopName,
     };
   } catch (err: any) {
     console.warn('[CloudSync] Failed to fetch shops:', err.message);

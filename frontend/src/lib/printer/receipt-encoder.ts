@@ -132,7 +132,7 @@ function buildSingleCopyBytes(
 
   const cols = CHARS[paperWidth] || 48;
   const order = bill.order;
-  const displayName = (businessName || tenant.business_name || 'PIZZA MAFIA').toUpperCase();
+  const displayName = (businessName || tenant.business_name || 'Sole What POS').toUpperCase();
   const orderNum = order?.order_number || bill.bill_number || '1';
 
   const dateObj = order?.created_at ? new Date(order.created_at) : ((bill as any)?.created_at ? new Date((bill as any).created_at) : new Date());
@@ -159,16 +159,18 @@ function buildSingleCopyBytes(
   enc.bold(true).width(2).height(2).text(truncate(displayName, Math.floor(cols / 2))).width(1).height(1).bold(false).newline();
 
   // Copy Label
-  enc.bold(true).text(copyLabel).bold(false).newline();
+  enc.bold(true).text(copyLabel).newline();
 
-  // Order Details
+  // Order Details (Bold)
+  enc.bold(true);
   enc.text(`Order #: ${orderNum}`).newline();
   enc.text(`Date: ${dateStr}`).newline();
   enc.text(`Time: ${timeStr}`).newline();
   enc.text(`Type: ${orderType}`).newline();
   if (customerName) {
-    enc.text(`Name: ${customerName}`).newline();
+    enc.text(`Customer: ${customerName}`).newline();
   }
+  enc.bold(false);
 
   // Dashed line before items
   enc.align('left');
@@ -178,12 +180,13 @@ function buildSingleCopyBytes(
   enc.bold(true).text(col3Header(cols)).bold(false).newline();
   enc.text('-'.repeat(cols)).newline();
 
-  // Items List
+  // Items List (Bold)
   const items = order?.items || [];
   for (const item of items) {
     const itemTotal = Number(item.total ?? (Number(item.unit_price || 0) * Number(item.quantity || 1)));
     const lines = col3ItemLines(item.product_name || 'Item', item.quantity || 1, itemTotal, cols);
 
+    enc.bold(true);
     for (const l of lines) {
       enc.text(l).newline();
     }
@@ -207,11 +210,12 @@ function buildSingleCopyBytes(
     if (item.special_instructions) {
       enc.text(truncate(`  >> ${item.special_instructions}`, cols)).newline();
     }
+    enc.bold(false);
   }
 
   enc.text('-'.repeat(cols)).newline();
 
-  // Breakdown if discounts, delivery or taxes exist
+  // Breakdown if discounts, delivery or taxes exist (Bold)
   const subtotal = Number(bill.subtotal || order?.subtotal || bill.total || 0);
   const total = Number(bill.total || order?.total || 0);
   const discount = Number(bill.discount_amount || order?.discount_amount || 0);
@@ -219,6 +223,7 @@ function buildSingleCopyBytes(
   const tax = Number(bill.tax_amount || order?.tax_amount || 0);
 
   if (discount > 0 || delivery > 0 || tax > 0) {
+    enc.bold(true);
     enc.text(padRow('Subtotal', `Rs ${formatAmountNumber(subtotal)}`, cols)).newline();
     if (discount > 0) {
       enc.text(padRow('Discount', `-Rs ${formatAmountNumber(discount)}`, cols)).newline();
@@ -229,20 +234,22 @@ function buildSingleCopyBytes(
     if (tax > 0) {
       enc.text(padRow('Tax', `Rs ${formatAmountNumber(tax)}`, cols)).newline();
     }
+    enc.bold(false);
     enc.text('-'.repeat(cols)).newline();
   }
 
   // 4. Prominently Centered Total
   enc.align('center');
-  enc.bold(true).height(2).text(`TOTAL: Rs ${formatAmountNumber(total)}`).height(1).bold(false).newline();
+  enc.bold(true).width(2).height(2).text(`TOTAL: Rs ${formatAmountNumber(total)}`).width(1).height(1).bold(false).newline();
   enc.align('left');
   enc.text('-'.repeat(cols)).newline();
 
-  // 5. Payment and Footer
+  // 5. Payment and Footer (Bold)
   const epNumber = easypaisaNumber || '';
   const epTitle = easypaisaTitle || '';
   const compNumber = complaintNumber || phone || '';
 
+  enc.bold(true);
   if (epNumber) {
     enc.text(`EasyPaisa: ${epNumber}`).newline();
   }
@@ -255,9 +262,10 @@ function buildSingleCopyBytes(
   if (footerNote) {
     enc.text(truncate(footerNote, cols)).newline();
   }
+  enc.bold(false);
 
   enc.newline();
-  enc.align('center').bold(true).text('Thank You!').bold(false).newline();
+  enc.align('center').bold(true).height(2).text('Thank You!').height(1).bold(false).newline();
   enc.newline().cut();
 
   return enc.encode();
