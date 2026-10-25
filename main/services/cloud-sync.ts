@@ -1189,6 +1189,40 @@ export async function pullOnlineOrdersFromCloud(): Promise<{
       }
     }
 
+    // Reconcile and purge any local orders that were deleted from Pizza Admin (Supabase)
+    const validCloudIds = new Set(cloudOrders.map((co: any) => String(co.id)));
+    const validCloudNumbers = new Set(cloudOrders.map((co: any) => String(co.order_number || '')));
+    const minCloudId = Math.min(...cloudOrders.map((co: any) => Number(co.id)));
+
+    const localOnlineRows = db.prepare(`
+      SELECT id, cloud_order_id, order_number 
+      FROM orders 
+      WHERE (cloud_order_id IS NOT NULL OR order_source = 'online' OR type = 'online')
+        AND (shop_id = ? OR shop_id IS NULL OR shop_id = 0)
+        AND created_at >= datetime('now', '-7 days')
+    `).all(Number(currentShopId)) as Array<{ id: number; cloud_order_id: string | null; order_number: string }>;
+
+    let deletedCount = 0;
+    for (const loc of localOnlineRows) {
+      const locCloudId = loc.cloud_order_id ? Number(loc.cloud_order_id) : null;
+      if (locCloudId && locCloudId >= minCloudId) {
+        const stillInCloud = validCloudIds.has(String(loc.cloud_order_id)) || (loc.order_number && validCloudNumbers.has(String(loc.order_number)));
+        if (!stillInCloud) {
+          db.prepare('DELETE FROM order_items WHERE order_id = ?').run(loc.id);
+          db.prepare('DELETE FROM bills WHERE order_id = ?').run(loc.id);
+          db.prepare('DELETE FROM orders WHERE id = ?').run(loc.id);
+          deletedCount++;
+          console.log(`[CloudSync] Removed local order ${loc.order_number} (ID: ${loc.id}) because it was deleted in Pizza Admin.`);
+        }
+      }
+    }
+
+    if (deletedCount > 0) {
+      notifyKdsUpdate();
+      broadcastCloudEvent('order-deleted', { count: deletedCount });
+      broadcastCloudEvent('order-synced', { count: deletedCount });
+    }
+
     if (importedCount > 0) {
       console.log(`[CloudSync] Pulled and imported ${importedCount} new online orders from Pizza System.`);
       broadcastCloudEvent('online-order-received', { count: importedCount });

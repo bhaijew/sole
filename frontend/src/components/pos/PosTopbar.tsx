@@ -16,7 +16,7 @@ export default function PosTopbar() {
   useEffect(() => {
     const checkOnlineOrders = async () => {
       try {
-        const res = await api.get('/orders?status=pending');
+        const res = await api.get('/orders?status=pending&today=1');
         const orders = res.data?.orders || [];
         const onlinePending = orders.filter(
           (o: any) => o.order_source === 'online' || o.type === 'online'

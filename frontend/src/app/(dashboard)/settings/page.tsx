@@ -5,7 +5,7 @@ import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore, type PaperSize, type BillTemplate } from '@/store/pos-settings';
 import { usePrinterStore } from '@/hooks/usePrinter';
 import { useSystemModeStore } from '@/store/system-mode';
-import { Settings, Building2, Globe, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Copy, Check, Cloud, ShieldCheck, CheckCircle2, Plus, Trash2, X, Wifi } from 'lucide-react';
+import { Settings, Building2, Globe, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Copy, Check, Cloud, ShieldCheck, CheckCircle2, Plus, Trash2, X, Wifi, Download, Sparkles } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -286,7 +286,7 @@ export default function SettingsPage() {
     printerEnabled: boolean; printerPaperSize: PaperSize;
     printMethod: 'escpos' | 'browser';
     autoPrintKot: boolean; autoPrintBill: boolean;
-    webPrintSize: PaperSize; whatsappShareEnabled: boolean;
+    whatsappShareEnabled: boolean;
     receiptCopies: 'customer' | 'both' | 'business';
     kitchenPrinterId: string;
   };
@@ -294,9 +294,8 @@ export default function SettingsPage() {
     printerEnabled: posSettings.printerEnabled,
     printerPaperSize: posSettings.printerPaperSize,
     printMethod: printMethod as 'escpos' | 'browser',
-    autoPrintKot: posSettings.autoPrintKot,
-    autoPrintBill: posSettings.autoPrintBill,
-    webPrintSize: posSettings.webPrintSize,
+    autoPrintKot: posSettings.autoPrintKot ?? true,
+    autoPrintBill: posSettings.autoPrintBill ?? true,
     whatsappShareEnabled: posSettings.whatsappShareEnabled,
     receiptCopies: 'customer',
     kitchenPrinterId: '',
@@ -309,7 +308,6 @@ export default function SettingsPage() {
     setPrintMethod(printingForm.printMethod);
     posSettings.setAutoPrintKot(printingForm.autoPrintKot);
     posSettings.setAutoPrintBill(printingForm.autoPrintBill);
-    posSettings.setWebPrintSize(printingForm.webPrintSize);
     posSettings.setWhatsappShareEnabled(printingForm.whatsappShareEnabled);
     try {
       await api.put('/settings/receipt_copies', { value: printingForm.receiptCopies });
@@ -325,6 +323,96 @@ export default function SettingsPage() {
     toast.success('Printing settings saved');
   };
   const resetPrinting = () => setPrintingForm(savedPrinting);
+
+  // App Software Updater State
+  const [updateState, setUpdateState] = useState<{
+    status: 'idle' | 'checking' | 'available' | 'downloading' | 'ready-to-install' | 'up-to-date' | 'error';
+    version: string;
+    newVersion?: string | null;
+    percent: number;
+    transferredMb: string;
+    totalMb: string;
+    speedMb: string;
+    error?: string | null;
+  }>({
+    status: 'idle',
+    version: '1.0.0',
+    newVersion: null,
+    percent: 0,
+    transferredMb: '0',
+    totalMb: '0',
+    speedMb: '0',
+    error: null,
+  });
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [installingUpdate, setInstallingUpdate] = useState(false);
+
+  useEffect(() => {
+    // 1. Fetch current status from backend
+    const fetchStatus = async () => {
+      try {
+        const res = await api.get('/updates/status');
+        if (res.data?.success && res.data?.data) {
+          setUpdateState((prev) => ({ ...prev, ...res.data.data }));
+        }
+      } catch {}
+    };
+    fetchStatus();
+
+    // 2. Electron IPC listener if available
+    if (typeof window !== 'undefined' && (window as any).electronAPI?.onUpdateStatus) {
+      (window as any).electronAPI.onUpdateStatus((status: any) => {
+        if (status) {
+          setUpdateState((prev) => ({ ...prev, ...status }));
+          if (status.status !== 'checking') {
+            setCheckingUpdate(false);
+          }
+        }
+      });
+    }
+
+    // 3. Polling interval while downloading/checking
+    const interval = setInterval(async () => {
+      try {
+        const res = await api.get('/updates/status');
+        if (res.data?.success && res.data?.data) {
+          setUpdateState((prev) => ({ ...prev, ...res.data.data }));
+        }
+      } catch {}
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleCheckForUpdates = async () => {
+    setCheckingUpdate(true);
+    try {
+      if (typeof window !== 'undefined' && (window as any).electronAPI?.checkForUpdates) {
+        await (window as any).electronAPI.checkForUpdates();
+      } else {
+        await api.post('/updates/check');
+      }
+      toast.success('Checking for updates on GitHub...');
+    } catch {
+      toast.error('Failed to check for updates');
+    } finally {
+      setTimeout(() => setCheckingUpdate(false), 2500);
+    }
+  };
+
+  const handleInstallUpdate = async () => {
+    setInstallingUpdate(true);
+    try {
+      if (typeof window !== 'undefined' && (window as any).electronAPI?.quitAndInstall) {
+        await (window as any).electronAPI.quitAndInstall();
+      } else {
+        await api.post('/updates/install');
+      }
+    } catch {
+      toast.error('Failed to restart app');
+      setInstallingUpdate(false);
+    }
+  };
 
   // Hardware thermal printers state
   const [hardwarePrinters, setHardwarePrinters] = useState<any[]>([]);
@@ -651,13 +739,6 @@ export default function SettingsPage() {
     });
   };
 
-  const paperSizeOptions: { value: PaperSize; label: string }[] = [
-    { value: 'thermal58', label: '2.5" (58mm)' },
-    { value: 'thermal80', label: '3.5" (80mm)' },
-    { value: 'a4', label: 'A4 Paper' },
-    { value: 'a5', label: 'A5 Paper' },
-  ];
-
   return (
     <div>
       <div className="flex items-center gap-3 mb-6">
@@ -869,6 +950,116 @@ export default function SettingsPage() {
                   <p className="text-sm text-gray-500">Role</p>
                   <p className="font-medium text-gray-900 capitalize">{currentTenant?.role || '—'}</p>
                 </div>
+              </div>
+            </div>
+
+            {/* Software Updates Card */}
+            <div className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2">
+                  <Download size={20} className="text-brand" />
+                  <h2 className="font-semibold text-gray-900">Software Updates</h2>
+                </div>
+                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                  Version {updateState.version}
+                </span>
+              </div>
+
+              <p className="text-xs text-gray-500 mb-4">
+                Check GitHub for the latest Sole What POS updates, bug fixes, and thermal printing improvements.
+              </p>
+
+              {/* Status Banner */}
+              {updateState.status === 'checking' && (
+                <div className="p-3.5 mb-4 rounded-xl bg-blue-50 border border-blue-200 flex items-center gap-2.5 text-blue-800 text-xs font-semibold">
+                  <RefreshCw size={15} className="animate-spin text-blue-600" />
+                  <span>Checking GitHub for latest app release...</span>
+                </div>
+              )}
+
+              {updateState.status === 'available' && (
+                <div className="p-3.5 mb-4 rounded-xl bg-purple-50 border border-purple-200 text-purple-900 text-xs">
+                  <div className="flex items-center gap-2 font-bold mb-1">
+                    <Sparkles size={15} className="text-purple-600" />
+                    <span>New Update Available: v{updateState.newVersion}</span>
+                  </div>
+                  <p className="text-[11px] text-purple-700">Downloading update package in background...</p>
+                </div>
+              )}
+
+              {updateState.status === 'downloading' && (
+                <div className="p-4 mb-4 rounded-xl bg-blue-50 border border-blue-200 space-y-2.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-blue-900 flex items-center gap-1.5">
+                      <Download size={14} className="animate-bounce text-blue-600" />
+                      Downloading Update v{updateState.newVersion || ''}...
+                    </span>
+                    <span className="font-black text-blue-700 text-sm">{updateState.percent}%</span>
+                  </div>
+
+                  {/* Visual Progress Bar */}
+                  <div className="w-full bg-blue-200/60 rounded-full h-2.5 overflow-hidden">
+                    <div
+                      className="bg-brand h-2.5 rounded-full transition-all duration-300"
+                      style={{ width: `${Math.min(100, Math.max(0, updateState.percent))}%` }}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] text-blue-800 font-medium">
+                    <span>{updateState.transferredMb} MB of {updateState.totalMb} MB downloaded</span>
+                    {Number(updateState.speedMb) > 0 && (
+                      <span className="text-slate-500">{updateState.speedMb} MB/s</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {updateState.status === 'ready-to-install' && (
+                <div className="p-4 mb-4 rounded-xl bg-emerald-50 border border-emerald-200 space-y-3">
+                  <div className="flex items-center gap-2 text-emerald-900 text-xs font-bold">
+                    <CheckCircle2 size={16} className="text-emerald-600" />
+                    <span>Update v{updateState.newVersion} Downloaded Successfully!</span>
+                  </div>
+                  <p className="text-xs text-emerald-700">
+                    The update is downloaded and ready to install. Click below to restart and apply immediately.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleInstallUpdate}
+                    disabled={installingUpdate}
+                    className="w-full py-2 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    <RefreshCw size={14} className={installingUpdate ? 'animate-spin' : ''} />
+                    <span>{installingUpdate ? 'Restarting App...' : 'Restart Now & Install Update'}</span>
+                  </button>
+                </div>
+              )}
+
+              {updateState.status === 'up-to-date' && (
+                <div className="p-3.5 mb-4 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center gap-2.5 text-emerald-800 text-xs font-semibold">
+                  <CheckCircle2 size={15} className="text-emerald-600" />
+                  <span>Sole What POS is up to date (Version {updateState.version}).</span>
+                </div>
+              )}
+
+              {updateState.status === 'error' && updateState.error && (
+                <div className="p-3 mb-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+                  <p className="font-semibold mb-0.5">Could not check for updates</p>
+                  <p className="text-[11px] text-amber-700">{updateState.error}</p>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCheckForUpdates}
+                  disabled={checkingUpdate || updateState.status === 'downloading'}
+                  className="px-4 py-2 text-xs font-bold bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 flex items-center gap-2 transition-all shadow-xs"
+                >
+                  <RefreshCw size={13} className={checkingUpdate ? 'animate-spin' : ''} />
+                  <span>{checkingUpdate ? 'Checking GitHub...' : 'Check for Updates'}</span>
+                </button>
               </div>
             </div>
           </div>
@@ -1221,15 +1412,15 @@ export default function SettingsPage() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-gray-900 text-sm">🧾 Auto-Print Customer Bill</span>
+                        <span className="font-bold text-gray-900 text-sm">🧾 Auto-Print Customer Slip (Receipt)</span>
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                           printingForm.autoPrintBill ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-200 text-gray-600'
                         }`}>
-                          {printingForm.autoPrintBill ? 'ENABLED' : 'OFF'}
+                          {printingForm.autoPrintBill ? 'AUTO ENABLED (DEFAULT)' : 'OFF'}
                         </span>
                       </div>
                       <p className="text-xs text-gray-600">
-                        Automatically prints the customer receipt slip on the Counter Printer as soon as an order is placed in POS or arrives from the Online Menu.
+                        Automatically print customer receipt slip upon order checkout or online order receipt. Enabled by default; turn OFF if manual slip printing is preferred.
                       </p>
                     </div>
                     <Toggle
@@ -1335,12 +1526,12 @@ export default function SettingsPage() {
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand font-medium"
                   >
                     <option value="escpos">ESC/POS Thermal (Silent Raw Spooler - Recommended)</option>
-                    <option value="browser">Browser Print Dialog (Standard A4/A5)</option>
+                    <option value="browser">Browser Print Dialog</option>
                   </select>
                   <p className="text-xs text-gray-500 mt-1">
                     {printingForm.printMethod === 'escpos'
                       ? 'Direct silent printing to your thermal receipt printer via Windows Spooler (no popups).'
-                      : 'Opens the standard print dialog — useful for laser/office printers.'}
+                      : 'Opens the standard print dialog window.'}
                   </p>
                 </div>
               </div>

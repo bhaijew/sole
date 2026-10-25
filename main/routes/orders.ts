@@ -35,8 +35,12 @@ router.get('/', async (req: Request, res: Response) => {
       query += ' AND type = ?';
       params.push(req.query.type);
     }
-    if (req.query.today && req.query.today !== '0' && req.query.today !== 'false') {
-      query += " AND date(created_at) = date('now')";
+    if (req.query.date) {
+      const targetDate = String(req.query.date).trim();
+      query += " AND (date(created_at, 'localtime') = ? OR date(created_at) = ?)";
+      params.push(targetDate, targetDate);
+    } else if (req.query.today && req.query.today !== '0' && req.query.today !== 'false') {
+      query += " AND (date(created_at, 'localtime') = date('now', 'localtime') OR date(created_at) = date('now'))";
     }
     if (req.query.table_id) {
       query += ' AND table_id = ?';

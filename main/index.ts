@@ -11,6 +11,12 @@ import { initCloudSync, stopRealtimeOrderListener, stopCloudSyncIntervals } from
 import { stopKdsIntervals } from './services/kds';
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
+import {
+  getUpdateProgressState,
+  setUpdateProgressState,
+  setCheckForUpdatesHandler,
+  setQuitAndInstallHandler,
+} from './services/updater-state';
 
 
 log.initialize();
@@ -38,27 +44,52 @@ function setupAutoUpdater(): void {
     console.warn('[Update] Could not set feed URL:', feedErr);
   }
 
+  setUpdateProgressState({
+    version: app.getVersion(),
+  });
+
+  setCheckForUpdatesHandler((manual) => {
+    checkForUpdates(manual);
+  });
+
+  setQuitAndInstallHandler(() => {
+    isQuitting = true;
+    autoUpdater.quitAndInstall();
+  });
+
   autoUpdater.on('checking-for-update', () => {
     console.log('[Update] Checking for updates on GitHub...');
-    mainWindow?.webContents.send('update-status', { status: 'checking' });
+    setUpdateProgressState({ status: 'checking', error: null, lastChecked: new Date().toISOString() });
+    mainWindow?.webContents.send('update-status', getUpdateProgressState());
   });
 
   autoUpdater.on('update-available', (info) => {
     console.log('[Update] Update available:', info.version);
     updateAvailable = true;
     isManualCheck = false;
-    mainWindow?.webContents.send('update-status', { 
-      status: 'available', 
-      version: info.version,
-      releaseDate: info.releaseDate,
-      releaseNotes: info.releaseNotes 
+    setUpdateProgressState({
+      status: 'available',
+      version: app.getVersion(),
+      newVersion: info.version,
+      releaseDate: info.releaseDate as string || null,
+      releaseNotes: (typeof info.releaseNotes === 'string' ? info.releaseNotes : null),
+      percent: 0,
+      error: null,
+      lastChecked: new Date().toISOString(),
     });
+    mainWindow?.webContents.send('update-status', getUpdateProgressState());
     console.log('[Update] Downloading update in background...');
   });
 
   autoUpdater.on('update-not-available', () => {
     console.log('[Update] No updates available');
-    mainWindow?.webContents.send('update-status', { status: 'up-to-date' });
+    setUpdateProgressState({
+      status: 'up-to-date',
+      version: app.getVersion(),
+      error: null,
+      lastChecked: new Date().toISOString(),
+    });
+    mainWindow?.webContents.send('update-status', getUpdateProgressState());
     if (isManualCheck) {
       isManualCheck = false;
       dialog.showMessageBox({
@@ -72,20 +103,36 @@ function setupAutoUpdater(): void {
   });
 
   autoUpdater.on('download-progress', (progress) => {
-    console.log(`[Update] Download progress: ${progress.percent.toFixed(1)}%`);
-    mainWindow?.webContents.send('update-status', { 
+    const percent = Math.round(progress.percent * 10) / 10;
+    const transferredMb = (progress.transferred / 1024 / 1024).toFixed(1);
+    const totalMb = (progress.total / 1024 / 1024).toFixed(1);
+    const speedMb = (progress.bytesPerSecond / 1024 / 1024).toFixed(1);
+
+    console.log(`[Update] Download progress: ${percent}% (${transferredMb}MB / ${totalMb}MB @ ${speedMb}MB/s)`);
+
+    setUpdateProgressState({
       status: 'downloading',
-      percent: progress.percent 
+      percent,
+      transferred: progress.transferred,
+      total: progress.total,
+      transferredMb,
+      totalMb,
+      speedMb,
     });
+    mainWindow?.webContents.send('update-status', getUpdateProgressState());
   });
 
   autoUpdater.on('update-downloaded', (info) => {
     console.log('[Update] Download complete:', info.version);
     updateDownloaded = true;
-    mainWindow?.webContents.send('update-status', { 
+    setUpdateProgressState({
       status: 'ready-to-install',
-      version: info.version
+      version: app.getVersion(),
+      newVersion: info.version,
+      percent: 100,
     });
+    mainWindow?.webContents.send('update-status', getUpdateProgressState());
+
     dialog.showMessageBox({
       type: 'info',
       title: 'Update Ready',
@@ -106,7 +153,13 @@ function setupAutoUpdater(): void {
     const is404 = err.message?.includes('404') || err.message?.includes('Cannot find latest');
     if (is404) {
       log.debug('[Update] No release artifacts found (404) — skipping update');
-      mainWindow?.webContents.send('update-status', { status: 'up-to-date' });
+      setUpdateProgressState({
+        status: 'up-to-date',
+        version: app.getVersion(),
+        error: null,
+        lastChecked: new Date().toISOString(),
+      });
+      mainWindow?.webContents.send('update-status', getUpdateProgressState());
       if (isManualCheck) {
         isManualCheck = false;
         dialog.showMessageBox({
@@ -119,7 +172,13 @@ function setupAutoUpdater(): void {
       }
     } else {
       log.error('[Update] Error:', err);
-      mainWindow?.webContents.send('update-status', { status: 'error', error: err.message });
+      setUpdateProgressState({
+        status: 'error',
+        version: app.getVersion(),
+        error: err.message,
+        lastChecked: new Date().toISOString(),
+      });
+      mainWindow?.webContents.send('update-status', getUpdateProgressState());
       if (isManualCheck) {
         isManualCheck = false;
         dialog.showMessageBox({
@@ -136,20 +195,39 @@ function setupAutoUpdater(): void {
 
 function checkForUpdates(manual = false): void {
   if (isDev) {
+    setUpdateProgressState({
+      status: 'up-to-date',
+      version: app.getVersion(),
+      lastChecked: new Date().toISOString(),
+      error: null,
+    });
+    mainWindow?.webContents.send('update-status', getUpdateProgressState());
     if (manual) {
       dialog.showMessageBox({
         type: 'info',
         title: 'Check for Updates',
         message: 'Running in development mode.',
-        detail: 'Auto-updates are active in production builds.',
+        detail: `App is in dev mode (${app.getVersion()}). Auto-updates are active in production builds.`,
         buttons: ['OK'],
       });
     }
     return;
   }
   isManualCheck = manual;
+  setUpdateProgressState({
+    status: 'checking',
+    error: null,
+    lastChecked: new Date().toISOString(),
+  });
+  mainWindow?.webContents.send('update-status', getUpdateProgressState());
   autoUpdater.checkForUpdates().catch((err) => {
     console.error('[Update] Check failed:', err);
+    setUpdateProgressState({
+      status: 'error',
+      version: app.getVersion(),
+      error: err.message,
+    });
+    mainWindow?.webContents.send('update-status', getUpdateProgressState());
   });
 }
 
@@ -543,14 +621,16 @@ async function initialize(): Promise<void> {
     console.log('[Flo] Registering IPC handlers...');
     registerIpcHandlers();
 
-    ipcMain.handle('get-update-status', () => ({
-      updateAvailable,
-      updateDownloaded,
-      version: app.getVersion(),
-    }));
+    ipcMain.handle('get-update-status', () => getUpdateProgressState());
 
     ipcMain.handle('check-for-updates', () => {
-      checkForUpdates();
+      checkForUpdates(true);
+      return getUpdateProgressState();
+    });
+
+    ipcMain.handle('quit-and-install', () => {
+      isQuitting = true;
+      autoUpdater.quitAndInstall();
     });
 
     ipcMain.handle('get-status', () => {

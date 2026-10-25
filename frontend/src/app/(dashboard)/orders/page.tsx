@@ -32,12 +32,14 @@ import {
   ArrowUpRight,
   Copy,
   Check,
+  Calendar,
 } from 'lucide-react';
 import type { Order, OrderItem } from '@/lib/types';
 
 type FilterType = 'all' | 'online' | 'dine_in' | 'takeaway' | 'delivery';
 type StatusFilter = 'all' | 'pending' | 'preparing' | 'ready' | 'completed' | 'cancelled';
 type ViewMode = 'grid' | 'table';
+type DateFilter = 'today' | 'all';
 
 const SUPABASE_REST_URL = 'https://uadrrjrlhfttithjmdye.supabase.co/rest/v1/orders?select=*&order=id.desc&limit=40';
 const SUPABASE_BASE_URL = 'https://uadrrjrlhfttithjmdye.supabase.co/rest/v1/orders';
@@ -50,6 +52,7 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [dateFilter, setDateFilter] = useState<DateFilter>('today');
   const [filterType, setFilterType] = useState<FilterType>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -160,7 +163,9 @@ export default function OrdersPage() {
       // 2. Fetch local SQLite orders
       const syncStatusRes = await api.get('/cloud-sync/status').catch(() => null);
       const activeBranchId = syncStatusRes?.data?.currentShopId || (currentTenant as any)?.shop_id || '';
-      const res = await api.get('/orders?sync=1' + (activeBranchId ? `&shop_id=${activeBranchId}` : ''));
+      const todayDateStr = new Date().toLocaleDateString('en-CA');
+      const dateParam = dateFilter === 'today' ? `&today=1&date=${todayDateStr}` : '';
+      const res = await api.get('/orders?sync=1' + (activeBranchId ? `&shop_id=${activeBranchId}` : '') + dateParam);
       let fetched: Order[] = res.data?.orders || [];
 
       // 3. Resilient Direct Supabase REST fallback to ensure any newly placed online orders appear instantaneously
@@ -179,6 +184,22 @@ export default function OrdersPage() {
 
         if (cloudRes.ok) {
           const cloudOrders = await cloudRes.json();
+          const cloudIdSet = new Set(cloudOrders.map((co: any) => String(co.id)));
+          const cloudNumberSet = new Set(cloudOrders.map((co: any) => String(co.order_number || '')));
+          const minCloudId = cloudOrders.length > 0 ? Math.min(...cloudOrders.map((co: any) => Number(co.id))) : 0;
+
+          // Purge any local online orders that were deleted in Pizza Admin cloud
+          fetched = fetched.filter((fo: any) => {
+            const isOnline = (fo as any).order_source === 'online' || fo.cloud_order_id;
+            if (!isOnline) return true;
+            const cId = Number(fo.cloud_order_id || fo.id);
+            if (minCloudId > 0 && cId >= minCloudId) {
+              const existsInCloud = cloudIdSet.has(String(fo.cloud_order_id || fo.id)) || (fo.order_number && cloudNumberSet.has(String(fo.order_number)));
+              if (!existsInCloud) return false;
+            }
+            return true;
+          });
+
           for (const co of cloudOrders) {
             if (String(co.shop_id || '') !== String(activeBranchId)) {
               continue; // Strictly filter out other shops' orders
@@ -329,7 +350,7 @@ export default function OrdersPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [mapCloudToLocalStatus, playChime]);
+  }, [mapCloudToLocalStatus, playChime, dateFilter]);
 
   // Initial load
   useEffect(() => {
@@ -452,8 +473,24 @@ export default function OrdersPage() {
     }
   };
 
+  // Date-scoped base orders: When 'today' (default), only today's local date orders are included
+  const isOrderFromToday = (order: Order) => {
+    if (!order.created_at) return false;
+    const d = new Date(order.created_at);
+    const now = new Date();
+    return (
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate()
+    );
+  };
+
+  const baseOrders = dateFilter === 'today'
+    ? orders.filter(isOrderFromToday)
+    : orders;
+
   // Filtered orders
-  const filteredOrders = orders.filter((order) => {
+  const filteredOrders = baseOrders.filter((order) => {
     const isOnline = (order as any).order_source === 'online' || order.type === 'online';
     if (filterType === 'online' && !isOnline) return false;
     if (filterType === 'dine_in' && order.type !== 'dine_in') return false;
@@ -478,11 +515,11 @@ export default function OrdersPage() {
     return true;
   });
 
-  // KPI Counts
-  const totalCount = orders.length;
-  const onlineCount = orders.filter((o) => (o as any).order_source === 'online' || o.type === 'online').length;
-  const pendingCount = orders.filter((o) => o.status === 'pending').length;
-  const preparingCount = orders.filter((o) => o.status === 'preparing').length;
+  // KPI Counts scoped to selected date range (Today vs All)
+  const totalCount = baseOrders.length;
+  const onlineCount = baseOrders.filter((o) => (o as any).order_source === 'online' || o.type === 'online').length;
+  const pendingCount = baseOrders.filter((o) => o.status === 'pending').length;
+  const preparingCount = baseOrders.filter((o) => o.status === 'preparing').length;
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -531,6 +568,34 @@ export default function OrdersPage() {
 
         {/* Action Controls */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Today vs All Date Switcher */}
+          <div className="flex items-center border border-slate-200 rounded-lg p-0.5 bg-white shadow-2xs">
+            <button
+              onClick={() => setDateFilter('today')}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${
+                dateFilter === 'today'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Show only Today's orders (Live POS feed)"
+            >
+              <span className={`w-2 h-2 rounded-full ${dateFilter === 'today' ? 'bg-white animate-pulse' : 'bg-emerald-500'}`} />
+              <span>Today (Live)</span>
+            </button>
+            <button
+              onClick={() => setDateFilter('all')}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${
+                dateFilter === 'all'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Show all order records & history"
+            >
+              <Calendar size={13} />
+              <span>All Records</span>
+            </button>
+          </div>
+
           {/* Sound Alert Toggle */}
           <button
             onClick={() => setSoundEnabled(!soundEnabled)}
