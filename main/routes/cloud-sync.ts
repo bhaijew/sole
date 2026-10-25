@@ -156,12 +156,13 @@ router.post('/pull-orders', async (_req: Request, res: Response) => {
  */
 router.post('/settings', (req: Request, res: Response) => {
   try {
-    const { supabase_url, supabase_key, cloud_sync_enabled, cloud_auto_print_kot, pizza_system_mode } = req.body;
+    const { supabase_url, supabase_key, cloud_sync_enabled, cloud_auto_print_kot, cloud_auto_print_bill, pizza_system_mode } = req.body;
     updateCloudSyncSettings({
       supabase_url,
       supabase_key,
       cloud_sync_enabled,
       cloud_auto_print_kot,
+      cloud_auto_print_bill,
       pizza_system_mode,
     });
     res.json({ success: true, message: 'Cloud sync settings updated.' });

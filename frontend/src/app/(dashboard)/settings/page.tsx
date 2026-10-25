@@ -104,6 +104,7 @@ export default function SettingsPage() {
     isRealtimeActive: false,
     syncEnabled: true,
     autoPrintKot: true,
+    autoPrintBill: true,
     supabaseUrl: 'https://uadrrjrlhfttithjmdye.supabase.co',
     lastSync: '',
     operatingMode: 'integrated' as 'integrated' | 'standalone',
@@ -259,10 +260,10 @@ export default function SettingsPage() {
     }
   };
 
-  const updateCloudSetting = async (key: 'cloud_sync_enabled' | 'cloud_auto_print_kot', val: boolean) => {
+  const updateCloudSetting = async (key: 'cloud_sync_enabled' | 'cloud_auto_print_kot' | 'cloud_auto_print_bill', val: boolean) => {
     const updated = {
       ...cloudStatus,
-      [key === 'cloud_sync_enabled' ? 'syncEnabled' : 'autoPrintKot']: val,
+      [key === 'cloud_sync_enabled' ? 'syncEnabled' : (key === 'cloud_auto_print_kot' ? 'autoPrintKot' : 'autoPrintBill')]: val,
     };
     setCloudStatus(updated);
 
@@ -270,6 +271,7 @@ export default function SettingsPage() {
       await api.post('/cloud-sync/settings', {
         cloud_sync_enabled: key === 'cloud_sync_enabled' ? val : cloudStatus.syncEnabled,
         cloud_auto_print_kot: key === 'cloud_auto_print_kot' ? val : cloudStatus.autoPrintKot,
+        cloud_auto_print_bill: key === 'cloud_auto_print_bill' ? val : cloudStatus.autoPrintBill,
       });
       toast.success('Setting updated');
       fetchGlobalMode();
@@ -314,6 +316,10 @@ export default function SettingsPage() {
       if (printingForm.kitchenPrinterId) {
         await api.post(`/printers/${printingForm.kitchenPrinterId}/set-kitchen`);
       }
+      await api.post('/cloud-sync/settings', {
+        cloud_auto_print_bill: printingForm.autoPrintBill,
+        cloud_auto_print_kot: printingForm.autoPrintKot,
+      }).catch(() => {});
     } catch {}
     setSavedPrinting(printingForm);
     toast.success('Printing settings saved');
@@ -1201,10 +1207,10 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm">
               <div className="flex items-center gap-2 mb-2">
                 <Printer size={20} className="text-brand" />
-                <h2 className="font-bold text-gray-900 text-base">Automatic Printing (POS Placement)</h2>
+                <h2 className="font-bold text-gray-900 text-base">Automatic Printing (POS & Online Menu Orders)</h2>
               </div>
               <p className="text-xs text-gray-500 mb-5">
-                Automatically print slips whenever an order is placed in POS. You can turn each slip ON or OFF independently.
+                Automatically print slips whenever an order is placed in POS or arrives from the Online Menu. You can turn each slip ON or OFF independently.
               </p>
 
               <div className="space-y-4">
@@ -1223,7 +1229,7 @@ export default function SettingsPage() {
                         </span>
                       </div>
                       <p className="text-xs text-gray-600">
-                        Automatically prints the customer receipt slip on the Counter Printer as soon as order is placed/checked out.
+                        Automatically prints the customer receipt slip on the Counter Printer as soon as an order is placed in POS or arrives from the Online Menu.
                       </p>
                     </div>
                     <Toggle
@@ -1248,7 +1254,7 @@ export default function SettingsPage() {
                         </span>
                       </div>
                       <p className="text-xs text-gray-600">
-                        Automatically prints order ticket for kitchen staff on the dedicated Kitchen Printer (or Counter Printer if unassigned).
+                        Automatically prints order ticket for kitchen staff on the dedicated Kitchen Printer (or Counter Printer if unassigned) when placed in POS or received online.
                       </p>
                     </div>
                     <Toggle
@@ -1622,8 +1628,18 @@ export default function SettingsPage() {
                 </div>
                 <div className="flex items-center justify-between py-2 border-b border-gray-50">
                   <div>
-                    <p className="text-sm font-medium text-gray-900">Auto-Print Online Orders</p>
-                    <p className="text-xs text-gray-500">Automatically print Kitchen Order Ticket (KOT) on thermal printer when an online pizza order arrives</p>
+                    <p className="text-sm font-medium text-gray-900">Auto-Print Customer Bill (Online Orders)</p>
+                    <p className="text-xs text-gray-500">Automatically print customer receipt on Counter thermal printer when an online pizza order arrives</p>
+                  </div>
+                  <Toggle
+                    value={cloudStatus.autoPrintBill}
+                    onChange={(v) => updateCloudSetting('cloud_auto_print_bill', v)}
+                  />
+                </div>
+                <div className="flex items-center justify-between py-2 border-b border-gray-50">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Auto-Print Kitchen Slip (Online Orders)</p>
+                    <p className="text-xs text-gray-500">Automatically print Kitchen Order Ticket (KOT) on kitchen printer when an online pizza order arrives</p>
                   </div>
                   <Toggle
                     value={cloudStatus.autoPrintKot}

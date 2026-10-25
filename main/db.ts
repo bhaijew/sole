@@ -146,6 +146,12 @@ function runMigrations(): void {
     }
   }
 
+  // Ensure default cloud_auto_print settings exist (non-destructive)
+  try {
+    db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('cloud_auto_print_bill', '1')").run();
+    db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('cloud_auto_print_kot', '1')").run();
+  } catch {}
+
   console.log('[DB] Migrations complete');
 }
 
@@ -770,6 +776,7 @@ function seedData(): void {
   insert('supabase_key',        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhZHJyanJsaGZ0dGl0aGptZHllIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MDYwNTg2OCwiZXhwIjoyMTA2MTgxODY4fQ.NuC74GhFlUEiaRR2BXPooYj7iahzrXXKCxMQYDUnfIg');
   insert('cloud_sync_enabled',  '1');
   insert('cloud_auto_print_kot','1');
+  insert('cloud_auto_print_bill','1');
   insert('cloud_last_sync',     '');
   insert('pizza_system_mode',   'integrated');
   insert('receipt_copies',      'customer');

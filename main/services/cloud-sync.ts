@@ -3,7 +3,7 @@ import WebSocket from 'ws';
 import bcrypt from 'bcryptjs';
 import { getDatabase, now } from '../db';
 import { notifyKdsUpdate } from './kds';
-import { printKOT } from '../printers/thermal';
+import { printKOT, printReceipt } from '../printers/thermal';
 
 let supabaseClient: SupabaseClient | null = null;
 let realtimeChannel: any = null;
@@ -1055,7 +1055,48 @@ export async function handleIncomingCloudOrder(cloudOrder: any): Promise<boolean
     broadcastCloudEvent('online-order-received', { orderNumber, total, localOrderId, customerName: cloudOrder.customer_name });
     broadcastCloudEvent('order-synced', { orderNumber, localOrderId });
 
-    // 3. Auto-print KOT if enabled
+    // 3. Auto-print Customer Bill (Receipt) if enabled
+    const autoPrintBill = getSetting('cloud_auto_print_bill', '1') === '1';
+    if (autoPrintBill) {
+      try {
+        const localOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(localOrderId) as any;
+        const localItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(localOrderId) as any[];
+
+        if (localOrder) {
+          localOrder.customer_name = cloudOrder.customer_name || localOrder.customer_name;
+          localOrder.customer_phone = cloudOrder.customer_phone || localOrder.customer_phone;
+          localOrder.items = localItems;
+
+          const bill = {
+            order_id: localOrderId,
+            subtotal: localOrder.subtotal,
+            total: localOrder.total,
+            bill_number: `B-${orderNumber}`,
+            payment_status: 'paid',
+            payment_details: [{ method: 'Online', amount: localOrder.total }],
+            created_at: localOrder.created_at,
+          };
+
+          const business = {
+            name: getSetting('business_name') || getSetting('cloud_shop_name') || getSetting('shop_name') || 'Sole What POS',
+            address: getSetting('business_address') || getSetting('address') || '',
+            phone: getSetting('business_phone') || getSetting('phone') || '',
+            gstin: getSetting('gstin'),
+            easypaisa_number: getSetting('easypaisa_number'),
+            easypaisa_title: getSetting('easypaisa_title'),
+            complaint_number: getSetting('complaint_number') || getSetting('business_phone') || getSetting('phone') || '',
+            footer_message: getSetting('bill_footer_message'),
+          };
+
+          console.log(`[CloudSync] Triggering Auto-Print Customer Bill for online order ${orderNumber}...`);
+          await printReceipt(localOrder, bill, business, 'classic', 'customer');
+        }
+      } catch (printBillErr) {
+        console.error('[CloudSync] Failed to auto-print Customer Bill for online order:', printBillErr);
+      }
+    }
+
+    // 4. Auto-print KOT if enabled
     const autoPrint = getSetting('cloud_auto_print_kot', '1') === '1';
     if (autoPrint) {
       try {
@@ -1563,6 +1604,7 @@ export function getCloudSyncStatus(): {
   isRealtimeActive: boolean;
   syncEnabled: boolean;
   autoPrintKot: boolean;
+  autoPrintBill: boolean;
   supabaseUrl: string;
   lastSync: string;
   operatingMode: 'integrated' | 'standalone';
@@ -1574,6 +1616,7 @@ export function getCloudSyncStatus(): {
   const url = getSetting('supabase_url', 'https://uadrrjrlhfttithjmdye.supabase.co');
   const syncEnabled = getSetting('cloud_sync_enabled', '1') === '1';
   const autoPrintKot = getSetting('cloud_auto_print_kot', '1') === '1';
+  const autoPrintBill = getSetting('cloud_auto_print_bill', '1') === '1';
   const lastSync = getSetting('cloud_last_sync', '');
   const operatingMode = (getSetting('pizza_system_mode', 'integrated') as 'integrated' | 'standalone');
   const isPizzaIntegrated = operatingMode === 'integrated' && syncEnabled;
@@ -1587,6 +1630,7 @@ export function getCloudSyncStatus(): {
     isRealtimeActive: isRealtimeListening,
     syncEnabled,
     autoPrintKot,
+    autoPrintBill,
     supabaseUrl: url,
     lastSync,
     operatingMode,
@@ -1699,6 +1743,7 @@ export function updateCloudSyncSettings(settings: {
   supabase_key?: string;
   cloud_sync_enabled?: boolean;
   cloud_auto_print_kot?: boolean;
+  cloud_auto_print_bill?: boolean;
   pizza_system_mode?: 'integrated' | 'standalone';
 }): void {
   if (settings.pizza_system_mode !== undefined) {
@@ -1715,6 +1760,9 @@ export function updateCloudSyncSettings(settings: {
   }
   if (settings.cloud_auto_print_kot !== undefined) {
     setSetting('cloud_auto_print_kot', settings.cloud_auto_print_kot ? '1' : '0');
+  }
+  if (settings.cloud_auto_print_bill !== undefined) {
+    setSetting('cloud_auto_print_bill', settings.cloud_auto_print_bill ? '1' : '0');
   }
 
   // Reset client so new credentials take effect
