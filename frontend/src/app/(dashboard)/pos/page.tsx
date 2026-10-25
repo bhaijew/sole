@@ -21,7 +21,7 @@ import { usePrinterStore } from '@/hooks/usePrinter';
 export default function POSPage() {
   const { currentTenant } = useAuthStore();
   const cart = useCartStore();
-  const { autoPrintKot } = usePosSettingsStore();
+  const { autoPrintKot, autoPrintBill } = usePosSettingsStore();
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -165,7 +165,7 @@ export default function POSPage() {
               },
             };
 
-            if (currentTenant) {
+            if (autoPrintBill && currentTenant) {
               await printBill(billToPrint, {
                 business_name: currentTenant.business_name,
                 currency,
@@ -182,7 +182,7 @@ export default function POSPage() {
                 customer: finalCustomerObj,
               },
             };
-            if (currentTenant) {
+            if (autoPrintBill && currentTenant) {
               await printBill(billToPrint, {
                 business_name: currentTenant.business_name,
                 currency,

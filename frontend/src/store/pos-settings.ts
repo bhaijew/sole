@@ -71,8 +71,8 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       printerPaperSize: 'thermal58',
       printerEnabled: true,
       printerPrintMode: 'escpos',
-      autoPrintKot: false,
-      autoPrintBill: false,
+      autoPrintKot: true,
+      autoPrintBill: true,
       whatsappShareEnabled: true,
       // Web print defaults
       defaultPrintMode: 'thermal',

@@ -847,30 +847,6 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* Loyalty */}
-            <div className="bg-white rounded-xl border border-gray-100 p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Gift size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">Loyalty Program</h2>
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <p className="font-medium text-gray-900">Points Expiry</p>
-                  <p className="text-sm text-gray-500 mb-2">Number of days before earned loyalty points expire</p>
-                  <div className="flex items-center gap-3">
-                    <input type="number" min={1} max={3650} value={loyaltyDays}
-                      onChange={(e) => setLoyaltyDays(parseInt(e.target.value) || 365)}
-                      className="w-24 px-3 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-brand" />
-                    <span className="text-sm text-gray-500">days</span>
-                    <button onClick={saveLoyalty} disabled={savingLoyalty}
-                      className="px-4 py-1.5 text-sm bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50">
-                      {savingLoyalty ? 'Saving...' : 'Save'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
             {/* Account */}
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <h2 className="font-semibold text-gray-900 mb-4">Account</h2>
@@ -888,60 +864,6 @@ export default function SettingsPage() {
                   <p className="font-medium text-gray-900 capitalize">{currentTenant?.role || '—'}</p>
                 </div>
               </div>
-            </div>
-
-            {/* Mobile App */}
-            <div className="bg-white rounded-xl border border-gray-100 p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Smartphone size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">Mobile App</h2>
-              </div>
-              <p className="text-sm text-gray-500 mb-4">
-                Connect the Flo mobile app to view reports and sales on your phone.
-                Enter this code in the app to pair it with your account.
-              </p>
-              {pairingCode ? (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-center">
-                      <span className="font-mono text-2xl font-bold tracking-[0.3em] text-gray-900">
-                        {pairingCode}
-                      </span>
-                    </div>
-                    <button
-                      onClick={copyPairingCode}
-                      className="p-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-500"
-                      title="Copy code"
-                    >
-                      {copiedCode ? <Check size={18} className="text-green-600" /> : <Copy size={18} />}
-                    </button>
-                  </div>
-                  {pairingRotatedAt && (
-                    <p className="text-xs text-gray-400">
-                      Generated {new Date(pairingRotatedAt).toLocaleDateString()}
-                    </p>
-                  )}
-                  <button
-                    onClick={rotatePairingCode}
-                    disabled={rotatingCode}
-                    className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50"
-                  >
-                    <RefreshCw size={14} className={rotatingCode ? 'animate-spin' : ''} />
-                    {rotatingCode ? 'Generating...' : 'Generate new code'}
-                  </button>
-                  <p className="text-xs text-amber-600">
-                    Generating a new code will disconnect all currently paired devices.
-                  </p>
-                </div>
-              ) : (
-                <button
-                  onClick={rotatePairingCode}
-                  disabled={rotatingCode}
-                  className="px-5 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium"
-                >
-                  {rotatingCode ? 'Generating...' : 'Generate Pairing Code'}
-                </button>
-              )}
             </div>
           </div>
         </TabsContent>
@@ -1275,20 +1197,112 @@ export default function SettingsPage() {
               )}
             </div>
 
-            {/* Print Options Card */}
+            {/* Auto-Print Rules Card - Distinct Controls for Customer Bill and Kitchen Slip */}
+            <div className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm">
+              <div className="flex items-center gap-2 mb-2">
+                <Printer size={20} className="text-brand" />
+                <h2 className="font-bold text-gray-900 text-base">Automatic Printing (POS Placement)</h2>
+              </div>
+              <p className="text-xs text-gray-500 mb-5">
+                Automatically print slips whenever an order is placed in POS. You can turn each slip ON or OFF independently.
+              </p>
+
+              <div className="space-y-4">
+                {/* Auto-Print Customer Bill */}
+                <div className={`p-4 rounded-xl border transition-all ${
+                  printingForm.autoPrintBill ? 'bg-emerald-50/40 border-emerald-200' : 'bg-gray-50 border-gray-200'
+                }`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-gray-900 text-sm">🧾 Auto-Print Customer Bill</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          printingForm.autoPrintBill ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-200 text-gray-600'
+                        }`}>
+                          {printingForm.autoPrintBill ? 'ENABLED' : 'OFF'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600">
+                        Automatically prints the customer receipt slip on the Counter Printer as soon as order is placed/checked out.
+                      </p>
+                    </div>
+                    <Toggle
+                      value={printingForm.autoPrintBill}
+                      onChange={(v) => setPrintingForm((p) => ({ ...p, autoPrintBill: v }))}
+                    />
+                  </div>
+                </div>
+
+                {/* Auto-Print Kitchen Slip (KOT) */}
+                <div className={`p-4 rounded-xl border transition-all ${
+                  printingForm.autoPrintKot ? 'bg-amber-50/40 border-amber-200' : 'bg-gray-50 border-gray-200'
+                }`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-gray-900 text-sm">🍳 Auto-Print Kitchen Slip (KOT)</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          printingForm.autoPrintKot ? 'bg-amber-100 text-amber-800' : 'bg-gray-200 text-gray-600'
+                        }`}>
+                          {printingForm.autoPrintKot ? 'ENABLED' : 'OFF'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600">
+                        Automatically prints order ticket for kitchen staff on the dedicated Kitchen Printer (or Counter Printer if unassigned).
+                      </p>
+                    </div>
+                    <Toggle
+                      value={printingForm.autoPrintKot}
+                      onChange={(v) => setPrintingForm((p) => ({ ...p, autoPrintKot: v }))}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* General POS Print Options */}
             <div className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm">
               <div className="flex items-center gap-2 mb-4">
                 <Printer size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">POS Print Options</h2>
+                <h2 className="font-semibold text-gray-900">Printer Configuration</h2>
               </div>
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="font-medium text-gray-900">Enable Printer</p>
+                    <p className="font-medium text-gray-900">Enable Hardware Printing</p>
                     <p className="text-sm text-gray-500">Allow receipt and KOT printing from POS</p>
                   </div>
                   <Toggle value={printingForm.printerEnabled} onChange={(v) => setPrintingForm((p) => ({ ...p, printerEnabled: v }))} />
                 </div>
+
+                <div>
+                  <p className="font-medium text-gray-900 mb-2">Dedicated Kitchen Printer (KOT)</p>
+                  <select
+                    value={printingForm.kitchenPrinterId || (hardwarePrinters.find((p) => p.is_kitchen === 1)?.id || '')}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPrintingForm((p) => ({ ...p, kitchenPrinterId: val }));
+                      if (val) {
+                        handleSetKitchenPrinter(val);
+                      } else {
+                        const currentKitchen = hardwarePrinters.find((p) => p.is_kitchen === 1);
+                        if (currentKitchen) handleRemoveKitchenPrinter(currentKitchen.id);
+                      }
+                    }}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand font-medium"
+                  >
+                    <option value="">Default (Same as Counter Printer)</option>
+                    {hardwarePrinters.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.connection_type === 'network' ? `Network ${p.ip_address}` : 'USB'}) {p.is_default ? '— Counter Default' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Select the dedicated printer for food/kitchen tickets. If set to Default, both slips print to Counter printer.
+                  </p>
+                </div>
+
                 <div>
                   <p className="font-medium text-gray-900 mb-2">Receipt Print Copies</p>
                   <select
@@ -1306,51 +1320,13 @@ export default function SettingsPage() {
                       : 'Prints two separate slips with auto-cut for customer and shop records.'}
                   </p>
                 </div>
-                <div>
-                  <p className="font-medium text-gray-900 mb-2">Dedicated Kitchen Printer (KOT)</p>
-                  <select
-                    value={printingForm.kitchenPrinterId || (hardwarePrinters.find((p) => p.is_kitchen === 1)?.id || '')}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setPrintingForm((p) => ({ ...p, kitchenPrinterId: val }));
-                      if (val) {
-                        handleSetKitchenPrinter(val);
-                      } else {
-                        const currentKitchen = hardwarePrinters.find((p) => p.is_kitchen === 1);
-                        if (currentKitchen) handleRemoveKitchenPrinter(currentKitchen.id);
-                      }
-                    }}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand"
-                  >
-                    <option value="">Default (Same as Counter Printer)</option>
-                    {hardwarePrinters.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.connection_type === 'network' ? `Network ${p.ip_address}` : 'USB'}) {p.is_default ? '— Counter Default' : ''}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Kitchen tickets (KOT) will automatically print to this printer. If not set, tickets print to the counter printer.
-                  </p>
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900 mb-2">Default Paper Size</p>
-                  <select
-                    value={printingForm.printerPaperSize}
-                    onChange={(e) => setPrintingForm((p) => ({ ...p, printerPaperSize: e.target.value as PaperSize }))}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand"
-                  >
-                    {paperSizeOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
-                </div>
+
                 <div>
                   <p className="font-medium text-gray-900 mb-2">Print Method</p>
                   <select
                     value={printingForm.printMethod}
                     onChange={(e) => setPrintingForm((p) => ({ ...p, printMethod: e.target.value as 'escpos' | 'browser' }))}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand font-medium"
                   >
                     <option value="escpos">ESC/POS Thermal (Silent Raw Spooler - Recommended)</option>
                     <option value="browser">Browser Print Dialog (Standard A4/A5)</option>
@@ -1361,46 +1337,6 @@ export default function SettingsPage() {
                       : 'Opens the standard print dialog — useful for laser/office printers.'}
                   </p>
                 </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-gray-900">Auto-print KOT</p>
-                    <p className="text-sm text-gray-500">Print Kitchen Order Ticket when order is placed</p>
-                  </div>
-                  <Toggle value={printingForm.autoPrintKot} onChange={(v) => setPrintingForm((p) => ({ ...p, autoPrintKot: v }))} />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-gray-900">Auto-print Bill</p>
-                    <p className="text-sm text-gray-500">Print customer bill when payment is completed</p>
-                  </div>
-                  <Toggle value={printingForm.autoPrintBill} onChange={(v) => setPrintingForm((p) => ({ ...p, autoPrintBill: v }))} />
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900 mb-2">Web Print Size (A4/A5)</p>
-                  <select
-                    value={printingForm.webPrintSize}
-                    onChange={(e) => setPrintingForm((p) => ({ ...p, webPrintSize: e.target.value as PaperSize }))}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand"
-                  >
-                    <option value="a4">A4 (Default)</option>
-                    <option value="a5">A5</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* WhatsApp Sharing Card */}
-            <div className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm">
-              <div className="flex items-center gap-2 mb-4">
-                <Share2 size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">WhatsApp Sharing</h2>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-gray-900">Enable WhatsApp Share</p>
-                  <p className="text-sm text-gray-500">Send bill details via WhatsApp after payment</p>
-                </div>
-                <Toggle value={printingForm.whatsappShareEnabled} onChange={(v) => setPrintingForm((p) => ({ ...p, whatsappShareEnabled: v }))} />
               </div>
             </div>
           </div>

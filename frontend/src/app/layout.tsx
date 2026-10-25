@@ -57,6 +57,20 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html: `
+              // Sleep / Wake auto-recovery for laptop lid close/open (eliminates white screen on resume)
+              if (typeof window !== 'undefined') {
+                var lastActiveTick = Date.now();
+                setInterval(function() {
+                  var now = Date.now();
+                  // If gap between ticks is > 15 seconds (expected is 3s), system was asleep
+                  if (now - lastActiveTick > 15000) {
+                    console.log('[Sleep/Wake] Detected laptop lid open / wake from sleep. Auto-recovering page...');
+                    window.location.reload();
+                  }
+                  lastActiveTick = now;
+                }, 3000);
+              }
+
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', () => {
                   navigator.serviceWorker.register('/sw.js').then((reg) => {

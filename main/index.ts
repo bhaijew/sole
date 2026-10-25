@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell, powerMonitor } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { Bonjour } from 'bonjour-service';
@@ -236,6 +236,7 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      backgroundThrottling: false, // Prevents renderer freeze & white screen when laptop lid is closed
     },
     show: true,
   });
@@ -310,16 +311,59 @@ function createWindow(): void {
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
     log.error('[Window] Failed to load:', errorCode, errorDescription);
     console.error('[Window] Failed to load:', errorCode, errorDescription);
+    // Auto-retry reload if local server was waking up
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.loadURL(`http://localhost:${PORT}`);
+      }
+    }, 1500);
   });
 
   mainWindow.webContents.on('unresponsive', () => {
-    console.warn('[Window] Window became unresponsive');
+    log.warn('[Window] Window became unresponsive after idle/sleep, attempting reload...');
+    console.warn('[Window] Window became unresponsive after idle/sleep, attempting reload...');
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.reloadIgnoringCache();
+      }
+    }, 1000);
   });
 
   mainWindow.webContents.on('responsive', () => {
     console.log('[Window] Window became responsive again');
   });
 }
+
+// PowerMonitor: Automatically recover from laptop sleep / lid closed
+powerMonitor.on('resume', () => {
+  log.info('[PowerMonitor] System resumed from sleep / laptop lid opened');
+  console.log('[PowerMonitor] System resumed from sleep / laptop lid opened');
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        log.info('[PowerMonitor] Refreshing window surface to eliminate white screen');
+        mainWindow.webContents.invalidate();
+        mainWindow.webContents.reloadIgnoringCache();
+      }
+    }, 1000);
+  }
+});
+
+powerMonitor.on('unlock-screen', () => {
+  log.info('[PowerMonitor] Screen unlocked');
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.invalidate();
+  }
+});
+
+app.on('child-process-gone', (event, details) => {
+  if (details.type === 'GPU') {
+    log.warn('[App] GPU process gone:', details.reason);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.reloadIgnoringCache();
+    }
+  }
+});
 
 function createTray(): void {
   const iconPath = isDev
