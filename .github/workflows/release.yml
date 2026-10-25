@@ -40,9 +40,10 @@ jobs:
       - name: Publish Windows Release to GitHub
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx cross-env ELECTRON_BUILDER_COMPRESSION_LEVEL=1 electron-builder --win --publish always -c.publish.releaseType=release
+        run: npx cross-env ELECTRON_BUILDER_COMPRESSION_LEVEL=1 electron-builder --win --publish always
 
       - name: Publish Draft Release (Make Public)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release edit ${{ github.ref_name }} --draft=false --latest
+        continue-on-error: true
