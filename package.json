@@ -76,7 +76,8 @@
     "publish": {
       "provider": "github",
       "owner": "bhaijew",
-      "repo": "sole"
+      "repo": "sole",
+      "releaseType": "release"
     },
     "extraResources": [
       {
