@@ -30,46 +30,24 @@ Complaint: 03121234567
 
           Thank You!`;
 
-const COMPACT_PREVIEW = `  STORE NAME
------------
-Bill #1    12:30
------------
-Burger           99
-  2 x 49.50
------------
-TOTAL            99
-Cash             99
------------
-  Thank you!`;
+const KOT_PREVIEW = `      KITCHEN ORDER
+     STATION: KITCHEN
+================================
+ORDER #: 4
+TYPE: DINE IN
+TABLE: Table 2
+Customer: Ali (03001234567)
+Time: 3:31:04 PM
+================================
 
-const DETAILED_PREVIEW = `  [STORE NAME]
-GSTIN: 22XXXXX
-  TAX INVOICE
------------
-Bill#1   1 Jan 24
-Cust: John
------------
-Item   Qty Rate Amt
-Burger   1  99  99
------------
-Subtotal (excl.)  93
-CGST @3%           3
-SGST @3%           3
-===============
-TOTAL            99`;
+1x  CHICKEN FAJITA LARGE
+  >> VARIANT: SPICY CRUST
+  + ADDON: EXTRA CHEESE
 
-interface TemplateCard {
-  id: BillTemplate;
-  name: string;
-  description: string;
-  preview: string;
-}
+2x  GARLIC BREAD
+  * Less spicy for kids
 
-const TEMPLATE_CARDS: TemplateCard[] = [
-  { id: 'classic', name: 'Classic', description: 'Rich layout with 4-column item table, addon details, and full totals. Best for dine-in.', preview: CLASSIC_PREVIEW },
-  { id: 'compact', name: 'Compact', description: 'Minimal, fast layout. One line per item. Ideal for quick service and takeaway.', preview: COMPACT_PREVIEW },
-  { id: 'detailed', name: 'Detailed (GST)', description: 'Full GST compliance with GSTIN header, TAX INVOICE label, and per-rate tax breakdown.', preview: DETAILED_PREVIEW },
-];
+================================`;
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -750,7 +728,7 @@ export default function SettingsPage() {
         <TabsList className="mb-6">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="printing">Printing</TabsTrigger>
-          <TabsTrigger value="bill-template">Bill Template</TabsTrigger>
+          <TabsTrigger value="bill-template">Print Slips (Bill & KOT)</TabsTrigger>
           <TabsTrigger value="cloud-sync">Cloud Sync (Pizza System)</TabsTrigger>
         </TabsList>
 
@@ -1551,26 +1529,69 @@ export default function SettingsPage() {
         <TabsContent value="bill-template">
           <div className="space-y-6">
             <div className="bg-white rounded-xl border border-gray-100 p-6">
-              <div className="flex items-center gap-2 mb-4">
+              <div className="flex items-center gap-2 mb-2">
                 <FileText size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">Choose Template</h2>
+                <h2 className="font-semibold text-gray-900">Standard Print Slip Layouts</h2>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {TEMPLATE_CARDS.map((card) => {
-                  const isSelected = billForm.billTemplate === card.id;
-                  return (
-                    <button key={card.id} onClick={() => setBillForm((p) => ({ ...p, billTemplate: card.id }))}
-                      className={`text-left rounded-xl border-2 p-4 transition-all ${
-                        isSelected ? 'border-brand bg-brand/5' : 'border-gray-200 hover:border-gray-300 bg-white'
-                      }`}>
-                      <p className="font-semibold text-gray-900 mb-2">{card.name}</p>
-                      <pre className="font-mono text-[9px] leading-tight text-gray-600 bg-gray-50 p-2 rounded overflow-hidden mb-3 whitespace-pre">
-                        {card.preview}
-                      </pre>
-                      <p className="text-xs text-gray-500">{card.description}</p>
-                    </button>
-                  );
-                })}
+              <p className="text-sm text-gray-500 mb-6">
+                Active thermal slip structures for Customer Receipt and Kitchen Order Ticket (KOT).
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* 1. Customer Receipt Slip */}
+                <div className="rounded-xl border-2 border-brand/30 bg-gradient-to-b from-brand/5 to-transparent p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base font-bold text-gray-900">🧾 Customer Receipt Slip</span>
+                      <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-brand text-white">Active</span>
+                    </div>
+                    <span className="text-xs text-gray-500 font-medium">Counter Bill</span>
+                  </div>
+                  <pre className="font-mono text-[10px] sm:text-[11px] leading-tight text-gray-800 bg-white p-4 rounded-lg border border-gray-200 shadow-xs overflow-x-auto whitespace-pre font-medium">
+{`      ${(form.businessName || currentTenant?.business_name || 'PIZZA MAFIA').toUpperCase()}
+     Customer Copy
+       Order #: 4
+     Date: 9/9/2026
+    Time: 3:31:04 PM
+     Type: Dine In
+      Table: Table 2
+      Name: Ali
+--------------------------------
+Item                Quantity  Price
+--------------------------------
+Chicken Fajita Large       1   1250
+  + Extra Cheese                150
+Garlic Bread               2    350
+--------------------------------
+         TOTAL: Rs 1,750
+--------------------------------
+EasyPaisa: ${billForm.easypaisaNumber || '03001234567'}
+${billForm.easypaisaTitle || 'Muhammad Ali'}
+Complaint: ${billForm.complaintNumber || '03121234567'}
+
+          ${billForm.billFooterMessage || 'Thank You!'}`}
+                  </pre>
+                  <p className="text-xs text-gray-500 mt-3">
+                    Single standard customer receipt. Details (EasyPaisa, Contact, Footer) can be updated below.
+                  </p>
+                </div>
+
+                {/* 2. Kitchen Order Ticket (KOT) */}
+                <div className="rounded-xl border-2 border-amber-300 bg-gradient-to-b from-amber-50/50 to-transparent p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base font-bold text-gray-900">🍳 Kitchen Ticket (KOT)</span>
+                      <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-amber-500 text-white">Kitchen</span>
+                    </div>
+                    <span className="text-xs text-gray-500 font-medium">KOT Ticket</span>
+                  </div>
+                  <pre className="font-mono text-[10px] sm:text-[11px] leading-tight text-gray-800 bg-white p-4 rounded-lg border border-gray-200 shadow-xs overflow-x-auto whitespace-pre font-medium">
+{KOT_PREVIEW}
+                  </pre>
+                  <p className="text-xs text-gray-500 mt-3">
+                    Automatically sent to the Kitchen Printer with high-contrast text and instructions for kitchen preparation.
+                  </p>
+                </div>
               </div>
             </div>
 
