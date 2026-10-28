@@ -195,6 +195,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     customerId: customer?.id ?? null,
     customerName: customer?.name || get().customerName,
     customerPhone: customer?.phone || get().customerPhone,
+    deliveryAddress: customer?.address || get().deliveryAddress,
   }),
   setCustomerName: (name) => set({ customerName: name }),
   setCustomerPhone: (phone) => set({ customerPhone: phone }),

@@ -1,12 +1,14 @@
 'use client';
 
+import { useState, useRef } from 'react';
 import {
   ShoppingCart, UtensilsCrossed, Package, Truck,
-  Plus, Minus, Trash2, User, X, Phone, Hash,
+  Plus, Minus, Trash2, User, X, Phone, Hash, Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCartStore, getProductPriceForSize, hasProductSizes } from '@/store/cart';
-import type { Table } from '@/lib/types';
+import type { Table, Customer } from '@/lib/types';
+import api from '@/lib/api';
 
 interface Props {
   tables?: Table[];
@@ -32,6 +34,43 @@ export default function CartPanel({
   const cart = useCartStore();
   const isDrawer = variant === 'drawer';
 
+  const [customerSuggestions, setCustomerSuggestions] = useState<Customer[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handlePhoneChange = (val: string) => {
+    cart.setCustomerPhone(val);
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+
+    const clean = val.trim();
+    if (clean.length >= 3) {
+      searchTimeoutRef.current = setTimeout(async () => {
+        try {
+          const res = await api.get(`/customers-search?q=${encodeURIComponent(clean)}`);
+          const found = (res.data?.customers || []) as Customer[];
+          setCustomerSuggestions(found.slice(0, 3));
+          setShowSuggestions(found.length > 0);
+        } catch {
+          setCustomerSuggestions([]);
+          setShowSuggestions(false);
+        }
+      }, 300);
+    } else {
+      setCustomerSuggestions([]);
+      setShowSuggestions(false);
+    }
+  };
+
+  const handleSelectCustomer = (c: Customer) => {
+    cart.setCustomer(c);
+    cart.setCustomerName(c.name || '');
+    cart.setCustomerPhone(c.phone || '');
+    if (c.address) {
+      cart.setDeliveryAddress(c.address);
+    }
+    setShowSuggestions(false);
+  };
+
   return (
     <div
       className={
@@ -40,7 +79,7 @@ export default function CartPanel({
           : 'w-full h-full bg-white rounded-xl border border-gray-100 flex flex-col shadow-sm'
       }
     >
-      {/* Order Type & Customer */}
+      {/* Order Type & Customer Information */}
       <div className="p-3.5 border-b border-gray-100 space-y-2">
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
           {(['dine_in', 'takeaway', 'delivery'] as const).map((type) => {
@@ -62,61 +101,93 @@ export default function CartPanel({
           })}
         </div>
 
-        {/* Order Type specific field (Table # for Dine-in, Customer Contact / Phone # for Delivery & Takeaway) */}
-        <div className="relative flex items-center">
-          <div className="absolute left-2.5 text-gray-400 pointer-events-none">
-            {cart.orderType === 'dine_in' ? (
+        {/* Dine-in Table # / Token # Field */}
+        {cart.orderType === 'dine_in' && (
+          <div className="relative flex items-center">
+            <div className="absolute left-2.5 text-gray-400 pointer-events-none">
               <Hash size={13} />
-            ) : (
-              <Phone size={13} className={cart.orderType === 'delivery' ? 'text-emerald-600' : 'text-gray-400'} />
+            </div>
+            <input
+              type="text"
+              value={cart.orderNumberInput || ''}
+              onChange={(e) => cart.setOrderNumberInput(e.target.value)}
+              placeholder="Table # / Token # (Optional)"
+              className="w-full pl-7 pr-7 py-1.5 text-xs bg-gray-50 hover:bg-gray-100/70 focus:bg-white border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand transition-all"
+            />
+            {cart.orderNumberInput && (
+              <button
+                type="button"
+                onClick={() => cart.setOrderNumberInput('')}
+                className="absolute right-2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
+                title="Clear Table/Token"
+              >
+                <X size={12} />
+              </button>
             )}
           </div>
-          <input
-            type="text"
-            value={cart.orderNumberInput || ''}
-            onChange={(e) => {
-              const val = e.target.value;
-              cart.setOrderNumberInput(val);
-              if (cart.orderType === 'delivery' || cart.orderType === 'takeaway') {
-                cart.setCustomerPhone(val);
-              }
-            }}
-            placeholder={
-              cart.orderType === 'dine_in'
-                ? 'Table # / Token # (Optional)'
-                : cart.orderType === 'delivery'
-                ? 'Customer Contact / Phone # (Optional)'
-                : 'Customer Contact / Token # (Optional)'
-            }
-            className={`w-full pl-7 pr-7 py-1.5 text-xs border rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 transition-all ${
-              cart.orderType === 'delivery'
-                ? 'bg-emerald-50/30 border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500'
-                : 'bg-gray-50 hover:bg-gray-100/70 focus:bg-white border-gray-200 focus:ring-brand focus:border-brand'
-            }`}
-          />
-          {cart.orderNumberInput && (
-            <button
-              type="button"
-              onClick={() => {
-                cart.setOrderNumberInput('');
-                cart.setCustomerPhone('');
-              }}
-              className="absolute right-2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
-              title="Clear"
-            >
-              <X size={12} />
-            </button>
+        )}
+
+        {/* Customer Phone / Mobile Number with Live Lookup & Easy Change */}
+        <div className="relative">
+          <div className="relative flex items-center">
+            <div className="absolute left-2.5 pointer-events-none">
+              <Phone size={13} className={cart.customerPhone ? 'text-brand' : 'text-gray-400'} />
+            </div>
+            <input
+              type="tel"
+              value={cart.customerPhone || ''}
+              onChange={(e) => handlePhoneChange(e.target.value)}
+              placeholder={cart.orderType === 'delivery' ? 'Phone # (e.g. 03001234567)' : 'Phone # / Number (Optional)'}
+              className={`w-full pl-7 pr-7 py-1.5 text-xs border rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 transition-all ${
+                cart.orderType === 'delivery'
+                  ? 'bg-emerald-50/20 border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500'
+                  : 'bg-gray-50 hover:bg-gray-100/70 focus:bg-white border-gray-200 focus:ring-brand focus:border-brand'
+              }`}
+            />
+            {cart.customerPhone && (
+              <button
+                type="button"
+                onClick={() => {
+                  cart.setCustomerPhone('');
+                  setShowSuggestions(false);
+                }}
+                className="absolute right-2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
+                title="Clear Phone"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
+          {/* Quick Customer Autofill Pill / Dropdown */}
+          {showSuggestions && customerSuggestions.length > 0 && (
+            <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-brand/20 rounded-lg shadow-lg z-30 p-1 space-y-1">
+              <div className="px-2 py-0.5 text-[10px] font-semibold text-brand flex items-center gap-1">
+                <Sparkles size={10} /> Existing customer found — Click to autofill:
+              </div>
+              {customerSuggestions.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => handleSelectCustomer(c)}
+                  className="w-full text-left px-2 py-1.5 rounded-md hover:bg-brand-light flex items-center justify-between text-xs transition-colors"
+                >
+                  <span className="font-semibold text-gray-800 truncate">{c.name || 'Unnamed'}</span>
+                  <span className="text-gray-500 font-mono text-[11px] ml-2 shrink-0">{c.phone}</span>
+                </button>
+              ))}
+            </div>
           )}
         </div>
 
-        {/* Customer Name Input */}
+        {/* Customer Name Input (Easily editable/changeable) */}
         <div className="relative flex items-center">
-          <div className="absolute left-2.5 text-gray-400 pointer-events-none">
-            <User size={13} />
+          <div className="absolute left-2.5 pointer-events-none">
+            <User size={13} className={cart.customerName ? 'text-brand' : 'text-gray-400'} />
           </div>
           <input
             type="text"
-            value={cart.customerName}
+            value={cart.customerName || ''}
             onChange={(e) => cart.setCustomerName(e.target.value)}
             placeholder="Customer Name (Optional)"
             className="w-full pl-7 pr-7 py-1.5 text-xs bg-gray-50 hover:bg-gray-100/70 focus:bg-white border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand transition-all"
@@ -133,15 +204,15 @@ export default function CartPanel({
           )}
         </div>
 
-        {/* Delivery Field (Directly under Customer Name) */}
+        {/* Delivery Address Field (Directly under Customer Name, fully editable) */}
         <div className="space-y-1.5">
           <div className="relative flex items-center">
-            <div className="absolute left-2.5 text-gray-400 pointer-events-none">
+            <div className="absolute left-2.5 pointer-events-none">
               <Truck size={13} className={cart.orderType === 'delivery' || cart.deliveryAddress ? 'text-emerald-600' : 'text-gray-400'} />
             </div>
             <input
               type="text"
-              value={cart.deliveryAddress}
+              value={cart.deliveryAddress || ''}
               onChange={(e) => {
                 const val = e.target.value;
                 cart.setDeliveryAddress(val);

@@ -486,21 +486,70 @@ router.patch('/:id/status', async (req: Request, res: Response) => {
   }
 });
 
-export const orderRoutes = router;
-// PATCH /api/orders/:id/delivery — Adjust delivery fee and address on the fly (for POS printer/staff/admin)
+// PATCH /api/orders/:id/customer — Update customer name, phone number, and delivery address
+router.patch('/:id/customer', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { customer_name, customer_phone, phone, delivery_address } = req.body;
+    const db = getDatabase();
+
+    const order = db.prepare('SELECT * FROM orders WHERE id = ? OR order_number = ? OR cloud_order_id = ?').get(id, id, id) as any;
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const cleanName = customer_name !== undefined ? (customer_name ? String(customer_name).trim() : null) : order.customer_name;
+    const cleanPhone = (customer_phone !== undefined || phone !== undefined)
+      ? (customer_phone || phone ? String(customer_phone || phone).trim() : null)
+      : order.customer_phone;
+    const cleanAddress = delivery_address !== undefined ? (delivery_address ? String(delivery_address).trim() : null) : order.delivery_address;
+
+    db.prepare(`
+      UPDATE orders
+      SET customer_name = ?, customer_phone = ?, delivery_address = ?, updated_at = ?
+      WHERE id = ?
+    `).run(cleanName, cleanPhone, cleanAddress, now(), order.id);
+
+    // Also update cloud if synced
+    try {
+      const { updateCloudOrderCustomer } = await import('../services/cloud-sync');
+      if (updateCloudOrderCustomer) {
+        await updateCloudOrderCustomer(order.cloud_order_id || order.order_number || order.id, {
+          customer_name: cleanName,
+          customer_phone: cleanPhone,
+          delivery_address: cleanAddress,
+        });
+      }
+    } catch {}
+
+    const updated = db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id) as any;
+    const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson);
+    const customer = (cleanName || cleanPhone) ? { name: cleanName || '', phone: cleanPhone || '' } : null;
+
+    res.json({ success: true, order: Object.assign({}, updated, { items, customer }) });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PATCH /api/orders/:id/delivery — Adjust delivery fee, address, and customer info on the fly (for POS printer/staff/admin)
 router.patch('/:id/delivery', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { delivery_charge, delivery_fee, delivery_address, type } = req.body;
+    const { delivery_charge, delivery_fee, delivery_address, customer_name, customer_phone, phone, type } = req.body;
     const db = getDatabase();
 
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(id) as any;
+    const order = db.prepare('SELECT * FROM orders WHERE id = ? OR order_number = ? OR cloud_order_id = ?').get(id, id, id) as any;
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
 
     const fee = Math.max(0, Number(delivery_charge ?? delivery_fee ?? 0));
     const cleanAddress = delivery_address !== undefined ? (delivery_address ? String(delivery_address).trim() : null) : order.delivery_address;
+    const cleanName = customer_name !== undefined ? (customer_name ? String(customer_name).trim() : null) : order.customer_name;
+    const cleanPhone = (customer_phone !== undefined || phone !== undefined)
+      ? (customer_phone || phone ? String(customer_phone || phone).trim() : null)
+      : order.customer_phone;
     const newType = type || order.type;
 
     const subtotal = Number(order.subtotal) || 0;
@@ -514,9 +563,9 @@ router.patch('/:id/delivery', async (req: Request, res: Response) => {
 
     db.prepare(`
       UPDATE orders
-      SET delivery_charge = ?, delivery_fee = ?, delivery_address = ?, type = ?, total = ?, round_off = ?, updated_at = ?
+      SET delivery_charge = ?, delivery_fee = ?, delivery_address = ?, customer_name = ?, customer_phone = ?, type = ?, total = ?, round_off = ?, updated_at = ?
       WHERE id = ?
-    `).run(fee, fee, cleanAddress, newType, total, roundOff, now(), id);
+    `).run(fee, fee, cleanAddress, cleanName, cleanPhone, newType, total, roundOff, now(), order.id);
 
     // Also update existing bill if any
     try {
@@ -524,20 +573,30 @@ router.patch('/:id/delivery', async (req: Request, res: Response) => {
         UPDATE bills
         SET delivery_charge = ?, total = ?, updated_at = ?
         WHERE order_id = ?
-      `).run(fee, total, now(), id);
+      `).run(fee, total, now(), order.id);
     } catch {}
 
-    const updated = db.prepare('SELECT * FROM orders WHERE id = ?').get(id) as any;
+    const updated = db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id) as any;
 
     // Push update to Cloud Supabase
     try {
-      const { pushOrderToCloud } = await import('../services/cloud-sync');
-      const orderItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(id).map(parseItemJson);
-      pushOrderToCloud(updated, orderItems).catch(() => {});
+      const { updateCloudOrderCustomer } = await import('../services/cloud-sync');
+      if (updateCloudOrderCustomer) {
+        await updateCloudOrderCustomer(order.cloud_order_id || order.order_number || order.id, {
+          customer_name: cleanName,
+          customer_phone: cleanPhone,
+          delivery_address: cleanAddress,
+        });
+      }
     } catch {}
 
-    res.json({ success: true, order: updated });
+    const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson);
+    const customer = (cleanName || cleanPhone) ? { name: cleanName || '', phone: cleanPhone || '' } : null;
+
+    res.json({ success: true, order: Object.assign({}, updated, { items, customer }) });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
+
+export const orderRoutes = router;

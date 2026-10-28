@@ -88,7 +88,8 @@ export default function POSPage() {
     const isDelivery = cart.orderType === 'delivery' || Boolean(cart.deliveryAddress.trim());
     const finalOrderType = isDelivery ? 'delivery' : (cart.orderType || 'takeaway');
     const safeDeliveryFee = isDelivery ? Math.max(0, Number(cart.deliveryFee) || 0) : 0;
-    const customerPhone = (cart.customerPhone?.trim() || (finalOrderType === 'delivery' || finalOrderType === 'takeaway' ? cart.orderNumberInput?.trim() : '')) || undefined;
+    const customerPhone = cart.customerPhone?.trim() || (finalOrderType !== 'dine_in' ? cart.orderNumberInput?.trim() : undefined) || undefined;
+    const deliveryAddress = cart.deliveryAddress?.trim() || undefined;
 
     const notesParts: string[] = [];
     if (finalOrderType === 'dine_in' && cart.orderNumberInput?.trim()) {
@@ -161,6 +162,7 @@ export default function POSPage() {
                 ...(paidBill.order || data.order),
                 customer_name: data.order?.customer_name || customerName,
                 customer_phone: data.order?.customer_phone || customerPhone,
+                delivery_address: data.order?.delivery_address || deliveryAddress,
                 customer: finalCustomerObj,
               },
             };
@@ -179,6 +181,7 @@ export default function POSPage() {
                 ...(generatedBill.order || data.order),
                 customer_name: data.order?.customer_name || customerName,
                 customer_phone: data.order?.customer_phone || customerPhone,
+                delivery_address: data.order?.delivery_address || deliveryAddress,
                 customer: finalCustomerObj,
               },
             };
@@ -201,6 +204,7 @@ export default function POSPage() {
             ...data.order,
             customer_name: data.order?.customer_name || customerName,
             customer_phone: data.order?.customer_phone || customerPhone,
+            delivery_address: data.order?.delivery_address || deliveryAddress,
             customer: finalCustomerObj,
           };
           await printKot(orderForKot as Order);

@@ -130,6 +130,7 @@ export interface Customer {
   country_code: string;
   name: string;
   email: string | null;
+  address?: string | null;
   visits_count: number;
   total_spent: number;
   last_visit_at: string | null;

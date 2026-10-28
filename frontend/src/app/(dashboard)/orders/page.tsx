@@ -33,6 +33,7 @@ import {
   Copy,
   Check,
   Calendar,
+  Edit3,
 } from 'lucide-react';
 import type { Order, OrderItem } from '@/lib/types';
 
@@ -71,12 +72,99 @@ export default function OrdersPage() {
   const [modalDeliveryFee, setModalDeliveryFee] = useState<number>(0);
   const [savingDeliveryFee, setSavingDeliveryFee] = useState(false);
 
-  // Sync modal delivery fee when selectedOrder opens
+  // Customer details editing state in modal
+  const [isEditingCustomer, setIsEditingCustomer] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editAddress, setEditAddress] = useState('');
+  const [savingCustomer, setSavingCustomer] = useState(false);
+
+  // Sync modal delivery fee and customer info when selectedOrder opens
   useEffect(() => {
     if (selectedOrder) {
       setModalDeliveryFee(Number((selectedOrder as any).delivery_charge || (selectedOrder as any).delivery_fee || 0));
+      setEditName(selectedOrder.customer?.name || selectedOrder.customer_name || '');
+      setEditPhone(selectedOrder.customer?.phone || selectedOrder.customer_phone || '');
+      setEditAddress(selectedOrder.delivery_address || '');
+      setIsEditingCustomer(false);
     }
   }, [selectedOrder?.id]);
+
+  const handleUpdateCustomerDetails = async () => {
+    if (!selectedOrder) return;
+    setSavingCustomer(true);
+    const cleanName = editName.trim();
+    const cleanPhone = editPhone.trim();
+    const cleanAddress = editAddress.trim();
+
+    try {
+      const res = await api.patch(`/orders/${selectedOrder.id}/customer`, {
+        customer_name: cleanName,
+        customer_phone: cleanPhone,
+        delivery_address: cleanAddress,
+      });
+
+      const updated = res.data?.order || {
+        customer_name: cleanName,
+        customer_phone: cleanPhone,
+        delivery_address: cleanAddress,
+      };
+
+      setSelectedOrder((prev) => (prev ? {
+        ...prev,
+        ...updated,
+        customer_name: cleanName,
+        customer_phone: cleanPhone,
+        delivery_address: cleanAddress,
+        customer: {
+          ...(prev.customer || {}),
+          name: cleanName,
+          phone: cleanPhone,
+          address: cleanAddress,
+        },
+      } : null));
+
+      setOrders((prev) => prev.map((o) => (String(o.id) === String(selectedOrder.id) ? {
+        ...o,
+        ...updated,
+        customer_name: cleanName,
+        customer_phone: cleanPhone,
+        delivery_address: cleanAddress,
+        customer: {
+          ...(o.customer || {}),
+          name: cleanName,
+          phone: cleanPhone,
+          address: cleanAddress,
+        },
+      } : o)));
+
+      // Also update Supabase cloud directly if online order
+      try {
+        const cloudTargetId = (selectedOrder as any).cloud_order_id || selectedOrder.id;
+        await fetch(`${SUPABASE_BASE_URL}?id=eq.${cloudTargetId}`, {
+          method: 'PATCH',
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            customer_name: cleanName || null,
+            customer_phone: cleanPhone || null,
+            delivery_address: cleanAddress || null,
+            updated_at: new Date().toISOString(),
+          }),
+        });
+      } catch {}
+
+      setIsEditingCustomer(false);
+      toast.success('Customer details updated successfully!');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Failed to update customer details');
+    } finally {
+      setSavingCustomer(false);
+    }
+  };
 
   const handleUpdateDeliveryFee = async (newFee: number) => {
     if (!selectedOrder) return;
@@ -1155,35 +1243,121 @@ export default function OrdersPage() {
             {/* Modal Body */}
             <div className="p-5 space-y-4">
               {/* Customer & Order Metadata */}
-              <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 text-xs space-y-1.5">
-                <div className="flex justify-between">
-                  <span className="text-slate-500 font-medium">Order Type:</span>
-                  <span className="font-bold text-slate-800 capitalize">{selectedOrder.type}</span>
+              <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 text-xs space-y-2">
+                <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
+                  <span className="font-bold text-slate-800 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                    <User size={13} className="text-brand" /> Customer & Order Info
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isEditingCustomer) {
+                        setEditName(selectedOrder.customer?.name || selectedOrder.customer_name || '');
+                        setEditPhone(selectedOrder.customer?.phone || selectedOrder.customer_phone || '');
+                        setEditAddress(selectedOrder.delivery_address || '');
+                      }
+                      setIsEditingCustomer(!isEditingCustomer);
+                    }}
+                    className="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold text-brand bg-brand-light hover:bg-brand/10 transition-colors cursor-pointer"
+                  >
+                    <Edit3 size={11} />
+                    {isEditingCustomer ? 'Cancel' : 'Change / Edit Details'}
+                  </button>
                 </div>
-                {(selectedOrder.customer || selectedOrder.customer_name) && (
-                  <>
+
+                {!isEditingCustomer ? (
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500 font-medium">Order Type:</span>
+                      <span className="font-bold text-slate-800 capitalize">{selectedOrder.type}</span>
+                    </div>
                     <div className="flex justify-between">
                       <span className="text-slate-500 font-medium">Customer Name:</span>
-                      <span className="font-bold text-slate-800">{selectedOrder.customer?.name || selectedOrder.customer_name}</span>
+                      <span className="font-bold text-slate-800">
+                        {selectedOrder.customer?.name || selectedOrder.customer_name || <span className="text-slate-400 italic font-normal">Not provided</span>}
+                      </span>
                     </div>
-                    {(selectedOrder.customer?.phone || selectedOrder.customer_phone) && (
-                      <div className="flex justify-between">
-                        <span className="text-slate-500 font-medium">Phone:</span>
-                        <span className="font-mono font-bold text-slate-800">{selectedOrder.customer?.phone || selectedOrder.customer_phone}</span>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500 font-medium">Phone / Number:</span>
+                      <span className="font-mono font-bold text-slate-800">
+                        {selectedOrder.customer?.phone || selectedOrder.customer_phone || <span className="text-slate-400 italic font-normal font-sans">Not provided</span>}
+                      </span>
+                    </div>
+                    {selectedOrder.delivery_address && (
+                      <div className="flex justify-between pt-1 border-t border-slate-200">
+                        <span className="text-slate-500 font-medium">Delivery Address:</span>
+                        <span className="font-medium text-slate-800 text-right max-w-xs">{selectedOrder.delivery_address}</span>
                       </div>
                     )}
-                  </>
-                )}
-                {selectedOrder.delivery_address && (
-                  <div className="flex justify-between pt-1 border-t border-slate-200">
-                    <span className="text-slate-500 font-medium">Delivery Address:</span>
-                    <span className="font-medium text-slate-800 text-right max-w-xs">{selectedOrder.delivery_address}</span>
+                    <div className="flex justify-between pt-1 border-t border-slate-200">
+                      <span className="text-slate-500 font-medium">Date & Time:</span>
+                      <span className="text-slate-700 font-medium">{new Date(selectedOrder.created_at).toLocaleString()}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2 pt-1">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Customer Phone / Number</label>
+                      <div className="relative flex items-center">
+                        <Phone size={12} className="absolute left-2.5 text-slate-400" />
+                        <input
+                          type="tel"
+                          value={editPhone}
+                          onChange={(e) => setEditPhone(e.target.value)}
+                          placeholder="Phone / Mobile Number"
+                          className="w-full pl-7 pr-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Customer Name</label>
+                      <div className="relative flex items-center">
+                        <User size={12} className="absolute left-2.5 text-slate-400" />
+                        <input
+                          type="text"
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          placeholder="Customer Name"
+                          className="w-full pl-7 pr-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Delivery Address / Details</label>
+                      <div className="relative flex items-center">
+                        <MapPin size={12} className="absolute left-2.5 text-slate-400" />
+                        <input
+                          type="text"
+                          value={editAddress}
+                          onChange={(e) => setEditAddress(e.target.value)}
+                          placeholder="House #, Street, Area / Details"
+                          className="w-full pl-7 pr-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        disabled={savingCustomer}
+                        onClick={handleUpdateCustomerDetails}
+                        className="flex-1 py-1.5 px-3 bg-brand text-white text-xs font-bold rounded-lg hover:bg-brand-hover transition-colors disabled:opacity-50 flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <Check size={13} />
+                        {savingCustomer ? 'Saving...' : 'Save Changes'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingCustomer(false)}
+                        className="py-1.5 px-3 border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
                 )}
-                <div className="flex justify-between">
-                  <span className="text-slate-500 font-medium">Date & Time:</span>
-                  <span className="text-slate-700 font-medium">{new Date(selectedOrder.created_at).toLocaleString()}</span>
-                </div>
               </div>
 
               {/* Items Breakdown */}

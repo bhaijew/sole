@@ -1435,6 +1435,59 @@ export async function updateCloudOrderStatus(
 }
 
 /**
+ * Update order customer details (name, phone, address) on Pizza System cloud (Supabase) in real time
+ */
+export async function updateCloudOrderCustomer(
+  orderIdOrNumber: string | number,
+  details: {
+    customer_name?: string | null;
+    customer_phone?: string | null;
+    delivery_address?: string | null;
+  }
+): Promise<boolean> {
+  const syncEnabled = getSetting('cloud_sync_enabled', '1') === '1';
+  if (!syncEnabled) return false;
+
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const db = getDatabase();
+    const order = db.prepare('SELECT id, order_number, cloud_order_id FROM orders WHERE id = ? OR order_number = ? OR cloud_order_id = ?')
+      .get(orderIdOrNumber, String(orderIdOrNumber), String(orderIdOrNumber)) as any;
+
+    const updatePayload: Record<string, any> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (details.customer_name !== undefined) updatePayload.customer_name = details.customer_name;
+    if (details.customer_phone !== undefined) updatePayload.customer_phone = details.customer_phone;
+    if (details.delivery_address !== undefined) updatePayload.delivery_address = details.delivery_address;
+
+    let query = client.from('orders').update(updatePayload);
+    if (order?.cloud_order_id) {
+      query = query.eq('id', order.cloud_order_id);
+    } else if (order?.order_number) {
+      query = query.eq('order_number', order.order_number);
+    } else {
+      query = query.or(`id.eq.${orderIdOrNumber},order_number.eq.${orderIdOrNumber}`);
+    }
+
+    const { error } = await query;
+    if (error) {
+      console.warn(`[CloudSync] Failed to update cloud customer details:`, error.message);
+      return false;
+    }
+
+    console.log(`[CloudSync] Cloud order customer details updated for ${order?.order_number || orderIdOrNumber}`);
+    broadcastCloudEvent('order-synced', { orderNumber: order?.order_number });
+    return true;
+  } catch (err: any) {
+    console.error('[CloudSync] updateCloudOrderCustomer error:', err.message);
+    return false;
+  }
+}
+
+/**
  * Upload any pending offline orders to Pizza System cloud (Supabase)
  */
 export async function syncPendingOfflineOrders(): Promise<number> {
