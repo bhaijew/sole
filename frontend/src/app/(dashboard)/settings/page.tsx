@@ -20,9 +20,14 @@ const CLASSIC_PREVIEW = `      PIZZA MAFIA
 --------------------------------
 Item                Quantity  Price
 --------------------------------
+BUMPER DEAL 1              1   1450
+  >> INCLUDES:
+     * 1x Small Pizza
+     * 1x Zinger Burger
+     * 1x 500ml Drink
 1L 7UP                     1    170
 --------------------------------
-         TOTAL: Rs 170
+         TOTAL: Rs 1,620
 --------------------------------
 EasyPaisa: 03001234567
 Muhammad Ali
@@ -39,6 +44,12 @@ TABLE: Table 2
 Customer: Ali (03001234567)
 Time: 3:31:04 PM
 ================================
+
+1x  BUMPER DEAL 1
+  >> PREPARE DEAL ITEMS:
+     [ ] 1X SMALL PIZZA
+     [ ] 1X ZINGER BURGER
+     [ ] 1X 500ML DRINK
 
 1x  CHICKEN FAJITA LARGE
   >> VARIANT: SPICY CRUST

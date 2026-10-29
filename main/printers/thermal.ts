@@ -605,6 +605,15 @@ function formatSingleReceiptCopy(
         lines.push('{BOLD}  >> SIZE / VARIANT: ' + variantOrSize.toUpperCase() + '{/BOLD}');
       }
 
+      // Deal combo items included (e.g. 1 Pizza, 1 Burger, 1 Drink)
+      const dealComponents = extractDealItems(item);
+      if (dealComponents.length > 0) {
+        lines.push('{BOLD}  >> INCLUDES:{/BOLD}');
+        for (const dc of dealComponents) {
+          lines.push('{BOLD}     * ' + dc + '{/BOLD}');
+        }
+      }
+
       // Addons
       const addons = parseAddons(item.addons);
       for (const addon of addons) {
@@ -817,6 +826,143 @@ export function cleanVariant(v: any): string {
   return String(v);
 }
 
+/**
+ * Extract deal/combo components included in a deal item.
+ * Supports:
+ * - Direct items_included or deal_items on order item
+ * - SQLite deals table (by product_id or title)
+ * - SQLite products table (items_included or description parsed for bullets/lines/plus/commas)
+ */
+export function extractDealItems(item: any, db?: any): string[] {
+  if (!item) return [];
+
+  // 1. Direct items_included or deal_items on the item object
+  if (Array.isArray(item.deal_items) && item.deal_items.length > 0) {
+    return item.deal_items.map((s: any) => String(s).trim()).filter(Boolean);
+  }
+  if (Array.isArray(item.items_included) && item.items_included.length > 0) {
+    return item.items_included.map((s: any) => String(s).trim()).filter(Boolean);
+  }
+  if (typeof item.items_included === 'string' && item.items_included.trim()) {
+    try {
+      const parsed = JSON.parse(item.items_included);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((s: any) => String(s).trim()).filter(Boolean);
+      }
+    } catch {
+      const parts = item.items_included.split(',').map((s: string) => s.trim()).filter(Boolean);
+      if (parts.length > 0) return parts;
+    }
+  }
+
+  // 2. Lookup in SQLite database (deals & products)
+  let description = item.description || '';
+  let itemsIncluded = '';
+
+  try {
+    const activeDb = db || (typeof getDatabase === 'function' ? getDatabase() : null);
+    if (activeDb) {
+      const prodId = item.product_id || item.id;
+      const prodName = (item.product_name || item.name || '').trim();
+
+      // Check deals table first
+      try {
+        const dealRow = activeDb.prepare(
+          `SELECT items_included, description FROM deals 
+           WHERE (product_id = ? AND product_id IS NOT NULL AND product_id != '') 
+              OR title = ? 
+              OR lower(title) = lower(?)
+           LIMIT 1`
+        ).get(String(prodId || ''), prodName, prodName) as any;
+
+        if (dealRow) {
+          if (dealRow.items_included) itemsIncluded = dealRow.items_included;
+          if (dealRow.description && !description) description = dealRow.description;
+        }
+      } catch {}
+
+      // If not resolved from deals, check products table
+      if (!itemsIncluded && !description) {
+        try {
+          const prodRow = activeDb.prepare(
+            `SELECT description, items_included FROM products 
+             WHERE id = ? OR name = ? OR lower(name) = lower(?) LIMIT 1`
+          ).get(String(prodId || ''), prodName, prodName) as any;
+
+          if (prodRow) {
+            if (prodRow.items_included) itemsIncluded = prodRow.items_included;
+            if (prodRow.description) description = prodRow.description;
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+
+  // Parse items_included if retrieved from DB
+  if (itemsIncluded) {
+    try {
+      const parsed = JSON.parse(itemsIncluded);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((s: any) => String(s).trim()).filter(Boolean);
+      }
+    } catch {
+      const parts = itemsIncluded.split(',').map((s: string) => s.trim()).filter(Boolean);
+      if (parts.length > 0) return parts;
+    }
+  }
+
+  // Check if item name denotes a deal
+  const prodNameLower = String(item.product_name || item.name || '').toLowerCase();
+  const isDeal =
+    prodNameLower.includes('deal') ||
+    prodNameLower.includes('bumper') ||
+    prodNameLower.includes('combo') ||
+    prodNameLower.includes('pack') ||
+    prodNameLower.includes('super');
+
+  // Parse from description
+  if (description && typeof description === 'string') {
+    const desc = description.trim();
+
+    // Bullet points "•" or "·"
+    if (desc.includes('•') || desc.includes('·')) {
+      const sep = desc.includes('•') ? '•' : '·';
+      const parts = desc
+        .split(sep)
+        .map((s) => s.replace(/^[•\-\*✓\d+\.]\s*/, '').trim())
+        .filter(Boolean);
+      if (parts.length > 0) return parts;
+    }
+
+    // Newlines "\n"
+    if (desc.includes('\n')) {
+      const lines = desc
+        .split('\n')
+        .map((s) => s.replace(/^[•\-\*✓\d+\.]\s*/, '').trim())
+        .filter(Boolean);
+      if (lines.length > 1) return lines;
+    }
+
+    // Plus separated (e.g. "1 Regular Pizza + 1 Zinger Burger + 1 Drink")
+    if (desc.includes('+')) {
+      const parts = desc.split('+').map((s) => s.trim()).filter(Boolean);
+      if (parts.length > 1) return parts;
+    }
+
+    // Comma separated if it's explicitly a deal
+    if (isDeal && desc.includes(',')) {
+      const parts = desc.split(',').map((s) => s.trim()).filter(Boolean);
+      if (parts.length > 1) return parts;
+    }
+
+    if (isDeal && desc.length > 0) {
+      return [desc];
+    }
+  }
+
+  return [];
+}
+
 function formatKOT(order: any, items: any[], stationName: string, cols: number = 48): Buffer {
   const lines: string[] = [];
   const bar = '='.repeat(cols);
@@ -891,6 +1037,15 @@ function formatKOT(order: any, items: any[], stationName: string, cols: number =
     const vText = cleanVariant(item.variant_selection || item.variant || item.selected_variation || item.selectedVariation);
     if (vText && vText.toLowerCase() !== 'null' && vText.toLowerCase() !== 'undefined' && !/^(vraint|variant)\s*[:=]\s*null$/i.test(vText)) {
       lines.push('{DOUBLE_HEIGHT}{BOLD}  >> VARIANT: ' + vText.toUpperCase() + '{/BOLD}{/DOUBLE_HEIGHT}');
+    }
+
+    // Deal items for Kitchen preparation
+    const kotDealItems = extractDealItems(item);
+    if (kotDealItems.length > 0) {
+      lines.push('{DOUBLE_HEIGHT}{BOLD}  >> PREPARE DEAL ITEMS:{/BOLD}{/DOUBLE_HEIGHT}');
+      for (const dItem of kotDealItems) {
+        lines.push('{DOUBLE_HEIGHT}{BOLD}     [ ] ' + dItem.toUpperCase() + '{/BOLD}{/DOUBLE_HEIGHT}');
+      }
     }
 
     // Addons

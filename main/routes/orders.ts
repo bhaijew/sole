@@ -182,8 +182,8 @@ router.post('/', async (req: Request, res: Response) => {
     const insertItem = db.prepare(`
       INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity,
         subtotal, tax_amount, tax_breakdown, tax_type, discount_amount, total, variant_selection,
-        modifier_selection, addons, special_instructions, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+        modifier_selection, addons, special_instructions, items_included, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
     `);
 
     for (const item of items) {
@@ -252,7 +252,9 @@ router.post('/', async (req: Request, res: Response) => {
         item.variant_selection ? JSON.stringify(item.variant_selection) : null,
         JSON.stringify(item.modifier_selection || null),
         JSON.stringify(item.addons || null),
-        item.special_instructions || null, now(), now()
+        item.special_instructions || null,
+        (item.items_included ? String(item.items_included) : (product.items_included ? String(product.items_included) : (product.description || null))),
+        now(), now()
       );
 
       // Decrease stock
@@ -333,8 +335,8 @@ router.post('/:id/items', (req: Request, res: Response) => {
     const insertItem = db.prepare(`
       INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity,
         subtotal, tax_amount, tax_breakdown, tax_type, discount_amount, total, variant_selection,
-        modifier_selection, addons, special_instructions, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+        modifier_selection, addons, special_instructions, items_included, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
     `);
 
     for (const item of items) {
@@ -369,7 +371,9 @@ router.post('/:id/items', (req: Request, res: Response) => {
         item.variant_selection ? JSON.stringify(item.variant_selection) : null,
         JSON.stringify(item.modifier_selection || null),
         JSON.stringify(item.addons || null),
-        item.special_instructions || null, now(), now()
+        item.special_instructions || null,
+        (item.items_included ? String(item.items_included) : (product.items_included ? String(product.items_included) : (product.description || null))),
+        now(), now()
       );
 
       if (product.track_inventory) {

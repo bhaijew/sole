@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as bcrypt from 'bcryptjs';
 
 // Bump this whenever the schema changes incompatibly
-const SCHEMA_VERSION = 16;
+const SCHEMA_VERSION = 17;
 
 let db: Database.Database;
 
@@ -395,6 +395,38 @@ function runIncrementalMigrations(fromVersion: number): void {
     console.log('[DB] v16 migration complete: customer_phone ensured on orders table.');
   }
 
+  // Migration from version 16 to 17 (Deals table & items_included for detailed deal print slips)
+  if (fromVersion < 17) {
+    console.log('[DB] Running migration to v17 (Deals table & items_included for deal print slips)...');
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS deals (
+        id TEXT PRIMARY KEY,
+        cloud_id TEXT,
+        shop_id INTEGER,
+        product_id TEXT,
+        title TEXT NOT NULL,
+        slug TEXT,
+        description TEXT,
+        deal_price REAL DEFAULT 0,
+        original_price REAL DEFAULT 0,
+        items_included TEXT,
+        badge TEXT,
+        is_active INTEGER DEFAULT 1,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    if (!columnExists('products', 'items_included')) {
+      db.exec(`ALTER TABLE products ADD COLUMN items_included TEXT`);
+    }
+    if (!columnExists('order_items', 'items_included')) {
+      db.exec(`ALTER TABLE order_items ADD COLUMN items_included TEXT`);
+    }
+    console.log('[DB] v17 migration complete: deals table and items_included ensured.');
+  }
+
 
   // Update schema version
   db.prepare(`
@@ -448,6 +480,7 @@ function createSchema(): void {
       tax_rate REAL DEFAULT 0,
       cb_percent REAL DEFAULT 0,
       tags TEXT,
+      items_included TEXT,
       deleted_at TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -569,6 +602,7 @@ function createSchema(): void {
       type TEXT DEFAULT 'takeaway',
       guest_count INTEGER,
       special_instructions TEXT,
+      items_included TEXT,
       packaging_charge REAL DEFAULT 0,
       delivery_charge REAL DEFAULT 0,
       status TEXT DEFAULT 'pending',
@@ -610,6 +644,7 @@ function createSchema(): void {
       modifier_selection TEXT,
       addons TEXT,
       special_instructions TEXT,
+      items_included TEXT,
       status TEXT DEFAULT 'pending',
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,

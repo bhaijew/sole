@@ -196,6 +196,17 @@ export async function syncMenuFromCloud(forcedShopId?: number | string): Promise
       console.warn('[CloudSync] Could not fetch product_recipes:', recErr);
     }
 
+    // 4. Fetch Deals for this branch
+    let cloudDeals: any[] = [];
+    try {
+      let dealQuery = client.from('deals').select('*');
+      if (shopId) dealQuery = dealQuery.eq('shop_id', Number(shopId));
+      const dealRes = await dealQuery;
+      if (dealRes.data) cloudDeals = dealRes.data;
+    } catch (dealErr) {
+      console.warn('[CloudSync] Could not fetch deals:', dealErr);
+    }
+
     let syncedCategories = 0;
     let syncedProducts = 0;
 
@@ -312,6 +323,67 @@ export async function syncMenuFromCloud(forcedShopId?: number | string): Promise
         if (!activeCloudCatIds.has(String(lc.cloud_id))) {
           db.prepare("DELETE FROM categories WHERE id = ?").run(lc.id);
         }
+      }
+
+      // Upsert Deals into SQLite
+      try {
+        const findDealStmt = db.prepare('SELECT id FROM deals WHERE cloud_id = ? OR slug = ? LIMIT 1');
+        const updateDealStmt = db.prepare(`
+          UPDATE deals 
+          SET product_id = ?, title = ?, slug = ?, description = ?, deal_price = ?, 
+              original_price = ?, items_included = ?, badge = ?, is_active = ?, shop_id = ?, updated_at = datetime('now')
+          WHERE id = ?
+        `);
+        const insertDealStmt = db.prepare(`
+          INSERT INTO deals (id, cloud_id, shop_id, product_id, title, slug, description, deal_price, original_price, items_included, badge, is_active)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        for (const d of cloudDeals || []) {
+          const cloudIdStr = String(d.id);
+          const existing = findDealStmt.get(cloudIdStr, d.slug) as any;
+          let localId: string;
+          const isActive = d.is_active ? 1 : 0;
+          const dealShopId = d.shop_id ? Number(d.shop_id) : (shopId ? Number(shopId) : null);
+          const itemsIncStr = Array.isArray(d.items_included)
+            ? JSON.stringify(d.items_included)
+            : (d.items_included ? String(d.items_included) : null);
+
+          if (existing) {
+            localId = existing.id;
+            updateDealStmt.run(
+              d.product_id ? String(d.product_id) : null,
+              d.title,
+              d.slug || null,
+              d.description || null,
+              Number(d.deal_price) || 0,
+              Number(d.original_price) || 0,
+              itemsIncStr,
+              d.badge || null,
+              isActive,
+              dealShopId,
+              localId
+            );
+          } else {
+            localId = `cloud_deal_${d.id}`;
+            insertDealStmt.run(
+              localId,
+              cloudIdStr,
+              dealShopId,
+              d.product_id ? String(d.product_id) : null,
+              d.title,
+              d.slug || null,
+              d.description || null,
+              Number(d.deal_price) || 0,
+              Number(d.original_price) || 0,
+              itemsIncStr,
+              d.badge || null,
+              isActive
+            );
+          }
+        }
+      } catch (dealErr) {
+        console.warn('[CloudSync] Could not upsert deals:', dealErr);
       }
 
       // Multi-Branch Recipe & Raw Material Inventory Isolation

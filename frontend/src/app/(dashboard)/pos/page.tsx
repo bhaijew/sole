@@ -134,6 +134,7 @@ export default function POSPage() {
               : null,
             special_instructions: instructionsCombined || null,
             variant_selection: item.size || null,
+            items_included: (item.product as any)?.items_included ? JSON.stringify((item.product as any).items_included) : (item.product.description || null),
           };
         }),
       });
