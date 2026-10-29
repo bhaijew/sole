@@ -80,7 +80,7 @@ export default function CartPanel({
       }
     >
       {/* Order Type & Customer Information */}
-      <div className="p-3.5 border-b border-gray-100 space-y-2">
+      <div className="p-3 border-b border-gray-100 space-y-1.5">
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
           {(['dine_in', 'takeaway', 'delivery'] as const).map((type) => {
             const Icon = orderTypeIcons[type];
@@ -288,7 +288,7 @@ export default function CartPanel({
       </div>
 
       {/* Cart Items */}
-      <div className={isDrawer ? 'overflow-y-auto p-4 max-h-[40vh]' : 'flex-1 overflow-y-auto p-4'}>
+      <div className={isDrawer ? 'overflow-y-auto p-3 max-h-[48vh]' : 'flex-1 overflow-y-auto p-3'}>
         {cart.items.length === 0 ? (
           <div className={`flex flex-col items-center justify-center text-gray-400 ${isDrawer ? 'py-8' : 'h-full'}`}>
             <ShoppingCart size={40} />
@@ -394,96 +394,66 @@ export default function CartPanel({
           </span>
         </div>
 
-        {/* Order Type & Payment Method Selector directly above Place Order button */}
-        <div className="space-y-2 pt-1 pb-2">
-          {/* Quick Order Type Selector */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[10px] font-black text-gray-500 uppercase tracking-wider">
-                Order Type:
-              </span>
-              <span className="text-[10px] font-extrabold text-brand uppercase">
-                {cart.orderType === 'dine_in' ? '🍽️ Dine In' : cart.orderType === 'delivery' ? '🛵 Delivery' : '🛍️ Takeaway'}
-              </span>
-            </div>
-            <div className="grid grid-cols-3 gap-1 bg-gray-100 p-0.5 rounded-lg">
-              <button
-                type="button"
-                onClick={() => cart.setOrderType('dine_in')}
-                className={`flex items-center justify-center gap-1 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
-                  cart.orderType === 'dine_in'
-                    ? 'bg-white text-orange-600 shadow-xs ring-1 ring-orange-200'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                <UtensilsCrossed size={12} />
-                Dine In
-              </button>
-              <button
-                type="button"
-                onClick={() => cart.setOrderType('takeaway')}
-                className={`flex items-center justify-center gap-1 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
-                  cart.orderType === 'takeaway'
-                    ? 'bg-white text-orange-600 shadow-xs ring-1 ring-orange-200'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                <Package size={12} />
-                Takeaway
-              </button>
-              <button
-                type="button"
-                onClick={() => cart.setOrderType('delivery')}
-                className={`flex items-center justify-center gap-1 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
-                  cart.orderType === 'delivery'
-                    ? 'bg-emerald-600 text-white shadow-xs'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                <Truck size={12} />
-                Delivery
-              </button>
-            </div>
+        {/* Quick Payment Method Selector: Cash, Online, or Paid directly above Place Order */}
+        <div className="pt-1 pb-2">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] font-black text-gray-500 uppercase tracking-wider">
+              Payment (Printed on Slip):
+            </span>
+            <span
+              className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${
+                cart.paymentMethod === 'online'
+                  ? 'bg-blue-100 text-blue-700'
+                  : cart.paymentMethod === 'paid'
+                  ? 'bg-emerald-100 text-emerald-800'
+                  : 'bg-amber-100 text-amber-800'
+              }`}
+            >
+              {cart.paymentMethod === 'online'
+                ? '📱 ONLINE'
+                : cart.paymentMethod === 'paid'
+                ? '✅ PAID'
+                : '💵 CASH'}
+            </span>
           </div>
 
-          {/* Quick Payment Method Selector: Cash or Online Payment */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[10px] font-black text-gray-500 uppercase tracking-wider">
-                Payment Mode (On Slip):
-              </span>
-              <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full uppercase ${
-                cart.paymentMethod === 'online' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-800'
-              }`}>
-                {cart.paymentMethod === 'online' ? '📱 ONLINE' : '💵 CASH'}
-              </span>
-            </div>
-            <div className="grid grid-cols-2 gap-1.5 bg-gray-100 p-0.5 rounded-lg">
-              <button
-                type="button"
-                onClick={() => cart.setPaymentMethod('cash')}
-                className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md text-xs font-black transition-all cursor-pointer ${
-                  cart.paymentMethod === 'cash'
-                    ? 'bg-emerald-600 text-white shadow-xs'
-                    : 'bg-white text-gray-700 hover:text-gray-900 border border-gray-200'
-                }`}
-              >
-                <span>💵</span>
-                <span>CASH</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => cart.setPaymentMethod('online')}
-                className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md text-xs font-black transition-all cursor-pointer ${
-                  cart.paymentMethod === 'online'
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'bg-white text-gray-700 hover:text-gray-900 border border-gray-200'
-                }`}
-              >
-                <span>📱</span>
-                <span>ONLINE</span>
-              </button>
-            </div>
+          <div className="grid grid-cols-3 gap-1 bg-gray-100 p-1 rounded-lg">
+            <button
+              type="button"
+              onClick={() => cart.setPaymentMethod('cash')}
+              className={`flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-md text-xs font-black transition-all cursor-pointer ${
+                cart.paymentMethod === 'cash'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-white text-gray-700 hover:text-gray-900 border border-gray-200'
+              }`}
+            >
+              <span>💵</span>
+              <span>CASH</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => cart.setPaymentMethod('online')}
+              className={`flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-md text-xs font-black transition-all cursor-pointer ${
+                cart.paymentMethod === 'online'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-white text-gray-700 hover:text-gray-900 border border-gray-200'
+              }`}
+            >
+              <span>📱</span>
+              <span>ONLINE</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => cart.setPaymentMethod('paid')}
+              className={`flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-md text-xs font-black transition-all cursor-pointer ${
+                cart.paymentMethod === 'paid'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'bg-white text-gray-700 hover:text-gray-900 border border-gray-200'
+              }`}
+            >
+              <span>✅</span>
+              <span>PAID</span>
+            </button>
           </div>
         </div>
 
@@ -491,16 +461,24 @@ export default function CartPanel({
           <Button
             onClick={onPlaceOrder}
             disabled={submitting || cart.items.length === 0}
-            className={`flex-1 font-extrabold h-11 text-sm shadow-sm transition-all ${
+            className={`flex-1 font-extrabold h-11 text-sm shadow-sm transition-all cursor-pointer ${
               cart.paymentMethod === 'online'
                 ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                : cart.paymentMethod === 'paid'
+                ? 'bg-purple-600 hover:bg-purple-700 text-white'
                 : 'bg-orange-600 hover:bg-orange-700 text-white'
             }`}
             size="lg"
           >
             {submitting
               ? 'Placing Order...'
-              : `Place Order (${cart.paymentMethod === 'online' ? 'Online' : 'Cash'})`}
+              : `Place Order (${
+                  cart.paymentMethod === 'online'
+                    ? 'Online'
+                    : cart.paymentMethod === 'paid'
+                    ? 'PAID'
+                    : 'Cash'
+                })`}
           </Button>
         </div>
       </div>

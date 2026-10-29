@@ -4,7 +4,7 @@ import type { Customer, Product, Addon, CartItem } from '@/lib/types';
 interface CartState {
   items: CartItem[];
   orderType: 'dine_in' | 'takeaway' | 'delivery' | 'online';
-  paymentMethod: 'cash' | 'online';
+  paymentMethod: 'cash' | 'online' | 'paid';
   tableId: number | null;
   customerId: number | null;
   customer: Customer | null;
@@ -22,7 +22,7 @@ interface CartState {
   clearCart: () => void;
   loadItems: (items: CartItem[], tableId: number | null, customerId: number | null, guestCount: number) => void;
   setOrderType: (type: CartState['orderType']) => void;
-  setPaymentMethod: (method: 'cash' | 'online') => void;
+  setPaymentMethod: (method: 'cash' | 'online' | 'paid') => void;
   setTableId: (id: number | null) => void;
   setCustomerId: (id: number | null) => void;
   setCustomer: (customer: Customer | null) => void;

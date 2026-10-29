@@ -511,7 +511,10 @@ function formatSingleReceiptCopy(
     'cash'
   ).toString().toLowerCase();
 
-  const isOnlinePayment =
+  let payLabel = 'CASH';
+  if (rawMethod === 'paid' || rawMethod.includes('paid')) {
+    payLabel = 'PAID';
+  } else if (
     rawMethod.includes('online') ||
     rawMethod.includes('bank') ||
     rawMethod.includes('card') ||
@@ -519,9 +522,10 @@ function formatSingleReceiptCopy(
     rawMethod.includes('transfer') ||
     rawMethod.includes('easypaisa') ||
     rawMethod.includes('jazzcash') ||
-    rawMethod.includes('digital');
-
-  const payLabel = isOnlinePayment ? 'ONLINE PAYMENT' : 'CASH';
+    rawMethod.includes('digital')
+  ) {
+    payLabel = 'ONLINE PAYMENT';
+  }
   let customerName = order?.customer?.name || order?.customer_name || '';
   if (!customerName && order?.notes && order.notes.includes('Customer: ')) {
     customerName = order.notes.split('Customer: ')[1]?.split('|')[0]?.trim();
@@ -539,6 +543,10 @@ function formatSingleReceiptCopy(
   }
   if (!customerPhone && order?.special_instructions && order.special_instructions.includes('Phone: ')) {
     customerPhone = order.special_instructions.split('Phone: ')[1]?.split('|')[0]?.trim();
+  }
+  // Filter out any fake/dummy phone numbers (e.g. 03333333, repeating digits, or less than 7 chars)
+  if (customerPhone && (/^03{4,}$/.test(customerPhone.replace(/\D/g, '')) || /^0+$/.test(customerPhone.replace(/\D/g, '')) || customerPhone.length < 7)) {
+    customerPhone = '';
   }
   // Resolve shop name directly from database settings if not explicitly provided or if default
   let restaurantName = (biz?.name || biz?.business_name || '').trim();
@@ -677,8 +685,9 @@ function formatSingleReceiptCopy(
   lines.push('{CENTER}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}{BOLD}TOTAL: Rs ' + formatPriceNumber(total) + '{/BOLD}{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/CENTER}');
   lines.push(dash);
 
-  // 4b. Clear Payment Method
-  lines.push('{CENTER}{DOUBLE_HEIGHT}{BOLD}PAID VIA: ' + payLabel + '{/BOLD}{/DOUBLE_HEIGHT}{/CENTER}');
+  // 4b. Clear Payment Method / Paid Status
+  const paidBannerText = payLabel === 'PAID' ? 'PAID' : 'PAID VIA: ' + payLabel;
+  lines.push('{CENTER}{DOUBLE_HEIGHT}{BOLD}' + paidBannerText + '{/BOLD}{/DOUBLE_HEIGHT}{/CENTER}');
   lines.push(dash);
 
   // 5. Payment and Footer
@@ -1011,6 +1020,10 @@ function formatKOT(order: any, items: any[], stationName: string, cols: number =
   if (!customerPhone && order?.special_instructions && order.special_instructions.includes('Phone: ')) {
     customerPhone = order.special_instructions.split('Phone: ')[1]?.split('|')[0]?.trim();
   }
+  // Filter out any fake/dummy phone numbers (e.g. 03333333, repeating digits, or less than 7 chars)
+  if (customerPhone && (/^03{4,}$/.test(customerPhone.replace(/\D/g, '')) || /^0+$/.test(customerPhone.replace(/\D/g, '')) || customerPhone.length < 7)) {
+    customerPhone = '';
+  }
   if (!customerName && order?.order_source === 'online') {
     customerName = 'Online Customer';
   }
@@ -1028,8 +1041,12 @@ function formatKOT(order: any, items: any[], stationName: string, cols: number =
   lines.push('{DOUBLE_HEIGHT}{DOUBLE_WIDTH}{BOLD}ORDER #: ' + orderNum + '{/BOLD}{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}');
   lines.push('{DOUBLE_HEIGHT}{BOLD}TYPE: ' + orderType.toUpperCase() + '{/BOLD}{/DOUBLE_HEIGHT}');
   const kotRawMethod = (order?.payment_method || 'cash').toString().toLowerCase();
-  const kotIsOnline = kotRawMethod.includes('online') || kotRawMethod.includes('bank') || kotRawMethod.includes('card') || kotRawMethod.includes('upi');
-  const kotPayLabel = kotIsOnline ? 'ONLINE' : 'CASH';
+  let kotPayLabel = 'CASH';
+  if (kotRawMethod === 'paid' || kotRawMethod.includes('paid')) {
+    kotPayLabel = 'PAID';
+  } else if (kotRawMethod.includes('online') || kotRawMethod.includes('bank') || kotRawMethod.includes('card') || kotRawMethod.includes('upi')) {
+    kotPayLabel = 'ONLINE';
+  }
   lines.push('{DOUBLE_HEIGHT}{BOLD}PAYMENT: ' + kotPayLabel + '{/BOLD}{/DOUBLE_HEIGHT}');
 
   if (order.table?.name || order.table) {

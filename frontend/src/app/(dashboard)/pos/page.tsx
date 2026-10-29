@@ -90,12 +90,16 @@ export default function POSPage() {
     const isDelivery = cart.orderType === 'delivery' || Boolean(deliveryAddress);
     const finalOrderType = isDelivery ? 'delivery' : (cart.orderType || 'takeaway');
     const safeDeliveryFee = isDelivery ? Math.max(0, Number(cart.deliveryFee) || 0) : 0;
-    const customerPhone = cart.customerPhone ? cart.customerPhone.trim() : (finalOrderType !== 'dine_in' && cart.orderNumberInput ? cart.orderNumberInput.trim() : undefined);
+    
+    // Only accept real phone number entered by user (no fake dummy 03333333 or fallback from token)
+    const rawPhone = cart.customerPhone ? cart.customerPhone.trim() : '';
+    const isFakePhone = !rawPhone || rawPhone.length < 7 || /^03{4,}$/.test(rawPhone.replace(/\D/g, '')) || /^0+$/.test(rawPhone.replace(/\D/g, ''));
+    const customerPhone = isFakePhone ? undefined : rawPhone;
 
     const notesParts: string[] = [];
     if (finalOrderType === 'dine_in' && cart.orderNumberInput?.trim()) {
       notesParts.push(`Table: ${cart.orderNumberInput.trim()}`);
-    } else if (cart.orderNumberInput?.trim() && !customerPhone) {
+    } else if (cart.orderNumberInput?.trim()) {
       notesParts.push(`Token: ${cart.orderNumberInput.trim()}`);
     }
     if (customerName) {
