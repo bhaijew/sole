@@ -84,6 +84,7 @@ export default function POSPage() {
       return;
     }
 
+    const chosenPaymentMethod = cart.paymentMethod || 'cash';
     const customerName = cart.customerName ? cart.customerName.trim() : undefined;
     const deliveryAddress = cart.deliveryAddress ? cart.deliveryAddress.trim() : undefined;
     const isDelivery = cart.orderType === 'delivery' || Boolean(deliveryAddress);
@@ -115,6 +116,7 @@ export default function POSPage() {
         customer_phone: customerPhone || null,
         phone: customerPhone || null,
         type: finalOrderType,
+        payment_method: chosenPaymentMethod,
         guest_count: 1,
         delivery_charge: safeDeliveryFee,
         delivery_fee: safeDeliveryFee,
@@ -143,7 +145,7 @@ export default function POSPage() {
       cart.clearCart();
       setMobileCartOpen(false);
 
-      // Auto-generate bill, mark as paid (cash), and print directly without any popup
+      // Auto-generate bill, mark as paid with selected payment method (cash/online), and print directly
       try {
         const billRes = await api.post('/bills/generate', { order_id: data.order.id });
         const generatedBill = billRes.data?.bill;
@@ -151,7 +153,7 @@ export default function POSPage() {
         if (generatedBill) {
           try {
             const payRes = await api.post(`/bills/${generatedBill.id}/payment`, {
-              method: 'cash',
+              method: chosenPaymentMethod,
               amount: generatedBill.total,
             });
             const paidBill = payRes.data?.bill || generatedBill;
@@ -159,8 +161,10 @@ export default function POSPage() {
             const finalCustomerObj = (paidBill.order?.customer || data.order?.customer) || (customerName || customerPhone ? { name: customerName || '', phone: customerPhone || '' } : undefined);
             const billToPrint = {
               ...paidBill,
+              payment_method: chosenPaymentMethod,
               order: {
                 ...(paidBill.order || data.order),
+                payment_method: chosenPaymentMethod,
                 customer_name: data.order?.customer_name || customerName,
                 customer_phone: data.order?.customer_phone || customerPhone,
                 delivery_address: data.order?.delivery_address || deliveryAddress,
@@ -178,8 +182,10 @@ export default function POSPage() {
             const finalCustomerObj = (generatedBill.order?.customer || data.order?.customer) || (customerName || customerPhone ? { name: customerName || '', phone: customerPhone || '' } : undefined);
             const billToPrint = {
               ...generatedBill,
+              payment_method: chosenPaymentMethod,
               order: {
                 ...(generatedBill.order || data.order),
+                payment_method: chosenPaymentMethod,
                 customer_name: data.order?.customer_name || customerName,
                 customer_phone: data.order?.customer_phone || customerPhone,
                 delivery_address: data.order?.delivery_address || deliveryAddress,
@@ -203,6 +209,7 @@ export default function POSPage() {
           const finalCustomerObj = data.order?.customer || (customerName || customerPhone ? { name: customerName || '', phone: customerPhone || '' } : undefined);
           const orderForKot = {
             ...data.order,
+            payment_method: chosenPaymentMethod,
             customer_name: data.order?.customer_name || customerName,
             customer_phone: data.order?.customer_phone || customerPhone,
             delivery_address: data.order?.delivery_address || deliveryAddress,

@@ -130,16 +130,18 @@ router.post('/', async (req: Request, res: Response) => {
     const shopIdNum = activeShop ? parseInt(activeShop, 10) : null;
     const cleanCustomerName = customer_name ? String(customer_name).trim() : null;
     const cleanCustomerPhone = (req.body.customer_phone || req.body.phone || req.body.customer_contact) ? String(req.body.customer_phone || req.body.phone || req.body.customer_contact).trim() : null;
+    const rawPaymentMethod = (req.body.payment_method || 'cash').toString().toLowerCase().trim();
+    const paymentMethod = rawPaymentMethod.includes('online') || rawPaymentMethod.includes('bank') || rawPaymentMethod.includes('card') ? 'online' : 'cash';
 
     let orderNumber = generateOrderNumber();
     let orderResult: any = null;
     const insertOrderStmt = db.prepare(`
       INSERT INTO orders (
-        order_number, table_id, customer_id, customer_name, customer_phone, user_id, type, guest_count,
+        order_number, table_id, customer_id, customer_name, customer_phone, user_id, type, payment_method, guest_count,
         special_instructions, packaging_charge, delivery_charge, delivery_fee, delivery_address,
         status, shop_id, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
     `);
 
     for (let attempt = 0; attempt < 5; attempt++) {
@@ -152,6 +154,7 @@ router.post('/', async (req: Request, res: Response) => {
           cleanCustomerPhone || null,
           user_id || null,
           type,
+          paymentMethod,
           guest_count || null,
           special_instructions || null,
           packaging_charge || 0,

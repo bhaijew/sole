@@ -502,6 +502,26 @@ function formatSingleReceiptCopy(
 
   const orderNum = order?.order_number || bill?.bill_number || '1';
   const orderType = formatOrderType(order?.type || order?.order_type || order?.order_source);
+
+  const rawMethod = (
+    bill?.payment_method ||
+    order?.payment_method ||
+    bill?.payment_details ||
+    (Array.isArray(bill?.payments) && bill.payments[0]?.method) ||
+    'cash'
+  ).toString().toLowerCase();
+
+  const isOnlinePayment =
+    rawMethod.includes('online') ||
+    rawMethod.includes('bank') ||
+    rawMethod.includes('card') ||
+    rawMethod.includes('upi') ||
+    rawMethod.includes('transfer') ||
+    rawMethod.includes('easypaisa') ||
+    rawMethod.includes('jazzcash') ||
+    rawMethod.includes('digital');
+
+  const payLabel = isOnlinePayment ? 'ONLINE PAYMENT' : 'CASH';
   let customerName = order?.customer?.name || order?.customer_name || '';
   if (!customerName && order?.notes && order.notes.includes('Customer: ')) {
     customerName = order.notes.split('Customer: ')[1]?.split('|')[0]?.trim();
@@ -561,6 +581,7 @@ function formatSingleReceiptCopy(
   lines.push('{CENTER}{BOLD}Order #: ' + orderNum + '{/BOLD}{/CENTER}');
   lines.push('{CENTER}{BOLD}Date: ' + dateStr + '  Time: ' + timeStr + '{/BOLD}{/CENTER}');
   lines.push('{CENTER}{BOLD}Type: ' + orderType + '{/BOLD}{/CENTER}');
+  lines.push('{CENTER}{BOLD}Payment: ' + payLabel + '{/BOLD}{/CENTER}');
   if (customerName) {
     lines.push('{CENTER}{BOLD}Customer: ' + customerName + '{/BOLD}{/CENTER}');
   }
@@ -654,6 +675,10 @@ function formatSingleReceiptCopy(
 
   // 4. Prominent Centered Total
   lines.push('{CENTER}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}{BOLD}TOTAL: Rs ' + formatPriceNumber(total) + '{/BOLD}{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/CENTER}');
+  lines.push(dash);
+
+  // 4b. Clear Payment Method
+  lines.push('{CENTER}{DOUBLE_HEIGHT}{BOLD}PAID VIA: ' + payLabel + '{/BOLD}{/DOUBLE_HEIGHT}{/CENTER}');
   lines.push(dash);
 
   // 5. Payment and Footer
@@ -1002,6 +1027,10 @@ function formatKOT(order: any, items: any[], stationName: string, cols: number =
   // 2. Large Order # & Type
   lines.push('{DOUBLE_HEIGHT}{DOUBLE_WIDTH}{BOLD}ORDER #: ' + orderNum + '{/BOLD}{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}');
   lines.push('{DOUBLE_HEIGHT}{BOLD}TYPE: ' + orderType.toUpperCase() + '{/BOLD}{/DOUBLE_HEIGHT}');
+  const kotRawMethod = (order?.payment_method || 'cash').toString().toLowerCase();
+  const kotIsOnline = kotRawMethod.includes('online') || kotRawMethod.includes('bank') || kotRawMethod.includes('card') || kotRawMethod.includes('upi');
+  const kotPayLabel = kotIsOnline ? 'ONLINE' : 'CASH';
+  lines.push('{DOUBLE_HEIGHT}{BOLD}PAYMENT: ' + kotPayLabel + '{/BOLD}{/DOUBLE_HEIGHT}');
 
   if (order.table?.name || order.table) {
     const tName = typeof order.table === 'object' ? order.table.name : order.table;

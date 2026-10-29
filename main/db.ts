@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as bcrypt from 'bcryptjs';
 
 // Bump this whenever the schema changes incompatibly
-const SCHEMA_VERSION = 17;
+const SCHEMA_VERSION = 18;
 
 let db: Database.Database;
 
@@ -427,6 +427,19 @@ function runIncrementalMigrations(fromVersion: number): void {
     console.log('[DB] v17 migration complete: deals table and items_included ensured.');
   }
 
+  // Migration from version 17 to 18 (Payment method on orders and bills for POS Cash/Online tracking)
+  if (fromVersion < 18) {
+    console.log('[DB] Running migration to v18 (Payment method on orders and bills)...');
+
+    if (!columnExists('orders', 'payment_method')) {
+      db.exec("ALTER TABLE orders ADD COLUMN payment_method TEXT DEFAULT 'cash'");
+    }
+    if (!columnExists('bills', 'payment_method')) {
+      db.exec("ALTER TABLE bills ADD COLUMN payment_method TEXT DEFAULT 'cash'");
+    }
+    console.log('[DB] v18 migration complete: payment_method ensured on orders and bills.');
+  }
+
 
   // Update schema version
   db.prepare(`
@@ -600,6 +613,7 @@ function createSchema(): void {
       customer_phone TEXT,
       user_id TEXT,
       type TEXT DEFAULT 'takeaway',
+      payment_method TEXT DEFAULT 'cash',
       guest_count INTEGER,
       special_instructions TEXT,
       items_included TEXT,
@@ -670,6 +684,7 @@ function createSchema(): void {
       paid_amount REAL DEFAULT 0,
       balance REAL DEFAULT 0,
       payment_status TEXT DEFAULT 'unpaid',
+      payment_method TEXT DEFAULT 'cash',
       payment_details TEXT,
       paid_at TEXT,
       printed_at TEXT,

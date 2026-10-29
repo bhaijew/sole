@@ -387,20 +387,120 @@ export default function CartPanel({
             <span>{cart.deliveryFee > 0 ? `+${currency}${cart.deliveryFee.toLocaleString()}` : 'FREE'}</span>
           </div>
         )}
-        <div className="flex justify-between mb-3 text-base pt-2 border-t border-gray-100">
+        <div className="flex justify-between mb-2 text-base pt-2 border-t border-gray-100">
           <span className="font-semibold text-gray-900">Total</span>
-          <span className="font-bold text-brand">
+          <span className="font-bold text-brand text-lg">
             {currency}{(cart.subtotal() + (cart.orderType === 'delivery' ? cart.deliveryFee : 0)).toLocaleString()}
           </span>
         </div>
+
+        {/* Order Type & Payment Method Selector directly above Place Order button */}
+        <div className="space-y-2 pt-1 pb-2">
+          {/* Quick Order Type Selector */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-black text-gray-500 uppercase tracking-wider">
+                Order Type:
+              </span>
+              <span className="text-[10px] font-extrabold text-brand uppercase">
+                {cart.orderType === 'dine_in' ? '🍽️ Dine In' : cart.orderType === 'delivery' ? '🛵 Delivery' : '🛍️ Takeaway'}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-1 bg-gray-100 p-0.5 rounded-lg">
+              <button
+                type="button"
+                onClick={() => cart.setOrderType('dine_in')}
+                className={`flex items-center justify-center gap-1 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                  cart.orderType === 'dine_in'
+                    ? 'bg-white text-orange-600 shadow-xs ring-1 ring-orange-200'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <UtensilsCrossed size={12} />
+                Dine In
+              </button>
+              <button
+                type="button"
+                onClick={() => cart.setOrderType('takeaway')}
+                className={`flex items-center justify-center gap-1 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                  cart.orderType === 'takeaway'
+                    ? 'bg-white text-orange-600 shadow-xs ring-1 ring-orange-200'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <Package size={12} />
+                Takeaway
+              </button>
+              <button
+                type="button"
+                onClick={() => cart.setOrderType('delivery')}
+                className={`flex items-center justify-center gap-1 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                  cart.orderType === 'delivery'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <Truck size={12} />
+                Delivery
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Payment Method Selector: Cash or Online Payment */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-black text-gray-500 uppercase tracking-wider">
+                Payment Mode (On Slip):
+              </span>
+              <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full uppercase ${
+                cart.paymentMethod === 'online' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-800'
+              }`}>
+                {cart.paymentMethod === 'online' ? '📱 ONLINE' : '💵 CASH'}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5 bg-gray-100 p-0.5 rounded-lg">
+              <button
+                type="button"
+                onClick={() => cart.setPaymentMethod('cash')}
+                className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md text-xs font-black transition-all cursor-pointer ${
+                  cart.paymentMethod === 'cash'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-white text-gray-700 hover:text-gray-900 border border-gray-200'
+                }`}
+              >
+                <span>💵</span>
+                <span>CASH</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => cart.setPaymentMethod('online')}
+                className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md text-xs font-black transition-all cursor-pointer ${
+                  cart.paymentMethod === 'online'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-white text-gray-700 hover:text-gray-900 border border-gray-200'
+                }`}
+              >
+                <span>📱</span>
+                <span>ONLINE</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div className="flex gap-2">
           <Button
             onClick={onPlaceOrder}
             disabled={submitting || cart.items.length === 0}
-            className="flex-1"
+            className={`flex-1 font-extrabold h-11 text-sm shadow-sm transition-all ${
+              cart.paymentMethod === 'online'
+                ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                : 'bg-orange-600 hover:bg-orange-700 text-white'
+            }`}
             size="lg"
           >
-            {submitting ? 'Placing...' : 'Place Order'}
+            {submitting
+              ? 'Placing Order...'
+              : `Place Order (${cart.paymentMethod === 'online' ? 'Online' : 'Cash'})`}
           </Button>
         </div>
       </div>

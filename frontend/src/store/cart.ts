@@ -4,6 +4,7 @@ import type { Customer, Product, Addon, CartItem } from '@/lib/types';
 interface CartState {
   items: CartItem[];
   orderType: 'dine_in' | 'takeaway' | 'delivery' | 'online';
+  paymentMethod: 'cash' | 'online';
   tableId: number | null;
   customerId: number | null;
   customer: Customer | null;
@@ -21,6 +22,7 @@ interface CartState {
   clearCart: () => void;
   loadItems: (items: CartItem[], tableId: number | null, customerId: number | null, guestCount: number) => void;
   setOrderType: (type: CartState['orderType']) => void;
+  setPaymentMethod: (method: 'cash' | 'online') => void;
   setTableId: (id: number | null) => void;
   setCustomerId: (id: number | null) => void;
   setCustomer: (customer: Customer | null) => void;
@@ -86,6 +88,7 @@ export function getProductPriceForSize(product: Product, size?: string): number 
 export const useCartStore = create<CartState>((set, get) => ({
   items: [],
   orderType: 'dine_in',
+  paymentMethod: 'cash',
   tableId: null,
   customerId: null,
   customer: null,
@@ -171,6 +174,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   clearCart: () => {
     set({
       items: [],
+      paymentMethod: 'cash',
       tableId: null,
       customerId: null,
       customer: null,
@@ -188,6 +192,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   },
 
   setOrderType: (type) => set({ orderType: type }),
+  setPaymentMethod: (method) => set({ paymentMethod: method }),
   setTableId: (id) => set({ tableId: id }),
   setCustomerId: (id) => set({ customerId: id }),
   setCustomer: (customer) => set({

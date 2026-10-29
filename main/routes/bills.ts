@@ -90,12 +90,12 @@ router.post('/generate', (req: Request, res: Response) => {
     const result = db.prepare(`
       INSERT INTO bills (bill_number, order_id, customer_id, subtotal, tax_amount, tax_breakdown,
         discount_amount, discount_type, discount_value, discount_reason,
-        delivery_charge, packaging_charge, round_off, total, paid_amount, balance, payment_status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, ?)
+        delivery_charge, packaging_charge, round_off, total, paid_amount, balance, payment_status, payment_method, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, ?, ?)
     `).run(
       billNumber, order_id, order.customer_id, subtotal, taxAmount, order.tax_breakdown,
       discountAmount, order.discount_type, order.discount_value, order.discount_reason,
-      deliveryCharge, packagingCharge, roundOff, total, 0, total, now(), now()
+      deliveryCharge, packagingCharge, roundOff, total, 0, total, order.payment_method || 'cash', now(), now()
     );
 
     const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(result.lastInsertRowid) as any;
@@ -164,13 +164,13 @@ router.post('/:id/payment', async (req: Request, res: Response) => {
     const paymentStatus = newBalance <= 0.01 ? 'paid' : 'partial';
 
     db.prepare(`
-      UPDATE bills SET paid_amount = ?, balance = ?, payment_status = ?,
+      UPDATE bills SET paid_amount = ?, balance = ?, payment_status = ?, payment_method = ?,
         payment_details = COALESCE(payment_details, ?) || ?,
         paid_at = CASE WHEN ? = 'paid' THEN ? ELSE paid_at END,
         updated_at = ?
       WHERE id = ?
     `).run(
-      newPaidAmount, newBalance, paymentStatus,
+      newPaidAmount, newBalance, paymentStatus, method,
       JSON.stringify({ method, amount: paidAmount, transaction_id, notes, timestamp: now() }),
       ',' + JSON.stringify({ method, amount: paidAmount, transaction_id, notes, timestamp: now() }),
       paymentStatus, paymentStatus === 'paid' ? now() : null,
@@ -178,6 +178,9 @@ router.post('/:id/payment', async (req: Request, res: Response) => {
     );
 
     if (paymentStatus === 'paid') {
+      try {
+        db.prepare("UPDATE orders SET payment_method = ? WHERE id = ?").run(method, bill.order_id);
+      } catch {}
       db.prepare("UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?")
         .run(now(), now(), bill.order_id);
       const order = db.prepare('SELECT table_id FROM orders WHERE id = ?').get(bill.order_id) as any;

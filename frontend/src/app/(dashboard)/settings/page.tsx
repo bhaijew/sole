@@ -16,6 +16,7 @@ const CLASSIC_PREVIEW = `      PIZZA MAFIA
      Date: 9/9/2026
     Time: 3:31:04 PM
      Type: Takeaway
+     Payment: CASH
       Name: mubeen
 --------------------------------
 Item                Quantity  Price
@@ -29,6 +30,8 @@ BUMPER DEAL 1              1   1450
 --------------------------------
          TOTAL: Rs 1,620
 --------------------------------
+         PAID VIA: CASH
+--------------------------------
 EasyPaisa: 03001234567
 Muhammad Ali
 Complaint: 03121234567
@@ -40,6 +43,7 @@ const KOT_PREVIEW = `      KITCHEN ORDER
 ================================
 ORDER #: 4
 TYPE: DINE IN
+PAYMENT: CASH
 TABLE: Table 2
 Customer: Ali (03001234567)
 Time: 3:31:04 PM
@@ -1729,66 +1733,26 @@ Complaint: ${billForm.complaintNumber || '03121234567'}
               <div className="mb-4">
                 <h3 className="font-semibold text-gray-900 text-base">System Operating Mode</h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Choose whether Flo POS is paired with your online Pizza Management System or operating as a standalone local counter system.
+                  Flo POS is paired directly with your online Pizza Management System.
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Integrated Mode Card */}
-                <button
-                  type="button"
-                  onClick={() => handleOperatingModeChange('integrated')}
-                  className={`p-4 rounded-xl border text-left transition-all relative ${
-                    cloudStatus.operatingMode === 'integrated'
-                      ? 'border-orange-500 bg-orange-50/40 ring-2 ring-orange-500/20 shadow-sm'
-                      : 'border-gray-200 hover:border-gray-300 bg-white'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-2xl">🍕</span>
-                      <span className="font-bold text-gray-900 text-sm">
-                        Pizza Management Integrated
-                      </span>
-                    </div>
-                    {cloudStatus.operatingMode === 'integrated' && (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-600 text-white">
-                        ACTIVE
-                      </span>
-                    )}
+              {/* Pizza Management Integrated Mode (Standalone Mode Removed) */}
+              <div className="p-4 rounded-xl border border-orange-500 bg-orange-50/40 ring-2 ring-orange-500/20 shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">🍕</span>
+                    <span className="font-bold text-gray-900 text-sm">
+                      Pizza Management Integrated
+                    </span>
                   </div>
-                  <p className="text-xs text-gray-600 leading-relaxed">
-                    Products, Categories, and Staff are managed centrally from the Pizza System Super Admin. Local product and staff addition menus are hidden in Flo POS to prevent sync conflicts.
-                  </p>
-                </button>
-
-                {/* Standalone Mode Card */}
-                <button
-                  type="button"
-                  onClick={() => handleOperatingModeChange('standalone')}
-                  className={`p-4 rounded-xl border text-left transition-all relative ${
-                    cloudStatus.operatingMode === 'standalone'
-                      ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-500/20 shadow-sm'
-                      : 'border-gray-200 hover:border-gray-300 bg-white'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-2xl">💻</span>
-                      <span className="font-bold text-gray-900 text-sm">
-                        Standalone POS Mode
-                      </span>
-                    </div>
-                    {cloudStatus.operatingMode === 'standalone' && (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-600 text-white">
-                        ACTIVE
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-600 leading-relaxed">
-                    Independent counter mode. Enables full local Product Management (<code className="text-gray-800">/products</code>) and Staff Management (<code className="text-gray-800">/staff</code>) menus in the sidebar.
-                  </p>
-                </button>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-orange-600 text-white shadow-xs">
+                    ACTIVE
+                  </span>
+                </div>
+                <p className="text-xs text-gray-600 leading-relaxed">
+                  Products, Categories, and Staff are managed centrally and synchronized with Pizza System Cloud in real-time. Standalone mode has been removed to maintain real-time menu and order integrity.
+                </p>
               </div>
             </div>
 
