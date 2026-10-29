@@ -84,12 +84,12 @@ export default function POSPage() {
       return;
     }
 
-    const customerName = cart.customerName.trim() || undefined;
-    const isDelivery = cart.orderType === 'delivery' || Boolean(cart.deliveryAddress.trim());
+    const customerName = cart.customerName ? cart.customerName.trim() : undefined;
+    const deliveryAddress = cart.deliveryAddress ? cart.deliveryAddress.trim() : undefined;
+    const isDelivery = cart.orderType === 'delivery' || Boolean(deliveryAddress);
     const finalOrderType = isDelivery ? 'delivery' : (cart.orderType || 'takeaway');
     const safeDeliveryFee = isDelivery ? Math.max(0, Number(cart.deliveryFee) || 0) : 0;
-    const customerPhone = cart.customerPhone?.trim() || (finalOrderType !== 'dine_in' ? cart.orderNumberInput?.trim() : undefined) || undefined;
-    const deliveryAddress = cart.deliveryAddress?.trim() || undefined;
+    const customerPhone = cart.customerPhone ? cart.customerPhone.trim() : (finalOrderType !== 'dine_in' && cart.orderNumberInput ? cart.orderNumberInput.trim() : undefined);
 
     const notesParts: string[] = [];
     if (finalOrderType === 'dine_in' && cart.orderNumberInput?.trim()) {
@@ -111,14 +111,14 @@ export default function POSPage() {
         shop_id: (currentTenant as any)?.shop_id || undefined,
         table_id: null,
         customer_id: null,
-        customer_name: customerName,
-        customer_phone: customerPhone,
-        phone: customerPhone,
+        customer_name: customerName || null,
+        customer_phone: customerPhone || null,
+        phone: customerPhone || null,
         type: finalOrderType,
         guest_count: 1,
         delivery_charge: safeDeliveryFee,
         delivery_fee: safeDeliveryFee,
-        delivery_address: cart.deliveryAddress.trim() || null,
+        delivery_address: deliveryAddress || null,
         special_instructions: orderSpecialInstructions,
         items: cart.items.map((item) => {
           const itemSize = item.size ? `Size: ${item.size}` : '';
@@ -213,8 +213,10 @@ export default function POSPage() {
         }
       }
     } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string } } };
-      toast.error(error.response?.data?.message || 'Failed to place order');
+      console.error('Order placement error:', err);
+      const error = err as { response?: { data?: { error?: string; message?: string } }; message?: string };
+      const msg = error.response?.data?.message || error.response?.data?.error || error.message || 'Failed to place order';
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }

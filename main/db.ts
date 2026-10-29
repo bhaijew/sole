@@ -842,18 +842,48 @@ function seedData(): void {
 
 export function generateOrderNumber(): string {
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const result = db.prepare(
-    "SELECT COUNT(*) + 1 as next FROM orders WHERE date(created_at) = date('now')"
-  ).get() as { next: number };
-  return `ORD-${date}-${String(result.next).padStart(4, '0')}`;
+  const prefix = `ORD-${date}-`;
+  const latest = db.prepare(
+    "SELECT order_number FROM orders WHERE order_number LIKE ? ORDER BY id DESC LIMIT 1"
+  ).get(`${prefix}%`) as { order_number?: string } | undefined;
+
+  let nextSeq = 1;
+  if (latest?.order_number) {
+    const parts = latest.order_number.split('-');
+    const lastNum = parseInt(parts[parts.length - 1], 10);
+    if (!isNaN(lastNum)) {
+      nextSeq = lastNum + 1;
+    }
+  }
+
+  while (db.prepare("SELECT 1 FROM orders WHERE order_number = ?").get(`${prefix}${String(nextSeq).padStart(4, '0')}`)) {
+    nextSeq++;
+  }
+
+  return `${prefix}${String(nextSeq).padStart(4, '0')}`;
 }
 
 export function generateBillNumber(): string {
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const result = db.prepare(
-    "SELECT COUNT(*) + 1 as next FROM bills WHERE date(created_at) = date('now')"
-  ).get() as { next: number };
-  return `INV-${date}-${String(result.next).padStart(4, '0')}`;
+  const prefix = `INV-${date}-`;
+  const latest = db.prepare(
+    "SELECT bill_number FROM bills WHERE bill_number LIKE ? ORDER BY id DESC LIMIT 1"
+  ).get(`${prefix}%`) as { bill_number?: string } | undefined;
+
+  let nextSeq = 1;
+  if (latest?.bill_number) {
+    const parts = latest.bill_number.split('-');
+    const lastNum = parseInt(parts[parts.length - 1], 10);
+    if (!isNaN(lastNum)) {
+      nextSeq = lastNum + 1;
+    }
+  }
+
+  while (db.prepare("SELECT 1 FROM bills WHERE bill_number = ?").get(`${prefix}${String(nextSeq).padStart(4, '0')}`)) {
+    nextSeq++;
+  }
+
+  return `${prefix}${String(nextSeq).padStart(4, '0')}`;
 }
 
 export function now(): string {

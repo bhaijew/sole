@@ -112,7 +112,6 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     const db = getDatabase();
-    const orderNumber = generateOrderNumber();
 
     // Get settings for tax calculation
     const settings: Record<string, string> = {};
@@ -132,31 +131,46 @@ router.post('/', async (req: Request, res: Response) => {
     const cleanCustomerName = customer_name ? String(customer_name).trim() : null;
     const cleanCustomerPhone = (req.body.customer_phone || req.body.phone || req.body.customer_contact) ? String(req.body.customer_phone || req.body.phone || req.body.customer_contact).trim() : null;
 
-    const orderResult = db.prepare(`
+    let orderNumber = generateOrderNumber();
+    let orderResult: any = null;
+    const insertOrderStmt = db.prepare(`
       INSERT INTO orders (
         order_number, table_id, customer_id, customer_name, customer_phone, user_id, type, guest_count,
         special_instructions, packaging_charge, delivery_charge, delivery_fee, delivery_address,
         status, shop_id, created_at, updated_at
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
-    `).run(
-      orderNumber,
-      table_id || null,
-      customer_id || null,
-      cleanCustomerName || null,
-      cleanCustomerPhone || null,
-      user_id || null,
-      type,
-      guest_count || null,
-      special_instructions || null,
-      packaging_charge || 0,
-      safeDeliveryFee,
-      safeDeliveryFee,
-      cleanDeliveryAddress,
-      shopIdNum,
-      now(),
-      now()
-    );
+    `);
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        orderResult = insertOrderStmt.run(
+          orderNumber,
+          table_id || null,
+          customer_id || null,
+          cleanCustomerName || null,
+          cleanCustomerPhone || null,
+          user_id || null,
+          type,
+          guest_count || null,
+          special_instructions || null,
+          packaging_charge || 0,
+          safeDeliveryFee,
+          safeDeliveryFee,
+          cleanDeliveryAddress,
+          shopIdNum,
+          now(),
+          now()
+        );
+        break;
+      } catch (insertErr: any) {
+        if (insertErr.message?.includes('UNIQUE') && attempt < 4) {
+          orderNumber = `${generateOrderNumber()}-${Date.now().toString().slice(-4)}`;
+          continue;
+        }
+        throw insertErr;
+      }
+    }
 
     const orderId = orderResult.lastInsertRowid;
 
