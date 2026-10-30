@@ -98,6 +98,15 @@ export function buildKotBytes(
       enc.bold(true).height(2).text(`  >> SIZE / VARIANT: ${vText.toUpperCase()}`).height(1).newline();
     }
 
+    // Deal combo items included (e.g. 1x Small Pizza, 1x Zinger Burger, 1x 500ml Drink)
+    const dealItems = extractDealItemsFromItem(item);
+    if (dealItems.length > 0) {
+      enc.bold(true).height(2).text('  >> INCLUDES:').height(1).newline();
+      for (const dItem of dealItems) {
+        enc.bold(true).height(2).text(`     * ${dItem}`).height(1).newline();
+      }
+    }
+
     // Addons
     if (item.addons && item.addons.length > 0) {
       for (const addon of item.addons) {
@@ -202,4 +211,72 @@ function formatTime(iso?: string): string {
   } catch {
     return iso;
   }
+}
+
+export function extractDealItemsFromItem(item: any): string[] {
+  if (!item) return [];
+
+  // Direct items_included or deal_items
+  if (Array.isArray(item.deal_items) && item.deal_items.length > 0) {
+    return item.deal_items.map((s: any) => String(s).trim()).filter(Boolean);
+  }
+  if (Array.isArray(item.items_included) && item.items_included.length > 0) {
+    return item.items_included.map((s: any) => String(s).trim()).filter(Boolean);
+  }
+  if (typeof item.items_included === 'string' && item.items_included.trim()) {
+    try {
+      const parsed = JSON.parse(item.items_included);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((s: any) => String(s).trim()).filter(Boolean);
+      }
+    } catch {
+      const parts = item.items_included.split(',').map((s: string) => s.trim()).filter(Boolean);
+      if (parts.length > 0) return parts;
+    }
+  }
+
+  // Also check product.items_included / product.description if attached
+  const prod = item.product || {};
+  if (Array.isArray(prod.items_included) && prod.items_included.length > 0) {
+    return prod.items_included.map((s: any) => String(s).trim()).filter(Boolean);
+  }
+  if (typeof prod.items_included === 'string' && prod.items_included.trim()) {
+    try {
+      const parsed = JSON.parse(prod.items_included);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((s: any) => String(s).trim()).filter(Boolean);
+      }
+    } catch {
+      const parts = prod.items_included.split(',').map((s: string) => s.trim()).filter(Boolean);
+      if (parts.length > 0) return parts;
+    }
+  }
+
+  const desc = String(item.description || prod.description || '').trim();
+  const prodName = String(item.product_name || item.name || prod.name || '').toLowerCase();
+  const isDeal = prodName.includes('deal') || prodName.includes('bumper') || prodName.includes('combo') || prodName.includes('super');
+
+  if (desc) {
+    if (desc.includes('•') || desc.includes('·')) {
+      const sep = desc.includes('•') ? '•' : '·';
+      return desc.split(sep).map((s) => s.replace(/^[•\-\*✓\d+\.]\s*/, '').trim()).filter(Boolean);
+    }
+    if (desc.includes('\n')) {
+      const parts = desc.split('\n').map((s) => s.replace(/^[•\-\*✓\d+\.]\s*/, '').trim()).filter(Boolean);
+      if (parts.length > 1) return parts;
+    }
+    if (desc.includes('+')) {
+      const parts = desc.split('+').map((s) => s.trim()).filter(Boolean);
+      if (parts.length > 1) return parts;
+    }
+    if (isDeal && desc.includes(',')) {
+      const parts = desc.split(',').map((s) => s.trim()).filter(Boolean);
+      if (parts.length > 1) return parts;
+    }
+    if (isDeal && desc.length > 0) {
+      return [desc];
+    }
+  }
+
+  return [];
 }

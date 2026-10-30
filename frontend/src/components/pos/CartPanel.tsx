@@ -79,202 +79,289 @@ export default function CartPanel({
           : 'w-full h-full bg-white rounded-xl border border-gray-100 flex flex-col shadow-sm'
       }
     >
-      {/* Order Type & Customer Information */}
-      <div className="p-3 border-b border-gray-100 space-y-1.5">
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+      {/* Order Type & Contextual Customer / Delivery Information */}
+      <div className="p-2.5 border-b border-gray-100 space-y-2 bg-gray-50/40">
+        {/* Top Order Type Selector */}
+        <div className="flex gap-1 bg-gray-200/80 rounded-lg p-0.5">
           {(['dine_in', 'takeaway', 'delivery'] as const).map((type) => {
             const Icon = orderTypeIcons[type];
+            const isActive = cart.orderType === type;
             return (
               <button
                 key={type}
+                type="button"
                 onClick={() => cart.setOrderType(type)}
-                className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                  cart.orderType === type
-                    ? 'bg-white text-brand shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
+                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                  isActive
+                    ? 'bg-white text-gray-900 shadow-xs'
+                    : 'text-gray-500 hover:text-gray-800'
                 }`}
               >
-                <Icon size={14} />
-                {type.replace('_', ' ')}
+                <Icon size={13} className={isActive ? 'text-brand' : ''} />
+                <span className="capitalize">{type.replace('_', ' ')}</span>
               </button>
             );
           })}
         </div>
 
-        {/* Dine-in Table # / Token # Field */}
+        {/* ── Contextual Input Fields based on Order Type ── */}
         {cart.orderType === 'dine_in' && (
-          <div className="relative flex items-center">
-            <div className="absolute left-2.5 text-gray-400 pointer-events-none">
-              <Hash size={13} />
+          <div className="grid grid-cols-2 gap-1.5 animate-in fade-in duration-150">
+            {/* Table / Token # */}
+            <div className="relative flex items-center">
+              <div className="absolute left-2.5 text-gray-400 pointer-events-none">
+                <Hash size={13} />
+              </div>
+              <input
+                type="text"
+                value={cart.orderNumberInput || ''}
+                onChange={(e) => cart.setOrderNumberInput(e.target.value)}
+                placeholder="Table / Token #"
+                className="w-full pl-7 pr-6 py-1.5 text-xs bg-white border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-brand font-semibold shadow-2xs"
+              />
+              {cart.orderNumberInput && (
+                <button
+                  type="button"
+                  onClick={() => cart.setOrderNumberInput('')}
+                  className="absolute right-1.5 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
+                  title="Clear"
+                >
+                  <X size={11} />
+                </button>
+              )}
             </div>
-            <input
-              type="text"
-              value={cart.orderNumberInput || ''}
-              onChange={(e) => cart.setOrderNumberInput(e.target.value)}
-              placeholder="Table # / Token # (Optional)"
-              className="w-full pl-7 pr-7 py-1.5 text-xs bg-gray-50 hover:bg-gray-100/70 focus:bg-white border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand transition-all"
-            />
-            {cart.orderNumberInput && (
-              <button
-                type="button"
-                onClick={() => cart.setOrderNumberInput('')}
-                className="absolute right-2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
-                title="Clear Table/Token"
-              >
-                <X size={12} />
-              </button>
-            )}
+
+            {/* Optional Customer Name */}
+            <div className="relative flex items-center">
+              <div className="absolute left-2.5 text-gray-400 pointer-events-none">
+                <User size={13} />
+              </div>
+              <input
+                type="text"
+                value={cart.customerName || ''}
+                onChange={(e) => cart.setCustomerName(e.target.value)}
+                placeholder="Customer Name"
+                className="w-full pl-7 pr-6 py-1.5 text-xs bg-white border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-brand shadow-2xs"
+              />
+              {cart.customerName && (
+                <button
+                  type="button"
+                  onClick={() => cart.setCustomerName('')}
+                  className="absolute right-1.5 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
+                  title="Clear"
+                >
+                  <X size={11} />
+                </button>
+              )}
+            </div>
           </div>
         )}
 
-        {/* Customer Phone / Mobile Number with Live Lookup & Easy Change */}
-        <div className="relative">
-          <div className="relative flex items-center">
-            <div className="absolute left-2.5 pointer-events-none">
-              <Phone size={13} className={cart.customerPhone ? 'text-brand' : 'text-gray-400'} />
-            </div>
-            <input
-              type="tel"
-              value={cart.customerPhone || ''}
-              onChange={(e) => handlePhoneChange(e.target.value)}
-              placeholder={cart.orderType === 'delivery' ? 'Phone # (e.g. 03001234567)' : 'Phone # / Number (Optional)'}
-              className={`w-full pl-7 pr-7 py-1.5 text-xs border rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 transition-all ${
-                cart.orderType === 'delivery'
-                  ? 'bg-emerald-50/20 border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500'
-                  : 'bg-gray-50 hover:bg-gray-100/70 focus:bg-white border-gray-200 focus:ring-brand focus:border-brand'
-              }`}
-            />
-            {cart.customerPhone && (
-              <button
-                type="button"
-                onClick={() => {
-                  cart.setCustomerPhone('');
-                  setShowSuggestions(false);
-                }}
-                className="absolute right-2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
-                title="Clear Phone"
-              >
-                <X size={12} />
-              </button>
-            )}
-          </div>
-
-          {/* Quick Customer Autofill Pill / Dropdown */}
-          {showSuggestions && customerSuggestions.length > 0 && (
-            <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-brand/20 rounded-lg shadow-lg z-30 p-1 space-y-1">
-              <div className="px-2 py-0.5 text-[10px] font-semibold text-brand flex items-center gap-1">
-                <Sparkles size={10} /> Existing customer found — Click to autofill:
-              </div>
-              {customerSuggestions.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => handleSelectCustomer(c)}
-                  className="w-full text-left px-2 py-1.5 rounded-md hover:bg-brand-light flex items-center justify-between text-xs transition-colors"
-                >
-                  <span className="font-semibold text-gray-800 truncate">{c.name || 'Unnamed'}</span>
-                  <span className="text-gray-500 font-mono text-[11px] ml-2 shrink-0">{c.phone}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Customer Name Input (Easily editable/changeable) */}
-        <div className="relative flex items-center">
-          <div className="absolute left-2.5 pointer-events-none">
-            <User size={13} className={cart.customerName ? 'text-brand' : 'text-gray-400'} />
-          </div>
-          <input
-            type="text"
-            value={cart.customerName || ''}
-            onChange={(e) => cart.setCustomerName(e.target.value)}
-            placeholder="Customer Name (Optional)"
-            className="w-full pl-7 pr-7 py-1.5 text-xs bg-gray-50 hover:bg-gray-100/70 focus:bg-white border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-brand focus:border-brand transition-all"
-          />
-          {cart.customerName && (
-            <button
-              type="button"
-              onClick={() => cart.setCustomerName('')}
-              className="absolute right-2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
-              title="Clear Name"
-            >
-              <X size={12} />
-            </button>
-          )}
-        </div>
-
-        {/* Delivery Address Field (Directly under Customer Name, fully editable) */}
-        <div className="space-y-1.5">
-          <div className="relative flex items-center">
-            <div className="absolute left-2.5 pointer-events-none">
-              <Truck size={13} className={cart.orderType === 'delivery' || cart.deliveryAddress ? 'text-emerald-600' : 'text-gray-400'} />
-            </div>
-            <input
-              type="text"
-              value={cart.deliveryAddress || ''}
-              onChange={(e) => {
-                const val = e.target.value;
-                cart.setDeliveryAddress(val);
-                if (val.trim() && cart.orderType !== 'delivery') {
-                  cart.setOrderType('delivery');
-                }
-              }}
-              placeholder="Delivery Address / Details (Optional)"
-              className={`w-full pl-7 pr-7 py-1.5 text-xs border rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 transition-all ${
-                cart.orderType === 'delivery' || cart.deliveryAddress
-                  ? 'bg-emerald-50/50 border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500'
-                  : 'bg-gray-50 hover:bg-gray-100/70 focus:bg-white border-gray-200 focus:ring-brand focus:border-brand'
-              }`}
-            />
-            {cart.deliveryAddress && (
-              <button
-                type="button"
-                onClick={() => cart.setDeliveryAddress('')}
-                className="absolute right-2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
-                title="Clear Address"
-              >
-                <X size={12} />
-              </button>
-            )}
-          </div>
-
-          {/* Delivery Charges & Quick Chips (shown when Delivery is selected or address entered) */}
-          {(cart.orderType === 'delivery' || cart.deliveryAddress.trim().length > 0) && (
-            <div className="bg-emerald-50/90 border border-emerald-200 rounded-lg p-2 space-y-1.5">
-              <div className="flex items-center justify-between text-[10px] font-bold text-emerald-900">
-                <span className="flex items-center gap-1 uppercase tracking-wider text-emerald-800">
-                  Delivery Charges (Rs.)
-                </span>
-                <span className="font-extrabold text-emerald-700">
-                  {cart.deliveryFee > 0 ? `${currency}${cart.deliveryFee.toLocaleString()}` : 'Free (Rs. 0)'}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs font-bold text-emerald-800">Rs.</span>
+        {cart.orderType === 'takeaway' && (
+          <div className="grid grid-cols-2 gap-1.5 animate-in fade-in duration-150">
+            {/* Phone Number */}
+            <div className="relative">
+              <div className="relative flex items-center">
+                <div className="absolute left-2.5 text-gray-400 pointer-events-none">
+                  <Phone size={13} className={cart.customerPhone ? 'text-brand' : ''} />
+                </div>
                 <input
-                  type="number"
-                  min="0"
-                  step="10"
-                  value={cart.deliveryFee === 0 ? '' : cart.deliveryFee}
-                  placeholder="0 (Free Delivery)"
-                  onChange={(e) => cart.setDeliveryFee(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full h-6 px-2 text-xs font-bold bg-white border border-emerald-300 rounded text-gray-900 focus:outline-none focus:border-emerald-500"
+                  type="tel"
+                  value={cart.customerPhone || ''}
+                  onChange={(e) => handlePhoneChange(e.target.value)}
+                  placeholder="Phone # (Optional)"
+                  className="w-full pl-7 pr-6 py-1.5 text-xs bg-white border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-brand font-medium shadow-2xs"
                 />
+                {cart.customerPhone && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      cart.setCustomerPhone('');
+                      setShowSuggestions(false);
+                    }}
+                    className="absolute right-1.5 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
+                    title="Clear"
+                  >
+                    <X size={11} />
+                  </button>
+                )}
               </div>
 
-              {/* Quick Preset Buttons */}
-              <div className="flex items-center gap-1 flex-wrap pt-0.5">
-                <span className="text-[10px] font-semibold text-emerald-700 mr-0.5">Quick:</span>
-                {[0, 50, 100, 150, 200].map((fee) => (
+              {/* Suggestions dropdown */}
+              {showSuggestions && customerSuggestions.length > 0 && (
+                <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-brand/20 rounded-lg shadow-lg z-30 p-1 space-y-1">
+                  <div className="px-2 py-0.5 text-[10px] font-semibold text-brand flex items-center gap-1">
+                    <Sparkles size={10} /> Existing customer:
+                  </div>
+                  {customerSuggestions.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => handleSelectCustomer(c)}
+                      className="w-full text-left px-2 py-1 rounded hover:bg-brand-light flex items-center justify-between text-xs"
+                    >
+                      <span className="font-semibold text-gray-800 truncate">{c.name || 'Unnamed'}</span>
+                      <span className="text-gray-500 font-mono text-[11px] ml-2 shrink-0">{c.phone}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Customer Name */}
+            <div className="relative flex items-center">
+              <div className="absolute left-2.5 text-gray-400 pointer-events-none">
+                <User size={13} className={cart.customerName ? 'text-brand' : ''} />
+              </div>
+              <input
+                type="text"
+                value={cart.customerName || ''}
+                onChange={(e) => cart.setCustomerName(e.target.value)}
+                placeholder="Customer Name"
+                className="w-full pl-7 pr-6 py-1.5 text-xs bg-white border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-brand shadow-2xs"
+              />
+              {cart.customerName && (
+                <button
+                  type="button"
+                  onClick={() => cart.setCustomerName('')}
+                  className="absolute right-1.5 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
+                  title="Clear"
+                >
+                  <X size={11} />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {cart.orderType === 'delivery' && (
+          <div className="space-y-1.5 animate-in fade-in duration-150">
+            {/* Row 1: Phone & Name in 2 columns */}
+            <div className="grid grid-cols-2 gap-1.5">
+              <div className="relative">
+                <div className="relative flex items-center">
+                  <div className="absolute left-2.5 pointer-events-none">
+                    <Phone size={13} className={cart.customerPhone ? 'text-emerald-600' : 'text-gray-400'} />
+                  </div>
+                  <input
+                    type="tel"
+                    value={cart.customerPhone || ''}
+                    onChange={(e) => handlePhoneChange(e.target.value)}
+                    placeholder="Mobile / Phone #"
+                    className="w-full pl-7 pr-6 py-1.5 text-xs bg-white border border-emerald-300 focus:border-emerald-500 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium shadow-2xs"
+                  />
+                  {cart.customerPhone && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        cart.setCustomerPhone('');
+                        setShowSuggestions(false);
+                      }}
+                      className="absolute right-1.5 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
+                      title="Clear"
+                    >
+                      <X size={11} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Suggestions dropdown */}
+                {showSuggestions && customerSuggestions.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-emerald-300 rounded-lg shadow-lg z-30 p-1 space-y-1">
+                    <div className="px-2 py-0.5 text-[10px] font-semibold text-emerald-800 flex items-center gap-1">
+                      <Sparkles size={10} /> Existing customer found:
+                    </div>
+                    {customerSuggestions.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => handleSelectCustomer(c)}
+                        className="w-full text-left px-2 py-1 rounded hover:bg-emerald-50 flex items-center justify-between text-xs"
+                      >
+                        <span className="font-semibold text-gray-800 truncate">{c.name || 'Unnamed'}</span>
+                        <span className="text-gray-500 font-mono text-[11px] ml-2 shrink-0">{c.phone}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Customer Name */}
+              <div className="relative flex items-center">
+                <div className="absolute left-2.5 text-gray-400 pointer-events-none">
+                  <User size={13} className={cart.customerName ? 'text-emerald-600' : ''} />
+                </div>
+                <input
+                  type="text"
+                  value={cart.customerName || ''}
+                  onChange={(e) => cart.setCustomerName(e.target.value)}
+                  placeholder="Customer Name"
+                  className="w-full pl-7 pr-6 py-1.5 text-xs bg-white border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 shadow-2xs"
+                />
+                {cart.customerName && (
+                  <button
+                    type="button"
+                    onClick={() => cart.setCustomerName('')}
+                    className="absolute right-1.5 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
+                    title="Clear"
+                  >
+                    <X size={11} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Row 2: Delivery Address (Compact 1-line) */}
+            <div className="relative flex items-center">
+              <div className="absolute left-2.5 text-emerald-600 pointer-events-none">
+                <Truck size={13} />
+              </div>
+              <input
+                type="text"
+                value={cart.deliveryAddress || ''}
+                onChange={(e) => cart.setDeliveryAddress(e.target.value)}
+                placeholder="House, Street, Area / Delivery Address"
+                className="w-full pl-7 pr-6 py-1.5 text-xs bg-emerald-50/30 border border-emerald-300 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 shadow-2xs font-medium"
+              />
+              {cart.deliveryAddress && (
+                <button
+                  type="button"
+                  onClick={() => cart.setDeliveryAddress('')}
+                  className="absolute right-1.5 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
+                  title="Clear"
+                >
+                  <X size={11} />
+                </button>
+              )}
+            </div>
+
+            {/* Row 3: Compact 1-line Delivery Charges & Quick Chips */}
+            <div className="flex items-center justify-between bg-emerald-50/70 border border-emerald-200/90 rounded-lg px-2 py-1 text-xs">
+              <div className="flex items-center gap-1 text-emerald-900 font-bold shrink-0">
+                <span className="text-[11px] text-emerald-800">Fee:</span>
+                <div className="flex items-center bg-white border border-emerald-300 rounded px-1.5 py-0.5">
+                  <span className="text-[10px] text-gray-400 mr-0.5">{currency}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="10"
+                    value={cart.deliveryFee === 0 ? '' : cart.deliveryFee}
+                    placeholder="0"
+                    onChange={(e) => cart.setDeliveryFee(Math.max(0, Number(e.target.value) || 0))}
+                    className="w-12 text-xs font-mono font-bold text-gray-900 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1">
+                {[0, 50, 100, 150].map((fee) => (
                   <button
                     key={fee}
                     type="button"
                     onClick={() => cart.setDeliveryFee(fee)}
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
                       cart.deliveryFee === fee
-                        ? 'bg-emerald-600 text-white shadow-xs'
+                        ? 'bg-emerald-600 text-white shadow-2xs'
                         : 'bg-white text-emerald-800 border border-emerald-200 hover:bg-emerald-100'
                     }`}
                   >
@@ -283,12 +370,12 @@ export default function CartPanel({
                 ))}
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Cart Items */}
-      <div className={isDrawer ? 'overflow-y-auto p-3 max-h-[48vh]' : 'flex-1 overflow-y-auto p-3'}>
+      <div className={isDrawer ? 'overflow-y-auto p-3 max-h-[60vh]' : 'flex-1 overflow-y-auto p-3 min-h-[160px]'}>
         {cart.items.length === 0 ? (
           <div className={`flex flex-col items-center justify-center text-gray-400 ${isDrawer ? 'py-8' : 'h-full'}`}>
             <ShoppingCart size={40} />
@@ -297,11 +384,20 @@ export default function CartPanel({
         ) : (
           <div className="space-y-3">
             {cart.items.map((item) => (
-              <div key={item.id} className="flex items-start gap-3 border-b border-gray-50 pb-2.5 last:border-0 last:pb-0">
+              <div key={item.id} className="flex items-start gap-3 border-b border-gray-100 pb-2.5 last:border-0 last:pb-0">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-bold text-gray-900 truncate">
                     {item.product.name}
                   </p>
+
+                  {/* Deal items summary */}
+                  {((item.product as any)?.items_included || (item.product as any)?.description) && (
+                    <p className="text-[10px] text-orange-700/90 font-medium line-clamp-1 mt-0.5">
+                      {Array.isArray((item.product as any)?.items_included)
+                        ? (item.product as any).items_included.join(' • ')
+                        : String((item.product as any)?.items_included || (item.product as any)?.description)}
+                    </p>
+                  )}
 
                   {/* Size Selector: Small, Medium, Large, Extra Large (Only for Pizza / products with variations) */}
                   {hasProductSizes(item.product) && (

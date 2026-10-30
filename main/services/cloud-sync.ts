@@ -1082,10 +1082,10 @@ export async function handleIncomingCloudOrder(cloudOrder: any): Promise<boolean
       const itemStmt = db.prepare(`
         INSERT INTO order_items (
           order_id, product_id, product_name, unit_price, quantity,
-          subtotal, total, variant_selection
+          subtotal, total, variant_selection, items_included
         ) VALUES (
           ?, ?, ?, ?, ?,
-          ?, ?, ?
+          ?, ?, ?, ?
         )
       `);
 
@@ -1103,6 +1103,15 @@ export async function handleIncomingCloudOrder(cloudOrder: any): Promise<boolean
           variantInfo = String(item.variant_selection);
         }
 
+        let itemsIncStr: string | null = null;
+        if (item.items_included) {
+          itemsIncStr = Array.isArray(item.items_included)
+            ? JSON.stringify(item.items_included)
+            : String(item.items_included);
+        } else if (item.description) {
+          itemsIncStr = String(item.description);
+        }
+
         itemStmt.run(
           localOrderId,
           prodId,
@@ -1111,7 +1120,8 @@ export async function handleIncomingCloudOrder(cloudOrder: any): Promise<boolean
           qty,
           itemSubtotal,
           itemSubtotal,
-          variantInfo || null
+          variantInfo || null,
+          itemsIncStr
         );
       }
     });

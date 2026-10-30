@@ -906,8 +906,10 @@ export function extractDealItems(item: any, db?: any): string[] {
            WHERE (product_id = ? AND product_id IS NOT NULL AND product_id != '') 
               OR title = ? 
               OR lower(title) = lower(?)
+              OR lower(title) LIKE lower(?)
+              OR lower(?) LIKE lower('%' || title || '%')
            LIMIT 1`
-        ).get(String(prodId || ''), prodName, prodName) as any;
+        ).get(String(prodId || ''), prodName, prodName, `%${prodName}%`, prodName) as any;
 
         if (dealRow) {
           if (dealRow.items_included) itemsIncluded = dealRow.items_included;
@@ -920,8 +922,11 @@ export function extractDealItems(item: any, db?: any): string[] {
         try {
           const prodRow = activeDb.prepare(
             `SELECT description, items_included FROM products 
-             WHERE id = ? OR name = ? OR lower(name) = lower(?) LIMIT 1`
-          ).get(String(prodId || ''), prodName, prodName) as any;
+             WHERE id = ? OR name = ? OR lower(name) = lower(?)
+                OR lower(name) LIKE lower(?)
+                OR lower(?) LIKE lower('%' || name || '%')
+             LIMIT 1`
+          ).get(String(prodId || ''), prodName, prodName, `%${prodName}%`, prodName) as any;
 
           if (prodRow) {
             if (prodRow.items_included) itemsIncluded = prodRow.items_included;
@@ -1085,12 +1090,12 @@ function formatKOT(order: any, items: any[], stationName: string, cols: number =
       lines.push('{DOUBLE_HEIGHT}{BOLD}  >> VARIANT: ' + vText.toUpperCase() + '{/BOLD}{/DOUBLE_HEIGHT}');
     }
 
-    // Deal items for Kitchen preparation
+    // Deal items for Kitchen preparation (Exact same format as customer receipt: >> INCLUDES: * item)
     const kotDealItems = extractDealItems(item);
     if (kotDealItems.length > 0) {
-      lines.push('{DOUBLE_HEIGHT}{BOLD}  >> PREPARE DEAL ITEMS:{/BOLD}{/DOUBLE_HEIGHT}');
+      lines.push('{DOUBLE_HEIGHT}{BOLD}  >> INCLUDES:{/BOLD}{/DOUBLE_HEIGHT}');
       for (const dItem of kotDealItems) {
-        lines.push('{DOUBLE_HEIGHT}{BOLD}     [ ] ' + dItem.toUpperCase() + '{/BOLD}{/DOUBLE_HEIGHT}');
+        lines.push('{DOUBLE_HEIGHT}{BOLD}     * ' + dItem + '{/BOLD}{/DOUBLE_HEIGHT}');
       }
     }
 
