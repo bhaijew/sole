@@ -36,6 +36,7 @@ import {
   Edit3,
 } from 'lucide-react';
 import type { Order, OrderItem } from '@/lib/types';
+import OrderRecreateModal from '@/components/pos/OrderRecreateModal';
 
 type FilterType = 'all' | 'online' | 'dine_in' | 'takeaway' | 'delivery';
 type StatusFilter = 'all' | 'pending' | 'preparing' | 'ready' | 'completed' | 'cancelled';
@@ -63,6 +64,7 @@ export default function OrdersPage() {
 
   // Selected order for detailed modal
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [recreateOrderTarget, setRecreateOrderTarget] = useState<Order | null>(null);
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
 
   // Track printing order states: { [orderId_printType]: boolean }
@@ -1107,11 +1109,20 @@ export default function OrdersPage() {
 
                     <button
                       onClick={() => setSelectedOrder(order)}
-                      className="py-1.5 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
+                      className="py-1.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
                       title="View Details & Receipt Preview"
                     >
                       <Eye size={13} />
                       <span className="hidden sm:inline">Details</span>
+                    </button>
+
+                    <button
+                      onClick={() => setRecreateOrderTarget(order)}
+                      className="py-1.5 px-2 bg-orange-50 border border-orange-200 hover:bg-orange-100 text-orange-700 rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
+                      title="Recreate / Repeat Order"
+                    >
+                      <RefreshCw size={12} />
+                      <span>Recreate</span>
                     </button>
                   </div>
                 </div>
@@ -1203,6 +1214,13 @@ export default function OrdersPage() {
                           >
                             <Eye size={13} />
                           </button>
+                          <button
+                            onClick={() => setRecreateOrderTarget(order)}
+                            className="p-1.5 rounded-md bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200 font-bold"
+                            title="Recreate / Repeat Order"
+                          >
+                            <RefreshCw size={13} />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1215,6 +1233,17 @@ export default function OrdersPage() {
       )}
 
       {/* ============================================================ */}
+      {/* Recreate Order Modal */}
+      <OrderRecreateModal
+        isOpen={Boolean(recreateOrderTarget)}
+        onClose={() => setRecreateOrderTarget(null)}
+        order={recreateOrderTarget}
+        currency={currency}
+        onOrderRecreated={() => {
+          fetchOrders();
+        }}
+      />
+
       {/* DETAILED ORDER & RECEIPT PREVIEW MODAL */}
       {/* ============================================================ */}
       {selectedOrder && (
@@ -1479,6 +1508,18 @@ export default function OrdersPage() {
               </button>
 
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const target = selectedOrder;
+                    setSelectedOrder(null);
+                    setRecreateOrderTarget(target);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs"
+                  title="Recreate / Repeat Order"
+                >
+                  <RefreshCw size={14} />
+                  <span>Recreate</span>
+                </button>
                 <button
                   onClick={() => handlePrint(selectedOrder.id, 'kot')}
                   className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs"

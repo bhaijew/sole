@@ -167,6 +167,7 @@ export interface Order {
   delivery_fee?: number;
   cloud_order_id?: string | null;
   shop_id?: number | null;
+  payment_method?: 'cash' | 'online' | 'paid' | string;
 }
 
 export interface OrderItem {

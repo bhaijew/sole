@@ -622,4 +622,186 @@ router.patch('/:id/delivery', async (req: Request, res: Response) => {
   }
 });
 
+// ── POST /api/orders/:id/recreate ───────────────────────────────────────────
+router.post('/:id/recreate', async (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const sourceOrder = db.prepare('SELECT * FROM orders WHERE id = ? OR order_number = ?').get(req.params.id, String(req.params.id)) as any;
+    if (!sourceOrder) {
+      return res.status(404).json({ error: 'Source order not found' });
+    }
+
+    const mode = (req.body.mode || 'new').toLowerCase().trim(); // 'new' | 'update'
+    const inputItems = Array.isArray(req.body.items) && req.body.items.length > 0
+      ? req.body.items
+      : db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(sourceOrder.id).map(parseItemJson);
+
+    if (inputItems.length === 0) {
+      return res.status(400).json({ error: 'Order must contain at least 1 item' });
+    }
+
+    const type = req.body.type || req.body.order_type || sourceOrder.type || 'takeaway';
+    const customer_name = req.body.customer_name !== undefined ? (req.body.customer_name ? String(req.body.customer_name).trim() : null) : sourceOrder.customer_name;
+    const customer_phone = req.body.customer_phone !== undefined ? (req.body.customer_phone ? String(req.body.customer_phone).trim() : null) : sourceOrder.customer_phone;
+    const delivery_address = req.body.delivery_address !== undefined ? (req.body.delivery_address ? String(req.body.delivery_address).trim() : null) : sourceOrder.delivery_address;
+    const delivery_fee = type === 'delivery' ? (req.body.delivery_fee !== undefined ? Number(req.body.delivery_fee) : Number(sourceOrder.delivery_fee || 0)) : 0;
+    const table_id = type === 'dine_in' ? (req.body.table_id !== undefined ? req.body.table_id : sourceOrder.table_id) : null;
+    const payment_method = req.body.payment_method || sourceOrder.payment_method || 'cash';
+    const special_instructions = req.body.special_instructions !== undefined ? req.body.special_instructions : sourceOrder.special_instructions;
+
+    // Calculate subtotal & total
+    let subtotal = 0;
+    const preparedItems: any[] = [];
+    for (const it of inputItems) {
+      const qty = Math.max(1, Number(it.quantity || it.qty || 1));
+      const price = Math.max(0, Number(it.unit_price || it.price || 0));
+      const itemSubtotal = qty * price;
+      subtotal += itemSubtotal;
+      preparedItems.push({
+        product_id: it.product_id || it.id || null,
+        product_name: it.product_name || it.name || 'Item',
+        unit_price: price,
+        quantity: qty,
+        subtotal: itemSubtotal,
+        total: itemSubtotal,
+        variant_selection: it.variant_selection || (it.detail ? JSON.stringify({ name: it.detail }) : null),
+        special_instructions: it.special_instructions || null,
+        items_included: it.items_included || null,
+      });
+    }
+
+    const total = subtotal + delivery_fee;
+    const roundOff = 0;
+
+    const activeShop = req.body.shop_id || sourceOrder.shop_id;
+    const shopIdNum = activeShop ? parseInt(String(activeShop), 10) : null;
+
+    if (mode === 'update') {
+      // In-place update / re-issuance of the existing order
+      db.prepare(`
+        UPDATE orders
+        SET type = ?, customer_name = ?, customer_phone = ?, delivery_address = ?,
+            delivery_fee = ?, delivery_charge = ?, table_id = ?, payment_method = ?,
+            special_instructions = ?, subtotal = ?, total = ?, round_off = ?,
+            status = 'pending', updated_at = ?
+        WHERE id = ?
+      `).run(
+        type, customer_name, customer_phone, delivery_address,
+        delivery_fee, delivery_fee, table_id, payment_method,
+        special_instructions, subtotal, total, roundOff, now(), sourceOrder.id
+      );
+
+      // Replace items
+      db.prepare('DELETE FROM order_items WHERE order_id = ?').run(sourceOrder.id);
+      const insertItem = db.prepare(`
+        INSERT INTO order_items (
+          order_id, product_id, product_name, unit_price, quantity, subtotal, total,
+          variant_selection, special_instructions, items_included, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+      `);
+      for (const pi of preparedItems) {
+        insertItem.run(
+          sourceOrder.id, pi.product_id, pi.product_name, pi.unit_price, pi.quantity, pi.subtotal, pi.total,
+          typeof pi.variant_selection === 'object' ? JSON.stringify(pi.variant_selection) : pi.variant_selection,
+          pi.special_instructions,
+          typeof pi.items_included === 'object' ? JSON.stringify(pi.items_included) : pi.items_included,
+          now(), now()
+        );
+      }
+
+      notifyKdsUpdate();
+
+      const finalOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(sourceOrder.id) as any;
+      const finalItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(sourceOrder.id).map(parseItemJson);
+
+      // Cloud push update
+      try {
+        const { pushOrderToCloud } = await import('../services/cloud-sync');
+        pushOrderToCloud(finalOrder, finalItems).catch(() => {});
+      } catch {}
+
+      return res.json({
+        success: true,
+        mode: 'update',
+        order: Object.assign({}, finalOrder, { items: finalItems })
+      });
+    } else {
+      // Mode 'new': generate new order number and insert fresh record
+      let newOrderNumber = generateOrderNumber();
+      const insertOrder = db.prepare(`
+        INSERT INTO orders (
+          order_number, table_id, customer_name, customer_phone, type, payment_method,
+          special_instructions, packaging_charge, delivery_charge, delivery_fee, delivery_address,
+          status, subtotal, total, round_off, shop_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
+      `);
+
+      let orderRes: any;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          orderRes = insertOrder.run(
+            newOrderNumber, table_id || null, customer_name || null, customer_phone || null,
+            type, payment_method, special_instructions || `Recreated from ${sourceOrder.order_number}`,
+            delivery_fee, delivery_fee, delivery_address || null,
+            subtotal, total, roundOff, shopIdNum, now(), now()
+          );
+          break;
+        } catch (err: any) {
+          if (err.message?.includes('UNIQUE') && attempt < 4) {
+            newOrderNumber = `${generateOrderNumber()}-${Date.now().toString().slice(-4)}`;
+            continue;
+          }
+          throw err;
+        }
+      }
+
+      const createdOrderId = orderRes.lastInsertRowid;
+
+      // Mark table occupied if dine_in
+      if (table_id && type === 'dine_in') {
+        try {
+          db.prepare("UPDATE tables SET status = 'occupied', updated_at = ? WHERE id = ?").run(now(), table_id);
+        } catch {}
+      }
+
+      const insertItem = db.prepare(`
+        INSERT INTO order_items (
+          order_id, product_id, product_name, unit_price, quantity, subtotal, total,
+          variant_selection, special_instructions, items_included, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+      `);
+      for (const pi of preparedItems) {
+        insertItem.run(
+          createdOrderId, pi.product_id, pi.product_name, pi.unit_price, pi.quantity, pi.subtotal, pi.total,
+          typeof pi.variant_selection === 'object' ? JSON.stringify(pi.variant_selection) : pi.variant_selection,
+          pi.special_instructions,
+          typeof pi.items_included === 'object' ? JSON.stringify(pi.items_included) : pi.items_included,
+          now(), now()
+        );
+      }
+
+      notifyKdsUpdate();
+
+      const createdOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(createdOrderId) as any;
+      const createdItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(createdOrderId).map(parseItemJson);
+
+      // Cloud push new order to Supabase
+      try {
+        const { pushOrderToCloud } = await import('../services/cloud-sync');
+        pushOrderToCloud(createdOrder, createdItems).catch(() => {});
+      } catch {}
+
+      return res.status(201).json({
+        success: true,
+        mode: 'new',
+        order: Object.assign({}, createdOrder, { items: createdItems })
+      });
+    }
+  } catch (err: any) {
+    console.error('[Orders] Recreate error:', err);
+    res.status(500).json({ error: err?.message || 'Failed to recreate order' });
+  }
+});
+
+
 export const orderRoutes = router;
