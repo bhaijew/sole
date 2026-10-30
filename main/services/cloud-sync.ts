@@ -983,6 +983,23 @@ export async function handleIncomingCloudOrder(cloudOrder: any): Promise<boolean
       }
     }
 
+    // Ignore orders that originated on this or another POS terminal!
+    // POS orders already have their KOT and Bill printed at the cashier counter.
+    const isFromPos =
+      cloudOrder.order_source === 'pos' ||
+      cloudOrder.source === 'pos' ||
+      String(cloudOrder.notes || '').includes('POS Terminal Order') ||
+      String(cloudOrder.notes || '').startsWith('POS:');
+
+    if (isFromPos) {
+      console.log(`[CloudSync] Order ${orderNumber} originated on POS. Linking cloud_order_id without duplicate auto-print.`);
+      if (cloudOrder.order_number) {
+        db.prepare("UPDATE orders SET cloud_order_id = ? WHERE order_number = ? AND (cloud_order_id IS NULL OR cloud_order_id = '')")
+          .run(cloudOrderIdStr, String(cloudOrder.order_number));
+      }
+      return false;
+    }
+
     // Check for duplicate
     const existing = db.prepare('SELECT id, status FROM orders WHERE cloud_order_id = ? OR order_number = ?').get(cloudOrderIdStr, orderNumber) as any;
     if (existing) {
@@ -1418,6 +1435,7 @@ export async function pushOrderToCloud(order: any, rawItems: any[]): Promise<boo
     const payload: Record<string, any> = {
       order_number: order.order_number,
       order_type: order.type || 'takeaway',
+      order_source: 'pos',
       status: mapLocalStatusToCloud(order.status || 'pending'),
       total: Number(order.total) || 0,
       delivery_fee: Number(order.delivery_charge || order.delivery_fee || 0),
@@ -1631,14 +1649,26 @@ export function startRealtimeOrderListener(): void {
     return;
   }
 
+  // Ensure any previous stale channel is cleanly removed before recreating
+  if (realtimeChannel) {
+    try {
+      client.removeChannel(realtimeChannel);
+    } catch {}
+    realtimeChannel = null;
+  }
+
   try {
     console.log('[CloudSync] Subscribing to Supabase Realtime channel for orders, staff & menu...');
 
     realtimeChannel = client
       .channel('flodesktop_orders_realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, async (payload) => {
-        console.log('[CloudSync] Realtime INSERT event received from Supabase orders:', payload.new?.order_number);
-        await handleIncomingCloudOrder(payload.new);
+        try {
+          console.log('[CloudSync] Realtime INSERT event received from Supabase orders:', payload.new?.order_number);
+          await handleIncomingCloudOrder(payload.new);
+        } catch (err: any) {
+          console.warn('[CloudSync] Error handling realtime order insert:', err?.message);
+        }
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, async (payload) => {
         const updated = payload.new;

@@ -1,8 +1,8 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { getDatabase, now } from '../db';
+import { getDatabase, now, getJwtSecret } from '../db';
 import * as jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'flo-local-secret-change-in-production';
+// Dynamic JWT Secret stored securely in SQLite settings
 
 interface KdsClient {
   ws: WebSocket;
@@ -161,7 +161,7 @@ function handleAuth(ws: WebSocket, client: KdsClient, message: any): void {
   // Validate JWT token
   if (token) {
     try {
-      const decoded = jwt.verify(token, JWT_SECRET) as any;
+      const decoded = jwt.verify(token, getJwtSecret()) as any;
       const db = getDatabase();
       const user = db.prepare('SELECT * FROM users WHERE id = ? AND is_active = 1').get(decoded.userId) as any;
 

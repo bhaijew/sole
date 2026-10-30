@@ -2,10 +2,11 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
-import { getDatabase, now } from '../db';
+import { getDatabase, now, getJwtSecret } from '../db';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'flo-local-secret-change-in-production';
+// Dynamic JWT Secret stored securely in SQLite settings
+const getSecret = () => getJwtSecret();
 const JWT_EXPIRES_IN = '24h';
 
 /**
@@ -86,7 +87,7 @@ router.post('/login', async (req: Request, res: Response) => {
 
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: JWT_EXPIRES_IN }
     );
 
@@ -194,7 +195,7 @@ router.post('/pin-login', async (req: Request, res: Response) => {
 
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: JWT_EXPIRES_IN }
     );
 
@@ -297,7 +298,7 @@ router.post('/register', (req: Request, res: Response) => {
 
     const token = jwt.sign(
       { userId, email, role },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: JWT_EXPIRES_IN }
     );
 
@@ -328,7 +329,7 @@ router.post('/tenants/select', (req: Request, res: Response) => {
     }
 
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = jwt.verify(token, getJwtSecret()) as any;
 
     const db = getDatabase();
     let user = db.prepare('SELECT id, name, email, role, shop_id FROM users WHERE id = ?').get(decoded.userId) as any;
@@ -345,7 +346,7 @@ router.post('/tenants/select', (req: Request, res: Response) => {
     // Re-issue token with tenant context embedded (same payload — desktop is single-tenant)
     const newToken = jwt.sign(
       { userId: user.id, email: user.email, role: user.role, tenantId: 1 },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: JWT_EXPIRES_IN }
     );
 
@@ -375,10 +376,10 @@ router.post('/refresh', (req: Request, res: Response) => {
     }
 
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = jwt.verify(token, getJwtSecret()) as any;
     const newToken = jwt.sign(
       { userId: decoded.userId, email: decoded.email, role: decoded.role, tenantId: decoded.tenantId },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: JWT_EXPIRES_IN }
     );
 
@@ -402,7 +403,7 @@ router.get('/me', (req: Request, res: Response) => {
     }
 
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = jwt.verify(token, getJwtSecret()) as any;
 
     const db = getDatabase();
     let user = db.prepare('SELECT id, name, email, role, shop_id FROM users WHERE id = ?').get(decoded.userId) as any;
@@ -437,7 +438,7 @@ router.post('/password/change', (req: Request, res: Response) => {
     }
 
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = jwt.verify(token, getJwtSecret()) as any;
 
     const db = getDatabase();
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(decoded.userId) as any;
@@ -514,7 +515,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
 
     const token = jwt.sign(
       { userId, email, role: 'owner' },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: JWT_EXPIRES_IN }
     );
 

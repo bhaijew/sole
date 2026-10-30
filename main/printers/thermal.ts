@@ -359,8 +359,30 @@ export async function printReceipt(
   }
 }
 
+const kotRecentPrints = new Map<string, number>();
+
 export async function printKOT(order: any, items: any[], stationName: string): Promise<boolean> {
   try {
+    const orderNum = String(order?.order_number || order?.id || '').trim();
+    const now = Date.now();
+    const isManualReprint = stationName && stationName.toLowerCase().includes('reprint');
+
+    // Duplicate Prevention: If same order KOT was printed in the last 120 seconds, ignore duplicate
+    if (orderNum && !isManualReprint) {
+      const lastPrintTime = kotRecentPrints.get(orderNum);
+      if (lastPrintTime && (now - lastPrintTime) < 120_000) {
+        console.log(`[Printer] Skipping duplicate KOT print for Order #${orderNum} (Printed ${Math.round((now - lastPrintTime)/1000)}s ago)`);
+        return true;
+      }
+      kotRecentPrints.set(orderNum, now);
+      // Clean up old entries
+      if (kotRecentPrints.size > 200) {
+        for (const [k, t] of kotRecentPrints.entries()) {
+          if (now - t > 300_000) kotRecentPrints.delete(k);
+        }
+      }
+    }
+
     console.log('[Printer] printKOT called, items count:', items?.length || 0);
     const printer = getKitchenPrinter() || getPrinterConfig();
     if (!printer) {

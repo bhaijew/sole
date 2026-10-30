@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import Database from 'better-sqlite3';
 import * as path from 'path';
 import { app } from 'electron';
@@ -962,4 +963,25 @@ export function parseItemJson(item: any): any {
     modifier_selection: tryParse(item.modifier_selection),
     tax_breakdown: tryParse(item.tax_breakdown),
   };
+}
+let cachedJwtSecret: string | null = null;
+
+export function getJwtSecret(): string {
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+  if (cachedJwtSecret) return cachedJwtSecret;
+
+  try {
+    const database = getDatabase();
+    const row = database.prepare('SELECT value FROM settings WHERE key = ?').get('app_jwt_secret') as { value: string } | undefined;
+    if (row && row.value && row.value.trim().length >= 16) {
+      cachedJwtSecret = row.value.trim();
+      return cachedJwtSecret;
+    }
+    const newSecret = crypto.randomBytes(32).toString('hex');
+    database.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('app_jwt_secret', newSecret);
+    cachedJwtSecret = newSecret;
+    return cachedJwtSecret;
+  } catch {
+    return 'flo-pos-dynamic-fallback-key-2026';
+  }
 }

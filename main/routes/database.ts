@@ -5,6 +5,16 @@ import * as path from 'path';
 
 const router = Router();
 
+// Security Guard: Database operations (backup/export/import/restore) are strictly limited to localhost / POS machine only
+router.use((req: Request, res: Response, next) => {
+  const ip = req.ip || req.socket.remoteAddress || '';
+  const isLocal = ip.includes('127.0.0.1') || ip === '::1' || ip.includes('localhost') || ip === '::ffff:127.0.0.1';
+  if (!isLocal) {
+    return res.status(403).json({ error: 'Access denied: Database operations are only allowed locally on the POS machine.' });
+  }
+  next();
+});
+
 router.get('/export', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
