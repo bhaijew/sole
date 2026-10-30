@@ -74,22 +74,46 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-router.get('/:id', (req: Request, res: Response) => {
+router.get('/:id', async (req: Request, res: Response) => {
   try {
+    const { id } = req.params;
     const db = getDatabase();
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
+    let order = db.prepare('SELECT * FROM orders WHERE id = ? OR order_number = ? OR cloud_order_id = ?').get(id, id, id) as any;
+    if (!order) {
+      try {
+        const { getSupabaseClient, handleIncomingCloudOrder } = await import('../services/cloud-sync');
+        const client = getSupabaseClient();
+        if (client) {
+          const num = Number(id);
+          let cloudOrder: any = null;
+          if (!isNaN(num) && num > 0) {
+            const r = await client.from('orders').select('*').eq('id', num).maybeSingle();
+            cloudOrder = r.data;
+          }
+          if (!cloudOrder) {
+            const r = await client.from('orders').select('*').eq('order_number', id).maybeSingle();
+            cloudOrder = r.data;
+          }
+          if (cloudOrder) {
+            await handleIncomingCloudOrder(cloudOrder, true);
+            order = db.prepare('SELECT * FROM orders WHERE cloud_order_id = ? OR order_number = ?').get(String(cloudOrder.id), String(cloudOrder.order_number || '')) as any;
+          }
+        }
+      } catch {}
+    }
+
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson);
-    const tableRow = (order as any).table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get((order as any).table_id) as any : null;
+    const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson);
+    const tableRow = order.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id) as any : null;
     const table = tableRow ? { ...tableRow, name: tableRow.number } : null;
-    let customer = (order as any).customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get((order as any).customer_id) : null;
-    if (!customer && ((order as any).customer_name || (order as any).customer_phone)) {
-      customer = { name: (order as any).customer_name || '', phone: (order as any).customer_phone || '' };
+    let customer = order.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) : null;
+    if (!customer && (order.customer_name || order.customer_phone)) {
+      customer = { name: order.customer_name || '', phone: order.customer_phone || '' };
     }
-    const bill = db.prepare('SELECT * FROM bills WHERE order_id = ?').get(req.params.id);
+    const bill = db.prepare('SELECT * FROM bills WHERE order_id = ?').get(order.id);
 
     res.json({ order: { ...order, items, table, customer, bill } });
   } catch (error: any) {

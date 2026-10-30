@@ -56,7 +56,7 @@ router.get('/:id', (req: Request, res: Response) => {
   }
 });
 
-router.post('/generate', (req: Request, res: Response) => {
+router.post('/generate', async (req: Request, res: Response) => {
   try {
     const { order_id } = req.body;
 
@@ -65,14 +65,37 @@ router.post('/generate', (req: Request, res: Response) => {
     }
 
     const db = getDatabase();
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(order_id) as any;
+    let order = db.prepare('SELECT * FROM orders WHERE id = ? OR order_number = ? OR cloud_order_id = ?').get(order_id, String(order_id), String(order_id)) as any;
+    if (!order) {
+      try {
+        const { getSupabaseClient, handleIncomingCloudOrder } = await import('../services/cloud-sync');
+        const client = getSupabaseClient();
+        if (client) {
+          const num = Number(order_id);
+          let cloudOrder: any = null;
+          if (!isNaN(num) && num > 0) {
+            const r = await client.from('orders').select('*').eq('id', num).maybeSingle();
+            cloudOrder = r.data;
+          }
+          if (!cloudOrder) {
+            const r = await client.from('orders').select('*').eq('order_number', String(order_id)).maybeSingle();
+            cloudOrder = r.data;
+          }
+          if (cloudOrder) {
+            await handleIncomingCloudOrder(cloudOrder, true);
+            order = db.prepare('SELECT * FROM orders WHERE cloud_order_id = ? OR order_number = ?').get(String(cloudOrder.id), String(cloudOrder.order_number || '')) as any;
+          }
+        }
+      } catch {}
+    }
+
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const existingBill = db.prepare('SELECT * FROM bills WHERE order_id = ?').get(order_id) as any;
+    const existingBill = db.prepare('SELECT * FROM bills WHERE order_id = ?').get(order.id) as any;
     if (existingBill) {
-      const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order_id);
+      const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
       const customer = order.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) : (order.customer_name ? { name: order.customer_name } : null);
       existingBill.order = { ...order, items, customer };
       return res.json({ bill: existingBill });
@@ -93,13 +116,13 @@ router.post('/generate', (req: Request, res: Response) => {
         delivery_charge, packaging_charge, round_off, total, paid_amount, balance, payment_status, payment_method, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, ?, ?)
     `).run(
-      billNumber, order_id, order.customer_id, subtotal, taxAmount, order.tax_breakdown,
+      billNumber, order.id, order.customer_id, subtotal, taxAmount, order.tax_breakdown,
       discountAmount, order.discount_type, order.discount_value, order.discount_reason,
       deliveryCharge, packagingCharge, roundOff, total, 0, total, order.payment_method || 'cash', now(), now()
     );
 
     const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(result.lastInsertRowid) as any;
-    const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order_id);
+    const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
     const customer = order.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) : (order.customer_name ? { name: order.customer_name } : null);
     bill.order = { ...order, items, customer };
     res.status(201).json({ bill });

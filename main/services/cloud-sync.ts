@@ -965,7 +965,7 @@ export async function syncAllFromCloud(): Promise<{
 /**
  * Handle new online order received from Supabase Realtime
  */
-export async function handleIncomingCloudOrder(cloudOrder: any): Promise<boolean> {
+export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck = false): Promise<boolean> {
   const db = getDatabase();
 
   if (!cloudOrder || !cloudOrder.id) return false;
@@ -974,17 +974,18 @@ export async function handleIncomingCloudOrder(cloudOrder: any): Promise<boolean
   const orderNumber = cloudOrder.order_number || `ONL-${cloudOrder.id}`;
 
   try {
-    // Branch check: ensure order belongs strictly to this shop
     const currentShopId = getSetting('cloud_shop_id', '');
-    if (currentShopId) {
-      if (!cloudOrder.shop_id || String(cloudOrder.shop_id) !== String(currentShopId)) {
-        console.log(`[CloudSync] Order ${orderNumber} is for Shop #${cloudOrder.shop_id || 'unassigned'}, not current branch #${currentShopId}. Skipping.`);
-        return false;
+    // Branch check: ensure order belongs strictly to this shop unless explicitly bypassed
+    if (!bypassShopCheck) {
+      if (currentShopId) {
+        if (!cloudOrder.shop_id || String(cloudOrder.shop_id) !== String(currentShopId)) {
+          console.log(`[CloudSync] Order ${orderNumber} is for Shop #${cloudOrder.shop_id || 'unassigned'}, not current branch #${currentShopId}. Skipping.`);
+          return false;
+        }
       }
     }
 
-    // Ignore orders that originated on this or another POS terminal!
-    // POS orders already have their KOT and Bill printed at the cashier counter.
+    // Check if order originated on POS terminal
     const isFromPos =
       cloudOrder.order_source === 'pos' ||
       cloudOrder.source === 'pos' ||
@@ -992,12 +993,15 @@ export async function handleIncomingCloudOrder(cloudOrder: any): Promise<boolean
       String(cloudOrder.notes || '').startsWith('POS:');
 
     if (isFromPos) {
-      console.log(`[CloudSync] Order ${orderNumber} originated on POS. Linking cloud_order_id without duplicate auto-print.`);
       if (cloudOrder.order_number) {
-        db.prepare("UPDATE orders SET cloud_order_id = ? WHERE order_number = ? AND (cloud_order_id IS NULL OR cloud_order_id = '')")
+        const updateRes = db.prepare("UPDATE orders SET cloud_order_id = ? WHERE order_number = ? AND (cloud_order_id IS NULL OR cloud_order_id = '')")
           .run(cloudOrderIdStr, String(cloudOrder.order_number));
+        if (updateRes.changes > 0) {
+          console.log(`[CloudSync] Order ${orderNumber} originated on POS and already exists locally. Linked cloud_order_id.`);
+          return false;
+        }
       }
-      return false;
+      console.log(`[CloudSync] Order ${orderNumber} originated on POS but not found locally. Syncing into database...`);
     }
 
     // Check for duplicate
@@ -1154,9 +1158,9 @@ export async function handleIncomingCloudOrder(cloudOrder: any): Promise<boolean
     broadcastCloudEvent('online-order-received', { orderNumber, total, localOrderId, customerName: cloudOrder.customer_name });
     broadcastCloudEvent('order-synced', { orderNumber, localOrderId });
 
-    // 3. Auto-print Customer Bill (Receipt) if enabled
+    // 3. Auto-print Customer Bill (Receipt) if enabled (for online storefront orders only)
     const autoPrintBill = getSetting('cloud_auto_print_bill', '1') === '1';
-    if (autoPrintBill) {
+    if (!isFromPos && autoPrintBill) {
       try {
         const localOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(localOrderId) as any;
         const localItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(localOrderId) as any[];
@@ -1195,9 +1199,9 @@ export async function handleIncomingCloudOrder(cloudOrder: any): Promise<boolean
       }
     }
 
-    // 4. Auto-print KOT if enabled
+    // 4. Auto-print KOT if enabled (for online storefront orders only)
     const autoPrint = getSetting('cloud_auto_print_kot', '1') === '1';
-    if (autoPrint) {
+    if (!isFromPos && autoPrint) {
       try {
         const localOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(localOrderId) as any;
         const localItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(localOrderId) as any[];

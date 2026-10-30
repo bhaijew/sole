@@ -352,6 +352,159 @@ router.post('/test-direct', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * Universal Order Resolver for Printing:
+ * Resolves order by local id, order_number, cloud_order_id, or fallbackBillId.
+ * If missing from SQLite, dynamically imports it from Supabase Cloud on-demand.
+ */
+async function resolveOrderForPrinting(db: any, orderIdOrNumber: any, fallbackBillId?: any): Promise<any> {
+  const rawId = String(orderIdOrNumber || '').trim();
+  const numId = Number(rawId);
+
+  let order: any = null;
+
+  // 1. Try finding locally in SQLite: id, order_number, cloud_order_id
+  if (!isNaN(numId) && numId > 0) {
+    order = db.prepare(`
+      SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name, c.phone as customer_phone
+      FROM orders o
+      LEFT JOIN customers c ON o.customer_id = c.id
+      WHERE o.id = ?
+    `).get(numId);
+  }
+
+  if (!order && rawId) {
+    order = db.prepare(`
+      SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name, c.phone as customer_phone
+      FROM orders o
+      LEFT JOIN customers c ON o.customer_id = c.id
+      WHERE o.order_number = ? OR o.cloud_order_id = ?
+    `).get(rawId, rawId);
+  }
+
+  // 2. If billId was passed, check via bills table
+  if (!order && fallbackBillId) {
+    const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(fallbackBillId);
+    if (bill && bill.order_id) {
+      order = db.prepare(`
+        SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name, c.phone as customer_phone
+        FROM orders o
+        LEFT JOIN customers c ON o.customer_id = c.id
+        WHERE o.id = ? OR o.order_number = ? OR o.cloud_order_id = ?
+      `).get(bill.order_id, String(bill.order_id), String(bill.order_id));
+    }
+  }
+
+  // 3. If STILL not found in local SQLite, query Supabase Cloud on demand!
+  if (!order && rawId) {
+    try {
+      const { getSupabaseClient, handleIncomingCloudOrder } = await import('../services/cloud-sync');
+      const client = getSupabaseClient();
+      if (client) {
+        let cloudOrder: any = null;
+        if (!isNaN(numId) && numId > 0) {
+          const res = await client.from('orders').select('*').eq('id', numId).maybeSingle();
+          cloudOrder = res.data;
+        }
+        if (!cloudOrder) {
+          const res = await client.from('orders').select('*').eq('order_number', rawId).maybeSingle();
+          cloudOrder = res.data;
+        }
+
+        if (cloudOrder) {
+          console.log(`[Printer] Found order ${cloudOrder.order_number} (ID: ${cloudOrder.id}) in cloud! Importing into local database...`);
+          await handleIncomingCloudOrder(cloudOrder, true);
+
+          order = db.prepare(`
+            SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name, c.phone as customer_phone
+            FROM orders o
+            LEFT JOIN customers c ON o.customer_id = c.id
+            WHERE o.cloud_order_id = ? OR o.order_number = ?
+          `).get(String(cloudOrder.id), String(cloudOrder.order_number || ''));
+
+          if (!order) {
+            // Direct memory fallback
+            let parsedItems: any[] = [];
+            if (Array.isArray(cloudOrder.items)) parsedItems = cloudOrder.items;
+            else if (typeof cloudOrder.items === 'string') {
+              try { parsedItems = JSON.parse(cloudOrder.items); } catch {}
+            }
+            order = {
+              id: cloudOrder.id,
+              order_number: cloudOrder.order_number || `ONL-${cloudOrder.id}`,
+              customer_name: cloudOrder.customer_name,
+              customer_phone: cloudOrder.customer_phone,
+              delivery_address: cloudOrder.delivery_address,
+              subtotal: Math.max(0, Number(cloudOrder.total || 0) - Number(cloudOrder.delivery_fee || 0)),
+              total: Number(cloudOrder.total || 0),
+              delivery_charge: Number(cloudOrder.delivery_fee || 0),
+              delivery_fee: Number(cloudOrder.delivery_fee || 0),
+              type: cloudOrder.order_type || (cloudOrder.delivery_address ? 'delivery' : 'takeaway'),
+              status: cloudOrder.status || 'pending',
+              order_source: cloudOrder.source || cloudOrder.order_source || 'online',
+              created_at: cloudOrder.created_at,
+              items: parsedItems.map((it: any, idx: number) => ({
+                id: idx + 1,
+                order_id: cloudOrder.id,
+                product_name: it.name || it.title || it.product_name || 'Item',
+                unit_price: Number(it.price || it.unit_price || 0),
+                quantity: Number(it.qty || it.quantity || 1),
+                total: Number(it.subtotal || (Number(it.price || 0) * Number(it.qty || 1))),
+                variant_selection: it.selected_variation ? (typeof it.selected_variation === 'object' ? it.selected_variation.name : String(it.selected_variation)) : (it.variant_selection || null),
+                special_instructions: it.special_instructions || null,
+              })),
+            };
+          }
+        }
+      }
+    } catch (cloudErr: any) {
+      console.warn('[Printer] Cloud lookup fallback error:', cloudErr?.message);
+    }
+  }
+
+  if (!order) return null;
+
+  // Ensure items are attached using order.id
+  if (!order.items || order.items.length === 0) {
+    const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
+    if (items && items.length > 0) {
+      order.items = items;
+    } else if (order.cloud_order_id) {
+      const itemsByCloud = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.cloud_order_id);
+      if (itemsByCloud && itemsByCloud.length > 0) {
+        order.items = itemsByCloud;
+      }
+    }
+  }
+
+  // Parse items_included if items still empty
+  if ((!order.items || order.items.length === 0) && order.items_included) {
+    try {
+      const parsed = JSON.parse(order.items_included);
+      if (Array.isArray(parsed)) {
+        order.items = parsed.map((it: any, idx: number) => ({
+          id: idx + 1,
+          order_id: order.id,
+          product_name: it.name || it.product_name || 'Item',
+          quantity: it.quantity || it.qty || 1,
+          unit_price: it.unit_price || it.price || 0,
+          total: (it.quantity || 1) * (it.unit_price || it.price || 0),
+        }));
+      }
+    } catch {}
+  }
+
+  // Ensure table name is populated if table_id exists
+  if (order.table_id && !order.table) {
+    const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id);
+    if (table) {
+      order.table = { name: table.number };
+    }
+  }
+
+  return order;
+}
+
 // POST /api/printers/print-bill — print bill via backend (desktop app)
 router.post('/print-bill', async (req: Request, res: Response) => {
   try {
@@ -372,34 +525,20 @@ router.post('/print-bill', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No default printer configured. Add a printer in Settings.' });
     }
 
-    // Get bill and order data
-    let bill: any;
-    if (billId) {
-      bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId);
-    } else {
-      bill = db.prepare('SELECT b.* FROM bills b WHERE b.order_id = ?').get(orderId);
-    }
-
-    let order: any;
-    if (bill) {
-      order = db.prepare(`
-        SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name, c.phone as customer_phone
-        FROM orders o
-        LEFT JOIN customers c ON o.customer_id = c.id
-        WHERE o.id = ?
-      `).get(bill.order_id) || db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id);
-    } else if (orderId) {
-      order = db.prepare(`
-        SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name, c.phone as customer_phone
-        FROM orders o
-        LEFT JOIN customers c ON o.customer_id = c.id
-        WHERE o.id = ?
-      `).get(orderId) || db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
-    }
-
+    // Resolve order with universal lookup (local id, order_number, cloud_order_id, cloud on-demand)
+    const order = await resolveOrderForPrinting(db, orderId || billId, billId);
     if (!order) {
       console.log('[Print Bill] Error: Order not found');
       return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Get bill data
+    let bill: any;
+    if (billId) {
+      bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId);
+    }
+    if (!bill && order.id) {
+      bill = db.prepare('SELECT b.* FROM bills b WHERE b.order_id = ?').get(order.id);
     }
 
     // If order has no bill row yet (e.g. online order from menu), create synthetic bill object
@@ -494,19 +633,12 @@ router.post('/print-kot', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No kitchen or default printer configured. Add a printer in Settings.' });
     }
 
-    const order: any = db.prepare(`
-      SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name, c.phone as customer_phone
-      FROM orders o
-      LEFT JOIN customers c ON o.customer_id = c.id
-      WHERE o.id = ?
-    `).get(orderId) || db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
-
+    const order = await resolveOrderForPrinting(db, orderId);
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    // Fetch order items from database
-    const orderItems: any[] = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId);
+    const orderItems: any[] = order.items || db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
     
     // Fetch table info if available
     let tableName: string | undefined;
@@ -550,21 +682,23 @@ router.post('/print-order', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No default printer configured. Please configure a printer in Settings.' });
     }
 
-    const order: any = db.prepare(`
-      SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name, c.phone as customer_phone
-      FROM orders o
-      LEFT JOIN customers c ON o.customer_id = c.id
-      WHERE o.id = ?
-    `).get(orderId) || db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
-
+    const order = await resolveOrderForPrinting(db, orderId);
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const items: any[] = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId);
+    if (overrideFee !== null) {
+      const oldFee = Number(order.delivery_charge || order.delivery_fee || 0);
+      const diff = overrideFee - oldFee;
+      order.delivery_charge = overrideFee;
+      order.delivery_fee = overrideFee;
+      order.total = Math.max(0, Number(order.total || 0) + diff);
+    }
+
+    const items: any[] = order.items || db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
     order.items = items;
 
-    if (order.table_id) {
+    if (order.table_id && !order.table) {
       const table: any = db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id);
       if (table) order.table = { name: table.number };
     }
@@ -574,7 +708,7 @@ router.post('/print-order', async (req: Request, res: Response) => {
 
     // 1. If bill / receipt requested
     if (printType === 'bill' || printType === 'receipt' || printType === 'both') {
-      let bill = db.prepare('SELECT b.* FROM bills b WHERE b.order_id = ?').get(orderId) as any;
+      let bill = db.prepare('SELECT b.* FROM bills b WHERE b.order_id = ?').get(order.id) as any;
       if (!bill) {
         bill = {
           id: `auto_${order.id}`,
