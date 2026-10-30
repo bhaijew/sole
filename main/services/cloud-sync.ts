@@ -1459,19 +1459,101 @@ export async function pushOrderToCloud(order: any, rawItems: any[]): Promise<boo
       updated_at: new Date().toISOString(),
     };
 
-    const { data, error } = await client
-      .from('orders')
-      .insert(payload)
-      .select('id')
-      .maybeSingle();
+    let cloudId: string | null = order.cloud_order_id ? String(order.cloud_order_id) : null;
 
-    if (error) {
-      console.warn('[CloudSync] Error pushing POS order to cloud:', error.message);
-      return false;
+    // If no local cloud_order_id, check if order already exists in Supabase by order_number
+    if (!cloudId && order.order_number) {
+      try {
+        const { data: existing } = await client
+          .from('orders')
+          .select('id')
+          .eq('order_number', order.order_number)
+          .maybeSingle();
+        if (existing?.id) {
+          cloudId = String(existing.id);
+        }
+      } catch {}
     }
 
-    const cloudId = data?.id ? String(data.id) : null;
-    console.log(`[CloudSync] POS Order ${order.order_number} successfully pushed to Pizza System cloud (Cloud ID: ${cloudId}, Shop #${shopId})`);
+    if (cloudId) {
+      // UPDATE existing cloud order
+      const updatePayload: Record<string, any> = {
+        order_type: payload.order_type,
+        status: payload.status,
+        total: payload.total,
+        delivery_fee: payload.delivery_fee,
+        delivery_address: payload.delivery_address,
+        items: payload.items,
+        customer_name: payload.customer_name,
+        customer_phone: payload.customer_phone,
+        table_number: payload.table_number,
+        token_number: payload.token_number,
+        notes: payload.notes,
+        shop_id: payload.shop_id,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data: updated, error: updateErr } = await client
+        .from('orders')
+        .update(updatePayload)
+        .eq('id', cloudId)
+        .select('id')
+        .maybeSingle();
+
+      if (updateErr) {
+        console.warn(`[CloudSync] Error updating POS order ${order.order_number} (Cloud ID: ${cloudId}) in cloud:`, updateErr.message);
+        return false;
+      }
+      cloudId = updated?.id ? String(updated.id) : cloudId;
+      console.log(`[CloudSync] POS Order ${order.order_number} successfully updated in Pizza System cloud (Cloud ID: ${cloudId}, Shop #${shopId})`);
+    } else {
+      // INSERT new cloud order
+      const { data, error } = await client
+        .from('orders')
+        .insert(payload)
+        .select('id')
+        .maybeSingle();
+
+      if (error) {
+        // Fallback: If conflict on unique order_number, update by order_number
+        if (order.order_number) {
+          const { data: upd, error: updErr } = await client
+            .from('orders')
+            .update({
+              order_type: payload.order_type,
+              status: payload.status,
+              total: payload.total,
+              delivery_fee: payload.delivery_fee,
+              delivery_address: payload.delivery_address,
+              items: payload.items,
+              customer_name: payload.customer_name,
+              customer_phone: payload.customer_phone,
+              table_number: payload.table_number,
+              token_number: payload.token_number,
+              notes: payload.notes,
+              shop_id: payload.shop_id,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('order_number', order.order_number)
+            .select('id')
+            .maybeSingle();
+
+          if (!updErr && upd?.id) {
+            cloudId = String(upd.id);
+            console.log(`[CloudSync] POS Order ${order.order_number} resolved conflict and updated in cloud (Cloud ID: ${cloudId})`);
+          } else {
+            console.warn('[CloudSync] Error pushing POS order to cloud (conflict fallback failed):', updErr?.message || error.message);
+            return false;
+          }
+        } else {
+          console.warn('[CloudSync] Error pushing POS order to cloud:', error.message);
+          return false;
+        }
+      } else {
+        cloudId = data?.id ? String(data.id) : null;
+        console.log(`[CloudSync] POS Order ${order.order_number} successfully pushed to Pizza System cloud (Cloud ID: ${cloudId}, Shop #${shopId})`);
+      }
+    }
 
     // Mark as synced locally
     db.prepare(`

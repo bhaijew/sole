@@ -336,7 +336,7 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/:id/items', (req: Request, res: Response) => {
+router.post('/:id/items', async (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
@@ -431,11 +431,19 @@ router.post('/:id/items', (req: Request, res: Response) => {
     const total = Math.round(preRoundTotal) + roundOff;
 
     db.prepare(`
-      UPDATE orders SET subtotal = ?, tax_amount = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
+      UPDATE orders SET subtotal = ?, tax_amount = ?, total = ?, round_off = ?, is_synced = 0, updated_at = ? WHERE id = ?
     `).run(subtotal, totalTax, total, roundOff, now(), req.params.id);
 
     const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
     const updatedItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson);
+
+    // Push updated order and items up to cloud in background
+    try {
+      const { pushOrderToCloud } = await import('../services/cloud-sync');
+      pushOrderToCloud(updatedOrder, updatedItems).catch((err) => {
+        console.warn('[Orders] Background cloud push error on add items:', err?.message || err);
+      });
+    } catch {}
 
     res.json({ order: Object.assign({}, updatedOrder, { items: updatedItems }) });
   } catch (error: any) {
@@ -719,7 +727,7 @@ router.post('/:id/recreate', async (req: Request, res: Response) => {
         SET type = ?, customer_name = ?, customer_phone = ?, delivery_address = ?,
             delivery_fee = ?, delivery_charge = ?, table_id = ?, payment_method = ?,
             special_instructions = ?, subtotal = ?, total = ?, round_off = ?,
-            status = 'pending', updated_at = ?
+            status = 'pending', is_synced = 0, updated_at = ?
         WHERE id = ?
       `).run(
         type, customer_name, customer_phone, delivery_address,
