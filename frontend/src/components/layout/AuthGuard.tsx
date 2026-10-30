@@ -33,9 +33,17 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-4 border-brand border-t-transparent rounded-full animate-spin" />
-          <p className="text-gray-500 text-sm">Loading...</p>
+        <div className="flex flex-col items-center gap-4">
+          <div className="relative w-16 h-16 flex items-center justify-center">
+            <div className="absolute inset-0 rounded-full border-2 border-red-200 border-t-red-600 border-r-orange-500 animate-spin" />
+            <div className="w-11 h-11 rounded-full bg-white shadow-sm flex items-center justify-center p-1.5 overflow-hidden">
+              <img src="/logo.png" alt="Sole What Logo" className="w-full h-full object-contain" />
+            </div>
+          </div>
+          <div className="text-center">
+            <p className="text-xs font-black uppercase tracking-widest text-gray-900">Sole What</p>
+            <p className="text-[11px] text-gray-500 font-medium">Loading POS...</p>
+          </div>
         </div>
       </div>
     );

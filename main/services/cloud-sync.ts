@@ -1435,7 +1435,7 @@ export async function pushOrderToCloud(order: any, rawItems: any[]): Promise<boo
     const payload: Record<string, any> = {
       order_number: order.order_number,
       order_type: order.type || 'takeaway',
-      order_source: 'pos',
+      source: 'pos',
       status: mapLocalStatusToCloud(order.status || 'pending'),
       total: Number(order.total) || 0,
       delivery_fee: Number(order.delivery_charge || order.delivery_fee || 0),

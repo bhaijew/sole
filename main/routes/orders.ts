@@ -294,7 +294,9 @@ router.post('/', async (req: Request, res: Response) => {
     // Push POS order up to Pizza Management cloud (Supabase) in background
     try {
       const { pushOrderToCloud } = await import('../services/cloud-sync');
-      pushOrderToCloud(order, orderItems).catch(() => {});
+      pushOrderToCloud(order, orderItems).catch((err) => {
+        console.warn('[Orders] Background cloud push error:', err?.message || err);
+      });
     } catch {}
 
     res.status(201).json({ order: Object.assign({}, order, { items: orderItems, customer }) });
