@@ -25,7 +25,7 @@ import { useCartStore } from '@/store/cart';
 
 export interface RecreateItemState {
   id?: number | string;
-  product_id?: number | null;
+  product_id?: number | string | null;
   name: string;
   price: number;
   qty: number;
@@ -115,9 +115,9 @@ export default function OrderRecreateModal({
 
     // Parse items
     const rawItems = Array.isArray(order.items) ? order.items : [];
-    const mapped: RecreateItemState[] = rawItems.map((it: any) => ({
-      id: it.id,
-      product_id: it.product_id || it.product?.id || null,
+    const mapped: RecreateItemState[] = rawItems.map((it: any, idx: number) => ({
+      id: it.id || `item-${idx}-${Date.now()}`,
+      product_id: String(it.product_id || it.product?.id || it.id || `prod-${idx}-${Date.now()}`),
       name: it.product_name || it.name || it.product?.name || 'Menu Item',
       price: Number(it.unit_price || it.price || it.product?.price || 0),
       qty: Math.max(1, Number(it.quantity || it.qty || 1)),
@@ -187,9 +187,12 @@ export default function OrderRecreateModal({
   const handleAddCustomItem = () => {
     if (!customName.trim()) return;
     const priceNum = parseFloat(customPrice) || 0;
+    const customId = `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     setItems((prev) => [
       ...prev,
       {
+        id: customId,
+        product_id: customId,
         name: customName.trim(),
         price: priceNum,
         qty: Math.max(1, customQty),
@@ -208,10 +211,10 @@ export default function OrderRecreateModal({
       return;
     }
 
-    const cartItems = items.map((it) => ({
-      id: `${it.product_id || it.name}-${Date.now()}`,
+    const cartItems = items.map((it, idx) => ({
+      id: `${it.product_id || it.name}-${Date.now()}-${idx}`,
       product: {
-        id: (it.product_id as number) || 999999,
+        id: String(it.product_id || `custom-${Date.now()}-${idx}`),
         name: it.name,
         price: it.price,
         is_available: true,
@@ -256,8 +259,8 @@ export default function OrderRecreateModal({
         delivery_fee: orderType === 'delivery' ? Number(deliveryFee) || 0 : 0,
         payment_method: paymentMethod,
         special_instructions: specialInstructions.trim() || undefined,
-        items: items.map((it) => ({
-          product_id: it.product_id,
+        items: items.map((it, idx) => ({
+          product_id: String(it.product_id || `item-${idx}-${Date.now()}`),
           product_name: it.name,
           unit_price: it.price,
           quantity: it.qty,

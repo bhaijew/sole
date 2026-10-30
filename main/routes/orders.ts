@@ -214,21 +214,21 @@ router.post('/', async (req: Request, res: Response) => {
     `);
 
     for (const item of items) {
-      const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
-      if (!product) {
-        throw new Error(`Product ${item.product_id} not found`);
+      let product = item.product_id ? (db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any) : null;
+      if (!product && (item.product_name || item.name)) {
+        product = db.prepare('SELECT * FROM products WHERE name = ?').get(item.product_name || item.name) as any;
       }
 
       // Check stock
-      if (product.track_inventory && product.stock_quantity < item.quantity) {
+      if (product && product.track_inventory && product.stock_quantity < item.quantity) {
         throw new Error(`Insufficient stock for ${product.name}`);
       }
 
       // Determine real price according to database variation or size
-      let unitPrice = parseFloat(product.price) || 0;
+      let unitPrice = product ? (parseFloat(product.price) || 0) : (Number(item.unit_price || item.price) || 0);
       if (item.unit_price && Number(item.unit_price) > 0) {
         unitPrice = Number(item.unit_price);
-      } else if (item.variant_selection && product.tags) {
+      } else if (product && item.variant_selection && product.tags) {
         try {
           const parsed = JSON.parse(product.tags);
           if (parsed && Array.isArray(parsed.variations)) {
@@ -249,7 +249,7 @@ router.post('/', async (req: Request, res: Response) => {
         } catch {}
       }
 
-      const quantity = item.quantity;
+      const quantity = item.quantity || 1;
       const itemDiscount = item.discount_amount || 0;
 
       let itemSubtotal = unitPrice * quantity;
@@ -262,7 +262,7 @@ router.post('/', async (req: Request, res: Response) => {
 
       // Calculate tax
       const customer = customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(customer_id) as any : null;
-      const taxResult = calculateItemTax(tenantInfo, product, itemSubtotal, customer);
+      const taxResult = calculateItemTax(tenantInfo, product || { tax_type: 'exclusive', tax_rate: 0 }, itemSubtotal, customer);
 
       totalTax += taxResult.tax_amount;
       if (taxResult.tax_breakdown) {
@@ -272,15 +272,21 @@ router.post('/', async (req: Request, res: Response) => {
       const itemTotal = itemSubtotal + taxResult.tax_amount;
       subtotal += itemSubtotal;
 
+      const safeProductId = String(product?.id || item.product_id || `custom-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
+      const safeProductName = String(product?.name || item.product_name || item.name || 'Custom Item');
+      const safeProductSku = product ? product.sku : null;
+      const safeTaxType = product ? product.tax_type : 'exclusive';
+      const safeItemsInc = item.items_included ? String(item.items_included) : (product?.items_included ? String(product.items_included) : (product?.description || null));
+
       insertItem.run(
-        orderId, product.id, product.name, product.sku, unitPrice, quantity,
+        orderId, safeProductId, safeProductName, safeProductSku, unitPrice, quantity,
         itemSubtotal, taxResult.tax_amount, JSON.stringify(taxResult.tax_breakdown),
-        product.tax_type, itemDiscount, itemTotal,
-        item.variant_selection ? JSON.stringify(item.variant_selection) : null,
+        safeTaxType, itemDiscount, itemTotal,
+        item.variant_selection ? (typeof item.variant_selection === 'object' ? JSON.stringify(item.variant_selection) : String(item.variant_selection)) : null,
         JSON.stringify(item.modifier_selection || null),
         JSON.stringify(item.addons || null),
         item.special_instructions || null,
-        (item.items_included ? String(item.items_included) : (product.items_included ? String(product.items_included) : (product.description || null))),
+        safeItemsInc,
         now(), now()
       );
 
@@ -681,8 +687,14 @@ router.post('/:id/recreate', async (req: Request, res: Response) => {
       const price = Math.max(0, Number(it.unit_price || it.price || 0));
       const itemSubtotal = qty * price;
       subtotal += itemSubtotal;
+      const safeProdId = String(
+        it.product_id ||
+        it.productId ||
+        it.id ||
+        `prod-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+      );
       preparedItems.push({
-        product_id: it.product_id || it.id || null,
+        product_id: safeProdId,
         product_name: it.product_name || it.name || 'Item',
         unit_price: price,
         quantity: qty,

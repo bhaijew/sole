@@ -1111,7 +1111,11 @@ export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck 
       `);
 
       for (const item of rawItems) {
-        const prodId = item.id ? `cloud_prod_${item.id}` : `item-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+        const prodId = String(
+          item.product_id ||
+          item.productId ||
+          (item.id ? `cloud_prod_${item.id}` : `item-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`)
+        );
         const prodName = item.name || item.title || item.product_name || 'Pizza Item';
         const unitPrice = Number(item.price || item.unit_price) || 0;
         const qty = Number(item.qty || item.quantity) || 1;

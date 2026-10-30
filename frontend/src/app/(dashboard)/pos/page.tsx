@@ -132,7 +132,8 @@ export default function POSPage() {
           const effectivePrice = item.unit_price ?? getProductPriceForSize(item.product, item.size);
 
           return {
-            product_id: item.product.id,
+            product_id: String(item.product?.id || `prod-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`),
+            product_name: item.product?.name || 'Item',
             quantity: item.quantity,
             unit_price: effectivePrice,
             addons: item.addons.length > 0
