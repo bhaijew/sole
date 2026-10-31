@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import toast from 'react-hot-toast';
@@ -34,6 +35,7 @@ import {
   Check,
   Calendar,
   Edit3,
+  Bike,
 } from 'lucide-react';
 import type { Order, OrderItem } from '@/lib/types';
 import OrderRecreateModal from '@/components/pos/OrderRecreateModal';
@@ -313,9 +315,24 @@ export default function OrdersPage() {
               effectiveStatus = opt.status;
             }
 
+            // Determine verification state from cloud order
+            const isUnverifiedCloud =
+              co.is_verified === false ||
+              co.is_verified === 0 ||
+              String(co.notes || '').includes('[ONLINE_MENU: AWAITING_VERIFICATION]') ||
+              String(co.special_instructions || '').includes('AWAITING_VERIFICATION');
+            const cloudVerifiedFlag = isUnverifiedCloud ? 0 : 1;
+
             if (alreadyExistsIndex >= 0) {
               // Update status in existing order if optimistic or cloud status changed
               fetched[alreadyExistsIndex].status = effectiveStatus as any;
+              (fetched[alreadyExistsIndex] as any).is_verified = cloudVerifiedFlag;
+              if (co.delivery_rider_name) {
+                (fetched[alreadyExistsIndex] as any).delivery_rider_name = co.delivery_rider_name;
+              }
+              if (co.delivery_rider_phone) {
+                (fetched[alreadyExistsIndex] as any).delivery_rider_phone = co.delivery_rider_phone;
+              }
             } else {
               // Insert synthetic order for UI
               let parsedItems: any[] = [];
@@ -384,6 +401,9 @@ export default function OrdersPage() {
                 order_source: 'online',
                 delivery_address: co.delivery_address || null,
                 delivery_fee: Number(co.delivery_fee || 0),
+                delivery_rider_name: co.delivery_rider_name || (co.notes?.match(/\[RIDER:\s*([^|]+)/i)?.[1]?.trim() ?? null),
+                delivery_rider_phone: co.delivery_rider_phone || (co.notes?.match(/Phone:\s*([^\]]+)/i)?.[1]?.trim() ?? null),
+                is_verified: cloudVerifiedFlag,
                 cloud_order_id: String(co.id),
                 shop_id: co.shop_id,
               };
@@ -579,8 +599,26 @@ export default function OrdersPage() {
     ? orders.filter(isOrderFromToday)
     : orders;
 
-  // Filtered orders
+  // Unverified online menu orders waiting in /verify
+  const unverifiedCount = orders.filter((o) =>
+    (o as any).is_verified === 0 ||
+    (o as any).is_verified === false ||
+    o.special_instructions?.includes('AWAITING_VERIFICATION') ||
+    (o as any).notes?.includes('AWAITING_VERIFICATION')
+  ).length;
+
+  // Filtered orders (Strictly excludes unverified orders until verified in /verify or Pizza Admin)
   const filteredOrders = baseOrders.filter((order) => {
+    const isUnverified =
+      (order as any).is_verified === 0 ||
+      (order as any).is_verified === false ||
+      order.special_instructions?.includes('AWAITING_VERIFICATION') ||
+      (order as any).notes?.includes('AWAITING_VERIFICATION');
+
+    if (isUnverified) {
+      return false; // Hold back from live operational board!
+    }
+
     const isOnline = (order as any).order_source === 'online' || order.type === 'online';
     if (filterType === 'online' && !isOnline) return false;
     if (filterType === 'dine_in' && order.type !== 'dine_in') return false;
@@ -605,11 +643,17 @@ export default function OrdersPage() {
     return true;
   });
 
-  // KPI Counts scoped to selected date range (Today vs All)
-  const totalCount = baseOrders.length;
-  const onlineCount = baseOrders.filter((o) => (o as any).order_source === 'online' || o.type === 'online').length;
-  const pendingCount = baseOrders.filter((o) => o.status === 'pending').length;
-  const preparingCount = baseOrders.filter((o) => o.status === 'preparing').length;
+  // KPI Counts scoped to verified orders in selected date range
+  const verifiedBase = baseOrders.filter((o) => !(
+    (o as any).is_verified === 0 ||
+    (o as any).is_verified === false ||
+    o.special_instructions?.includes('AWAITING_VERIFICATION') ||
+    (o as any).notes?.includes('AWAITING_VERIFICATION')
+  ));
+  const totalCount = verifiedBase.length;
+  const onlineCount = verifiedBase.filter((o) => (o as any).order_source === 'online' || o.type === 'online').length;
+  const pendingCount = verifiedBase.filter((o) => o.status === 'pending').length;
+  const preparingCount = verifiedBase.filter((o) => o.status === 'preparing').length;
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -742,6 +786,29 @@ export default function OrdersPage() {
           </button>
         </div>
       </div>
+
+      {/* Awaiting Verification Banner */}
+      {unverifiedCount > 0 && (
+        <div className="mb-4 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-600 text-white p-3.5 rounded-xl shadow-md flex items-center justify-between animate-pulse">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🔔</span>
+            <div>
+              <div className="font-black text-sm tracking-wide">
+                {unverifiedCount} Online Order{unverifiedCount > 1 ? 's' : ''} Awaiting Verification!
+              </div>
+              <p className="text-xs text-amber-100">
+                New online menu orders must be verified before appearing on the live operational board.
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/verify"
+            className="px-4 py-2 bg-white text-orange-700 hover:bg-orange-50 font-black text-xs rounded-lg shadow-sm transition-all flex items-center gap-1.5 shrink-0"
+          >
+            <span>Review & Verify Orders →</span>
+          </Link>
+        </div>
+      )}
 
       {/* ============================================================ */}
       {/* KPI METRICS BAR */}
@@ -1012,6 +1079,37 @@ export default function OrdersPage() {
                       <div className="text-[11px] text-slate-600 bg-amber-50/70 border border-amber-200 rounded p-1.5 mb-2 flex items-start gap-1">
                         <MapPin size={12} className="text-amber-600 shrink-0 mt-0.5" />
                         <span className="line-clamp-2">{order.delivery_address}</span>
+                      </div>
+                    )}
+
+                    {/* Assigned Rider if delivery */}
+                    {Boolean((order as any).delivery_rider_name || order.special_instructions?.includes('[RIDER:')) && (
+                      <div className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded p-1.5 mb-2 flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <Bike size={12} className="text-emerald-600 shrink-0" />
+                          <span className="font-bold truncate">
+                            RIDER: {(order as any).delivery_rider_name || (order.special_instructions?.match(/\[RIDER:\s*([^|]+)/i)?.[1]?.trim())}
+                          </span>
+                        </div>
+                        {Boolean((order as any).delivery_rider_phone || order.special_instructions?.match(/Phone:\s*([^\]]+)/i)) && (
+                          <span className="text-[10px] font-mono text-emerald-700 bg-emerald-100/70 px-1 py-0.5 rounded">
+                            {(order as any).delivery_rider_phone || (order.special_instructions?.match(/Phone:\s*([^\]]+)/i)?.[1]?.trim())}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Delivery Fee preview if delivery */}
+                    {(order.type === 'delivery' || order.delivery_address || (order.delivery_fee ?? 0) > 0 || (order.delivery_charge ?? 0) > 0) && (
+                      <div className="text-[10.5px] text-emerald-700 bg-emerald-50/50 border border-emerald-100 rounded px-2 py-1 mb-2 flex items-center justify-between">
+                        <span className="font-semibold flex items-center gap-1">
+                          <span>🛵 Delivery Fee:</span>
+                          <strong>
+                            {Number(order.delivery_fee || order.delivery_charge || 0) > 0
+                              ? `${currency}${Number(order.delivery_fee || order.delivery_charge).toLocaleString()}`
+                              : 'Free (Rs. 0)'}
+                          </strong>
+                        </span>
                       </div>
                     )}
 

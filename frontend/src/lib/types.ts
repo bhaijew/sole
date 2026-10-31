@@ -165,6 +165,9 @@ export interface Order {
   order_source?: string;
   delivery_address?: string | null;
   delivery_fee?: number;
+  delivery_rider_name?: string | null;
+  delivery_rider_phone?: string | null;
+  is_verified?: number | boolean;
   cloud_order_id?: string | null;
   shop_id?: number | null;
   payment_method?: 'cash' | 'online' | 'paid' | string;
