@@ -8,19 +8,62 @@ function getActiveShopId(db: any, reqQueryShopId?: any): number | null {
   return shop ? parseInt(shop, 10) : null;
 }
 
+/**
+ * Calculates operational business shift range (05:00 AM to 04:59:59 AM next day)
+ * Prevents midnight orders (12:00 AM - 04:00 AM) from getting severed or zeroing sales stats.
+ */
+function getOperationalDateRange(requestedDate?: string): { startDate: string; endDate: string; businessDate: string } {
+  const now = new Date();
+  let targetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  if (!requestedDate) {
+    if (now.getHours() < 5) {
+      targetDate.setDate(targetDate.getDate() - 1);
+    }
+  } else {
+    const parts = requestedDate.split('-').map(Number);
+    if (parts.length === 3) {
+      targetDate = new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+  }
+
+  const y = targetDate.getFullYear();
+  const m = String(targetDate.getMonth() + 1).padStart(2, '0');
+  const d = String(targetDate.getDate()).padStart(2, '0');
+  const businessDate = `${y}-${m}-${d}`;
+
+  const startD = new Date(targetDate);
+  startD.setHours(5, 0, 0, 0);
+
+  const endD = new Date(targetDate);
+  endD.setDate(endD.getDate() + 1);
+  endD.setHours(4, 59, 59, 999);
+
+  const formatSqlite = (dt: Date) => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())} ${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`;
+  };
+
+  return {
+    startDate: formatSqlite(startD),
+    endDate: formatSqlite(endD),
+    businessDate,
+  };
+}
+
 router.get('/daily-stats', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const today = new Date().toISOString().slice(0, 10);
+    const shiftRange = getOperationalDateRange(req.query.date as string);
     const shopId = getActiveShopId(db, req.query.shop_id);
 
     let salesQuery = `
       SELECT COALESCE(SUM(b.paid_amount), 0) as sales
       FROM bills b
       JOIN orders o ON b.order_id = o.id
-      WHERE date(b.created_at) = date(?)
+      WHERE (b.created_at >= ? AND b.created_at <= ?)
     `;
-    const salesParams: any[] = [today];
+    const salesParams: any[] = [shiftRange.startDate, shiftRange.endDate];
     if (shopId) {
       salesQuery += ' AND o.shop_id = ?';
       salesParams.push(shopId);

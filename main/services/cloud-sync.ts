@@ -875,7 +875,12 @@ export async function pushTableToCloud(table: {
 
   try {
     const db = getDatabase();
-    const shopId = Number(getSetting('cloud_shop_id', '')) || 4;
+    const shopIdStr = getSetting('cloud_shop_id', '');
+    const shopId = shopIdStr ? Number(shopIdStr) : null;
+    if (!shopId) {
+      console.warn('[CloudSync] Cannot push table: No valid cloud_shop_id configured');
+      return { success: false, error: 'Shop ID not configured in settings' };
+    }
     const cloudStatus = table.status === 'reserved' ? 'reserved' : (table.status === 'inactive' || table.status === 'cleaning' ? 'inactive' : 'active');
     
     const payload: any = {
@@ -1428,7 +1433,12 @@ export async function pushOrderToCloud(order: any, rawItems: any[]): Promise<boo
   const client = getSupabaseClient();
   if (!client) return false;
 
-  const shopId = order.shop_id || getSetting('cloud_shop_id', '');
+  const rawShopId = order.shop_id || getSetting('cloud_shop_id', '');
+  const shopId = rawShopId ? Number(rawShopId) : null;
+  if (!shopId) {
+    console.warn('[CloudSync] Cannot push order: No valid shop_id configured in order or settings');
+    return false;
+  }
 
   try {
     const db = getDatabase();
@@ -1921,6 +1931,7 @@ export function getCloudSyncStatus(): {
   currentShopId: string;
   currentShopName: string;
   currentShopSlug: string;
+  terminalCode: string;
 } {
   const url = getSetting('supabase_url', 'https://uadrrjrlhfttithjmdye.supabase.co');
   const syncEnabled = getSetting('cloud_sync_enabled', '1') === '1';
@@ -1947,6 +1958,7 @@ export function getCloudSyncStatus(): {
     currentShopId,
     currentShopName,
     currentShopSlug,
+    terminalCode: getSetting('terminal_code', 'T1'),
   };
 }
 
@@ -2054,6 +2066,7 @@ export function updateCloudSyncSettings(settings: {
   cloud_auto_print_kot?: boolean;
   cloud_auto_print_bill?: boolean;
   pizza_system_mode?: 'integrated' | 'standalone';
+  terminal_code?: string;
 }): void {
   if (settings.pizza_system_mode !== undefined) {
     setSetting('pizza_system_mode', settings.pizza_system_mode);
@@ -2072,6 +2085,9 @@ export function updateCloudSyncSettings(settings: {
   }
   if (settings.cloud_auto_print_bill !== undefined) {
     setSetting('cloud_auto_print_bill', settings.cloud_auto_print_bill ? '1' : '0');
+  }
+  if (settings.terminal_code !== undefined) {
+    setSetting('terminal_code', settings.terminal_code.trim().toUpperCase());
   }
 
   // Reset client so new credentials take effect

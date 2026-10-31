@@ -105,7 +105,9 @@ export default function SettingsPage() {
     currentShopId: '3',
     currentShopName: 'Pizza Crust - Master Branch',
     currentShopSlug: 'pizza-crust-main',
+    terminalCode: 'T1',
   });
+  const [terminalInput, setTerminalInput] = useState('T1');
   const [cloudShops, setCloudShops] = useState<Array<{ id: number; name: string; slug: string; owner_name: string; status: string; currency_symbol: string }>>([]);
   const [selectedShopId, setSelectedShopId] = useState<string>('3');
   const [switchingShop, setSwitchingShop] = useState(false);
@@ -120,6 +122,9 @@ export default function SettingsPage() {
       const res = await api.get('/cloud-sync/status');
       if (res.data?.success) {
         setCloudStatus((prev) => ({ ...prev, ...res.data }));
+        if (res.data.terminalCode) {
+          setTerminalInput(res.data.terminalCode);
+        }
         if (res.data.currentShopId) {
           setSelectedShopId(String(res.data.currentShopId));
         }
@@ -250,6 +255,17 @@ export default function SettingsPage() {
       fetchGlobalMode();
     } catch {
       toast.error('Failed to update operating mode');
+    }
+  };
+
+  const saveTerminalCode = async () => {
+    try {
+      const cleanCode = terminalInput.trim().toUpperCase() || 'T1';
+      await api.post('/cloud-sync/settings', { terminal_code: cleanCode });
+      setCloudStatus((prev) => ({ ...prev, terminalCode: cleanCode }));
+      toast.success(`Counter Terminal set to ${cleanCode}`);
+    } catch (err: any) {
+      toast.error('Failed to save terminal code: ' + (err.message || 'Error'));
     }
   };
 
@@ -1832,6 +1848,28 @@ Complaint: ${billForm.complaintNumber || '03121234567'}
                     value={cloudStatus.autoPrintKot}
                     onChange={(v) => updateCloudSetting('cloud_auto_print_kot', v)}
                   />
+                </div>
+                <div className="flex items-center justify-between py-2 border-b border-gray-50">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Counter / Terminal ID</p>
+                    <p className="text-xs text-gray-500">Unique ID for this POS machine (e.g. T1, T2, C1) to avoid order clashes across multiple counters</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      className="w-20 px-2 py-1 text-xs uppercase font-mono font-bold text-center border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      value={terminalInput}
+                      onChange={(e) => setTerminalInput(e.target.value.toUpperCase())}
+                      placeholder="T1"
+                    />
+                    <button
+                      type="button"
+                      onClick={saveTerminalCode}
+                      className="px-2.5 py-1 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition"
+                    >
+                      Save
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
