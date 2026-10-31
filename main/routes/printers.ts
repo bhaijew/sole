@@ -366,7 +366,7 @@ async function resolveOrderForPrinting(db: any, orderIdOrNumber: any, fallbackBi
   // 1. Try finding locally in SQLite: id, order_number, cloud_order_id
   if (!isNaN(numId) && numId > 0) {
     order = db.prepare(`
-      SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name, c.phone as customer_phone
+      SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name, COALESCE(NULLIF(o.customer_phone, ''), c.phone) as customer_phone
       FROM orders o
       LEFT JOIN customers c ON o.customer_id = c.id
       WHERE o.id = ?
@@ -375,7 +375,7 @@ async function resolveOrderForPrinting(db: any, orderIdOrNumber: any, fallbackBi
 
   if (!order && rawId) {
     order = db.prepare(`
-      SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name, c.phone as customer_phone
+      SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name, COALESCE(NULLIF(o.customer_phone, ''), c.phone) as customer_phone
       FROM orders o
       LEFT JOIN customers c ON o.customer_id = c.id
       WHERE o.order_number = ? OR o.cloud_order_id = ?
@@ -387,7 +387,7 @@ async function resolveOrderForPrinting(db: any, orderIdOrNumber: any, fallbackBi
     const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(fallbackBillId);
     if (bill && bill.order_id) {
       order = db.prepare(`
-        SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name, c.phone as customer_phone
+        SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name, COALESCE(NULLIF(o.customer_phone, ''), c.phone) as customer_phone
         FROM orders o
         LEFT JOIN customers c ON o.customer_id = c.id
         WHERE o.id = ? OR o.order_number = ? OR o.cloud_order_id = ?
@@ -416,7 +416,7 @@ async function resolveOrderForPrinting(db: any, orderIdOrNumber: any, fallbackBi
           await handleIncomingCloudOrder(cloudOrder, true);
 
           order = db.prepare(`
-            SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name, c.phone as customer_phone
+            SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name, COALESCE(NULLIF(o.customer_phone, ''), c.phone) as customer_phone
             FROM orders o
             LEFT JOIN customers c ON o.customer_id = c.id
             WHERE o.cloud_order_id = ? OR o.order_number = ?

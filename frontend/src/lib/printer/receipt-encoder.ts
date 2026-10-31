@@ -147,12 +147,18 @@ function buildSingleCopyBytes(
     customerName = 'Online Customer';
   }
 
-  let customerPhone = order?.customer?.phone || (order as any)?.customer_phone || '';
-  if (!customerPhone && (order as any)?.notes && (order as any).notes.includes('Phone: ')) {
-    customerPhone = (order as any).notes.split('Phone: ')[1]?.split('|')[0]?.trim();
+  let customerPhone = '';
+  const reNotesText = `${order?.special_instructions || ''} ${(order as any)?.notes || ''}`;
+  if (reNotesText.includes('Phone: ')) {
+    const rawP = reNotesText.split('Phone: ')[1]?.split('|')[0]?.split('[')[0]?.trim();
+    if (rawP && rawP.length >= 7) customerPhone = rawP;
   }
-  if (!customerPhone && order?.special_instructions && order.special_instructions.includes('Phone: ')) {
-    customerPhone = order.special_instructions.split('Phone: ')[1]?.split('|')[0]?.trim();
+  if (!customerPhone) {
+    const directP = ((order as any)?.customer_phone || order?.customer?.phone || '').trim();
+    if (directP && directP !== '03345725942') customerPhone = directP;
+  }
+  if (!customerPhone && ((order as any)?.customer_phone || order?.customer?.phone)) {
+    customerPhone = ((order as any)?.customer_phone || order?.customer?.phone).trim();
   }
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });

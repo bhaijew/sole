@@ -559,12 +559,18 @@ function formatSingleReceiptCopy(
     customerName = 'Online Customer';
   }
 
-  let customerPhone = order?.customer?.phone || order?.customer_phone || '';
-  if (!customerPhone && order?.notes && order.notes.includes('Phone: ')) {
-    customerPhone = order.notes.split('Phone: ')[1]?.split('|')[0]?.trim();
+  let customerPhone = '';
+  const notesText = `${order?.special_instructions || ''} ${order?.notes || ''}`;
+  if (notesText.includes('Phone: ')) {
+    const rawP = notesText.split('Phone: ')[1]?.split('|')[0]?.split('[')[0]?.trim();
+    if (rawP && rawP.length >= 7) customerPhone = rawP;
   }
-  if (!customerPhone && order?.special_instructions && order.special_instructions.includes('Phone: ')) {
-    customerPhone = order.special_instructions.split('Phone: ')[1]?.split('|')[0]?.trim();
+  if (!customerPhone) {
+    const directP = (order?.customer_phone || order?.customer?.phone || '').trim();
+    if (directP && directP !== '03345725942') customerPhone = directP;
+  }
+  if (!customerPhone && (order?.customer_phone || order?.customer?.phone)) {
+    customerPhone = (order.customer_phone || order.customer?.phone).trim();
   }
   // Filter out any fake/dummy phone numbers (e.g. 03333333, repeating digits, or less than 7 chars)
   if (customerPhone && (/^03{4,}$/.test(customerPhone.replace(/\D/g, '')) || /^0+$/.test(customerPhone.replace(/\D/g, '')) || customerPhone.length < 7)) {

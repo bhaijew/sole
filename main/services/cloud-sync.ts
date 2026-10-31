@@ -1053,11 +1053,15 @@ export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck 
       if (phone) {
         custRow = db.prepare('SELECT id FROM customers WHERE phone = ?').get(phone);
       }
-      if (!custRow && name) {
+      const isGenericName = !name || name.toLowerCase() === 'online customer' || name.toLowerCase() === 'guest';
+      if (!custRow && name && !isGenericName) {
         custRow = db.prepare('SELECT id FROM customers WHERE name = ?').get(name);
       }
       if (custRow?.id) {
         customerId = custRow.id;
+        if (phone && !custRow.phone) {
+          db.prepare("UPDATE customers SET phone = ?, updated_at = datetime('now') WHERE id = ?").run(phone, customerId);
+        }
       } else {
         customerId = `cust-cloud-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
         db.prepare(`
@@ -1089,16 +1093,17 @@ export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck 
         INSERT INTO orders (
           order_number, cloud_order_id, order_source, type, status,
           subtotal, total, delivery_charge, delivery_fee, delivery_address,
-          special_instructions, customer_id, customer_name, shop_id, is_synced, created_at
+          special_instructions, customer_id, customer_name, customer_phone, shop_id, is_synced, created_at
         ) VALUES (
           ?, ?, 'online', ?, ?,
           ?, ?, ?, ?, ?,
-          ?, ?, ?, ?, 1, ?
+          ?, ?, ?, ?, ?, 1, ?
         )
       `);
 
       const createdAt = cloudOrder.created_at ? new Date(cloudOrder.created_at).toISOString() : new Date().toISOString();
       const onlineCustName = cloudOrder.customer_name ? String(cloudOrder.customer_name).trim() : null;
+      const onlineCustPhone = cloudOrder.customer_phone ? String(cloudOrder.customer_phone).trim() : null;
       const notes = [
         cloudOrder.notes,
         cloudOrder.customer_name ? `Customer: ${cloudOrder.customer_name}` : null,
@@ -1119,6 +1124,7 @@ export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck 
         notes || null,
         customerId,
         onlineCustName,
+        onlineCustPhone,
         cloudOrder.shop_id ? Number(cloudOrder.shop_id) : (currentShopId ? Number(currentShopId) : null),
         createdAt
       );
