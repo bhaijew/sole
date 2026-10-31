@@ -1029,15 +1029,26 @@ export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck 
       console.log(`[CloudSync] Order ${orderNumber} originated on POS but not found locally. Syncing into database...`);
     }
 
-    // Check for duplicate
-    const existing = db.prepare('SELECT id, status FROM orders WHERE cloud_order_id = ? OR order_number = ?').get(cloudOrderIdStr, orderNumber) as any;
+    // Check for duplicate & verify status updates
+    const existing = db.prepare('SELECT id, status, is_verified FROM orders WHERE cloud_order_id = ? OR order_number = ?').get(cloudOrderIdStr, orderNumber) as any;
     if (existing) {
-      // If status changed in cloud, update local
       const localStatus = mapCloudStatusToLocal(cloudOrder.status);
-      if (existing.status !== localStatus) {
-        db.prepare("UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ?").run(localStatus, existing.id);
+      const wasVerified = Boolean(existing.is_verified);
+      const isNowVerified = cloudOrder.is_verified === true || cloudOrder.is_verified === 1 || String(cloudOrder.notes || '').includes('VERIFIED & ACCEPTED');
+
+      if (existing.status !== localStatus || (!wasVerified && isNowVerified)) {
+        db.prepare("UPDATE orders SET status = ?, is_verified = ?, verified_at = COALESCE(verified_at, datetime('now')), updated_at = datetime('now') WHERE id = ?")
+          .run(localStatus, isNowVerified ? 1 : 0, existing.id);
         notifyKdsUpdate();
-        broadcastCloudEvent('order-status-updated', { orderNumber, status: localStatus });
+        broadcastCloudEvent('order-status-updated', { orderNumber, status: localStatus, is_verified: isNowVerified });
+
+        // AUTO-PRINT SLIP IMMEDIATELY WHEN VERIFIED FROM ADMIN PANEL!
+        if (!wasVerified && isNowVerified) {
+          console.log(`[CloudSync] Order ${orderNumber} was VERIFIED in Admin Panel! Auto-printing bill and KOT...`);
+          triggerVerifiedOrderPrints(existing.id, cloudOrder).catch((e) => {
+            console.error('[CloudSync] Error auto-printing verified order:', e);
+          });
+        }
       }
       return false;
     }
@@ -1089,15 +1100,20 @@ export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck 
 
     // Insert into local orders and order_items in a transaction
     const insertTx = db.transaction(() => {
+      const isUnverifiedOnline = !isFromPos && (cloudOrder.is_verified === false || cloudOrder.is_verified === 0 || String(cloudOrder.notes || '').includes('AWAITING_VERIFICATION'));
+      const isVerifiedVal = isUnverifiedOnline ? 0 : 1;
+
       const orderStmt = db.prepare(`
         INSERT INTO orders (
           order_number, cloud_order_id, order_source, type, status,
           subtotal, total, delivery_charge, delivery_fee, delivery_address,
-          special_instructions, customer_id, customer_name, customer_phone, shop_id, is_synced, created_at
+          special_instructions, customer_id, customer_name, customer_phone, shop_id,
+          is_verified, verified_at, is_synced, created_at
         ) VALUES (
           ?, ?, 'online', ?, ?,
           ?, ?, ?, ?, ?,
-          ?, ?, ?, ?, ?, 1, ?
+          ?, ?, ?, ?, ?,
+          ?, ?, 1, ?
         )
       `);
 
@@ -1126,6 +1142,8 @@ export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck 
         onlineCustName,
         onlineCustPhone,
         cloudOrder.shop_id ? Number(cloudOrder.shop_id) : (currentShopId ? Number(currentShopId) : null),
+        isVerifiedVal,
+        isVerifiedVal ? createdAt : null,
         createdAt
       );
 
@@ -1193,64 +1211,15 @@ export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck 
     broadcastCloudEvent('online-order-received', { orderNumber, total, localOrderId, customerName: cloudOrder.customer_name });
     broadcastCloudEvent('order-synced', { orderNumber, localOrderId });
 
-    // 3. Auto-print Customer Bill (Receipt) if enabled (for online storefront orders only)
-    const autoPrintBill = getSetting('cloud_auto_print_bill', '1') === '1';
-    if (!isFromPos && autoPrintBill) {
-      try {
-        const localOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(localOrderId) as any;
-        const localItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(localOrderId) as any[];
+    // 3. Verification & Auto-Print Logic
+    const isUnverifiedOnline = !isFromPos && (cloudOrder.is_verified === false || cloudOrder.is_verified === 0 || String(cloudOrder.notes || '').includes('AWAITING_VERIFICATION'));
 
-        if (localOrder) {
-          localOrder.customer_name = cloudOrder.customer_name || localOrder.customer_name;
-          localOrder.customer_phone = cloudOrder.customer_phone || localOrder.customer_phone;
-          localOrder.items = localItems;
-
-          const bill = {
-            order_id: localOrderId,
-            subtotal: localOrder.subtotal,
-            total: localOrder.total,
-            bill_number: `B-${orderNumber}`,
-            payment_status: 'paid',
-            payment_details: [{ method: 'Online', amount: localOrder.total }],
-            created_at: localOrder.created_at,
-          };
-
-          const business = {
-            name: getSetting('business_name') || getSetting('cloud_shop_name') || getSetting('shop_name') || 'Sole What POS',
-            address: getSetting('business_address') || getSetting('address') || '',
-            phone: getSetting('business_phone') || getSetting('phone') || '',
-            gstin: getSetting('gstin'),
-            easypaisa_number: getSetting('easypaisa_number'),
-            easypaisa_title: getSetting('easypaisa_title'),
-            complaint_number: getSetting('complaint_number') || getSetting('business_phone') || getSetting('phone') || '',
-            footer_message: getSetting('bill_footer_message'),
-          };
-
-          console.log(`[CloudSync] Triggering Auto-Print Customer Bill for online order ${orderNumber}...`);
-          await printReceipt(localOrder, bill, business, 'classic', 'customer');
-        }
-      } catch (printBillErr) {
-        console.error('[CloudSync] Failed to auto-print Customer Bill for online order:', printBillErr);
-      }
-    }
-
-    // 4. Auto-print KOT if enabled (for online storefront orders only)
-    const autoPrint = getSetting('cloud_auto_print_kot', '1') === '1';
-    if (!isFromPos && autoPrint) {
-      try {
-        const localOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(localOrderId) as any;
-        const localItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(localOrderId) as any[];
-
-        if (localOrder) {
-          localOrder.customer_name = cloudOrder.customer_name || localOrder.customer_name;
-          localOrder.customer_phone = cloudOrder.customer_phone || localOrder.customer_phone;
-        }
-
-        console.log(`[CloudSync] Triggering Auto-Print KOT for online order ${orderNumber}...`);
-        await printKOT(localOrder, localItems, 'Kitchen (Online)');
-      } catch (printErr) {
-        console.error('[CloudSync] Failed to auto-print KOT for online order:', printErr);
-      }
+    if (isUnverifiedOnline) {
+      console.log(`[CloudSync] Order ${orderNumber} is AWAITING VERIFICATION from Admin / POS. Holding auto-print until verified.`);
+      broadcastCloudEvent('order-awaiting-verification', { orderNumber, total, localOrderId, customerName: cloudOrder.customer_name });
+    } else {
+      // Verified order: Auto-print Customer Bill + Kitchen KOT
+      await triggerVerifiedOrderPrints(localOrderId, cloudOrder);
     }
 
     return true;
@@ -2192,3 +2161,81 @@ export async function initCloudSync(): Promise<void> {
   syncIntervalHandle.unref();
 }
 
+
+/**
+ * Automatically prints Customer Bill (Receipt) and Kitchen KOT when an online menu order is verified
+ * (either from Pizza Admin /admin/verify or from FloDesktop POS /verify).
+ */
+export async function triggerVerifiedOrderPrints(localOrderId: number, cloudOrder?: any): Promise<boolean> {
+  const db = getDatabase();
+  try {
+    const localOrder = db.prepare(`
+      SELECT o.*, 
+        COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name,
+        COALESCE(NULLIF(o.customer_phone, ''), c.phone) as customer_phone
+      FROM orders o
+      LEFT JOIN customers c ON o.customer_id = c.id
+      WHERE o.id = ?
+    `).get(localOrderId) as any;
+
+    if (!localOrder) return false;
+
+    const localItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(localOrderId) as any[];
+    localOrder.items = localItems;
+
+    if (cloudOrder) {
+      if (cloudOrder.customer_name) localOrder.customer_name = cloudOrder.customer_name;
+      if (cloudOrder.customer_phone) localOrder.customer_phone = cloudOrder.customer_phone;
+    }
+
+    const orderNumber = localOrder.order_number;
+    const autoPrintBill = getSetting('cloud_auto_print_bill', '1') === '1';
+    const autoPrintKot = getSetting('cloud_auto_print_kot', '1') === '1';
+
+    // 1. Auto-print Customer Bill
+    if (autoPrintBill) {
+      try {
+        const bill = {
+          order_id: localOrderId,
+          subtotal: localOrder.subtotal,
+          total: localOrder.total,
+          bill_number: `B-${orderNumber}`,
+          payment_status: 'paid',
+          payment_details: [{ method: localOrder.payment_method || 'Online', amount: localOrder.total }],
+          created_at: localOrder.created_at,
+        };
+
+        const business = {
+          name: getSetting('business_name') || getSetting('cloud_shop_name') || getSetting('shop_name') || 'Sole What POS',
+          address: getSetting('business_address') || getSetting('address') || '',
+          phone: getSetting('business_phone') || getSetting('phone') || '',
+          gstin: getSetting('gstin'),
+          easypaisa_number: getSetting('easypaisa_number'),
+          easypaisa_title: getSetting('easypaisa_title'),
+          complaint_number: getSetting('complaint_number') || getSetting('business_phone') || getSetting('phone') || '',
+          footer_message: getSetting('bill_footer_message'),
+        };
+
+        console.log(`[CloudSync] Auto-printing Customer Bill for verified order ${orderNumber}...`);
+        await printReceipt(localOrder, bill, business, 'classic', 'customer');
+      } catch (printBillErr) {
+        console.error('[CloudSync] Failed to print Customer Bill for verified order:', printBillErr);
+      }
+    }
+
+    // 2. Auto-print Kitchen KOT
+    if (autoPrintKot) {
+      try {
+        console.log(`[CloudSync] Auto-printing KOT for verified order ${orderNumber}...`);
+        await printKOT(localOrder, localItems, 'Kitchen (Online)');
+      } catch (printKotErr) {
+        console.error('[CloudSync] Failed to print KOT for verified order:', printKotErr);
+      }
+    }
+
+    return true;
+  } catch (err) {
+    console.error('[CloudSync] triggerVerifiedOrderPrints failed:', err);
+    return false;
+  }
+}

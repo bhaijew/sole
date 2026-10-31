@@ -184,6 +184,8 @@ export interface OrderItem {
   addons: { id?: number; name: string; price?: number }[] | null;
   special_instructions: string | null;
   status: 'pending' | 'preparing' | 'ready' | 'served';
+  variant_selection?: string | null;
+  items_included?: string | null;
 }
 
 export interface Bill {

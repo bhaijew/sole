@@ -848,4 +848,151 @@ router.post('/:id/recreate', async (req: Request, res: Response) => {
 });
 
 
+
+// GET /api/orders/verify-pending — list all online orders awaiting verification
+router.get('/verify-pending', async (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT o.*,
+        COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name,
+        COALESCE(NULLIF(o.customer_phone, ''), c.phone) as customer_phone
+      FROM orders o
+      LEFT JOIN customers c ON o.customer_id = c.id
+      WHERE (o.is_verified = 0 OR o.is_verified IS NULL OR o.special_instructions LIKE '%AWAITING_VERIFICATION%')
+        AND o.status NOT IN ('cancelled', 'completed')
+      ORDER BY o.created_at DESC
+    `).all();
+
+    const result = rows.map((order: any) => {
+      const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson);
+      return { ...order, items };
+    });
+
+    res.json({ success: true, orders: result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/orders/:id/verify — verify an online order and auto-print thermal slips
+router.post('/:id/verify', async (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const orderId = req.params.id;
+    const staff = req.body?.cashier_name || 'POS Cashier';
+
+    const order = db.prepare('SELECT * FROM orders WHERE id = ? OR order_number = ?').get(orderId, orderId) as any;
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const nowIso = new Date().toISOString();
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    let updatedNotes = order.special_instructions || '';
+    updatedNotes = updatedNotes.replace(/\[ONLINE_MENU:\s*AWAITING_VERIFICATION\]\s*/gi, '');
+    updatedNotes = `[VERIFIED & ACCEPTED by ${staff} at ${timeStr} - Sent to Live Orders] ${updatedNotes}`.trim();
+
+    db.prepare(`
+      UPDATE orders 
+      SET is_verified = 1, verified_at = ?, verified_by = ?, special_instructions = ?, status = 'pending', updated_at = ?
+      WHERE id = ?
+    `).run(nowIso, staff, updatedNotes, nowIso, order.id);
+
+    // Sync verification to Supabase Cloud
+    if (order.cloud_order_id) {
+      try {
+        const { getSupabaseClient } = await import('../services/cloud-sync');
+        const client = getSupabaseClient();
+        if (client) {
+          await client.from('orders').update({
+            is_verified: true,
+            verified_at: nowIso,
+            verified_by: staff,
+            status: 'pending',
+            notes: updatedNotes,
+          }).eq('id', Number(order.cloud_order_id));
+        }
+      } catch (cloudErr) {
+        console.warn('[Orders] Cloud verify sync warning:', cloudErr);
+      }
+    }
+
+    notifyKdsUpdate();
+
+    // Auto-print thermal slips (Customer Bill + Kitchen KOT)
+    try {
+      const { triggerVerifiedOrderPrints } = await import('../services/cloud-sync');
+      await triggerVerifiedOrderPrints(order.id);
+    } catch (printErr) {
+      console.error('[Orders] Auto-print on verify error:', printErr);
+    }
+
+    const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id) as any;
+    const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson);
+
+    return res.json({
+      success: true,
+      message: `Order #${order.order_number} verified and sent to thermal printer.`,
+      order: Object.assign({}, updatedOrder, { items })
+    });
+  } catch (err: any) {
+    console.error('[Orders] Verify error:', err);
+    res.status(500).json({ error: err.message || 'Failed to verify order' });
+  }
+});
+
+// POST /api/orders/:id/reject — reject an unverified or prank online order
+router.post('/:id/reject', async (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const orderId = req.params.id;
+    const reason = req.body?.reason || 'Cancelled by Store Staff';
+
+    const order = db.prepare('SELECT * FROM orders WHERE id = ? OR order_number = ?').get(orderId, orderId) as any;
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const nowIso = new Date().toISOString();
+    let updatedNotes = order.special_instructions || '';
+    updatedNotes = `[REJECTED: ${reason}] ${updatedNotes}`.trim();
+
+    db.prepare(`
+      UPDATE orders 
+      SET status = 'cancelled', special_instructions = ?, cancellation_reason = ?, cancelled_at = ?, updated_at = ?
+      WHERE id = ?
+    `).run(updatedNotes, reason, nowIso, nowIso, order.id);
+
+    // Sync to Supabase Cloud
+    if (order.cloud_order_id) {
+      try {
+        const { getSupabaseClient } = await import('../services/cloud-sync');
+        const client = getSupabaseClient();
+        if (client) {
+          await client.from('orders').update({
+            status: 'cancelled',
+            notes: updatedNotes,
+            cancellation_reason: reason,
+          }).eq('id', Number(order.cloud_order_id));
+        }
+      } catch (cloudErr) {
+        console.warn('[Orders] Cloud reject sync warning:', cloudErr);
+      }
+    }
+
+    notifyKdsUpdate();
+
+    return res.json({
+      success: true,
+      message: `Order #${order.order_number} rejected.`
+    });
+  } catch (err: any) {
+    console.error('[Orders] Reject error:', err);
+    res.status(500).json({ error: err.message || 'Failed to reject order' });
+  }
+});
+
 export const orderRoutes = router;
+
