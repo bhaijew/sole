@@ -706,10 +706,14 @@ export async function syncStaffFromCloud(): Promise<{
   }
 }
 
+let lastTablesFingerprint = '';
+let lastTablesSyncTimestamp = 0;
+const TABLES_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache TTL
+
 /**
  * Pull and synchronize Tables between local SQLite and Pizza System cloud (Supabase)
  */
-export async function syncTablesFromCloud(forcedShopId?: number | string): Promise<{
+export async function syncTablesFromCloud(forcedShopId?: number | string, forceRefresh = false): Promise<{
   success: boolean;
   message: string;
   count?: number;
@@ -721,6 +725,11 @@ export async function syncTablesFromCloud(forcedShopId?: number | string): Promi
   if (!client) return { success: false, message: 'Supabase client not available' };
 
   try {
+    const nowMs = Date.now();
+    if (!forceRefresh && (nowMs - lastTablesSyncTimestamp < TABLES_CACHE_TTL_MS)) {
+      return { success: true, message: 'Tables cache valid (TTL active)', count: 0 };
+    }
+
     const db = getDatabase();
     const shopId = forcedShopId || getSetting('cloud_shop_id', '');
 
@@ -735,6 +744,17 @@ export async function syncTablesFromCloud(forcedShopId?: number | string): Promi
       console.warn('[CloudSync] Error fetching restaurant_tables:', error.message);
       return { success: false, message: error.message };
     }
+
+    const currentFingerprint = (cloudTables || [])
+      .map((t: any) => `${t.id}:${t.table_number}:${t.status}:${t.token_code || ''}:${t.capacity || ''}`)
+      .join('|');
+
+    if (!forceRefresh && currentFingerprint && currentFingerprint === lastTablesFingerprint) {
+      lastTablesSyncTimestamp = nowMs;
+      return { success: true, message: 'Tables unchanged (fingerprint match)', count: cloudTables?.length || 0 };
+    }
+    lastTablesFingerprint = currentFingerprint;
+    lastTablesSyncTimestamp = nowMs;
 
     // 2. Fetch local tables
     const localTables = db.prepare('SELECT * FROM tables').all() as any[];
@@ -1817,7 +1837,7 @@ export function startRealtimeOrderListener(): void {
               db.prepare('DELETE FROM tables WHERE lower(number) = lower(?)').run(String(payload.old.table_number));
             }
           }
-          await syncTablesFromCloud();
+          await syncTablesFromCloud(undefined, true);
           broadcastCloudEvent('tables-updated');
         } catch (e) {
           console.error('[CloudSync] Realtime restaurant_tables sync error:', e);
@@ -2124,7 +2144,9 @@ export async function initCloudSync(): Promise<void> {
   if (syncIntervalHandle) clearInterval(syncIntervalHandle);
   if (tableSyncIntervalHandle) clearInterval(tableSyncIntervalHandle);
 
-  // Safety fallback: periodic background refresh & auto-reconnect every 15 seconds
+  let lastPeriodicMetadataSync = 0;
+
+  // Periodic background refresh: fast for orders (15s), low-overhead cached metadata (5m)
   syncIntervalHandle = setInterval(() => {
     if (getSetting('cloud_sync_enabled', '1') === '1') {
       // 1. Ensure realtime listener is alive
@@ -2135,20 +2157,16 @@ export async function initCloudSync(): Promise<void> {
       syncPendingOfflineOrders().catch(() => {});
       // 3. Pull latest online orders from customer storefront
       pullOnlineOrdersFromCloud().catch(() => {});
-      // 4. Keep staff, menu and tables fresh
-      syncStaffFromCloud().catch(() => {});
-      syncMenuFromCloud().catch(() => {});
-      syncTablesFromCloud().catch(() => {});
+      // 4. Low-overhead periodic metadata sync (staff, menu, tables) every 5 minutes
+      const nowMs = Date.now();
+      if (nowMs - lastPeriodicMetadataSync >= 5 * 60 * 1000) {
+        lastPeriodicMetadataSync = nowMs;
+        syncStaffFromCloud().catch(() => {});
+        syncMenuFromCloud().catch(() => {});
+        syncTablesFromCloud(undefined, true).catch(() => {});
+      }
     }
   }, 15 * 1000);
   syncIntervalHandle.unref();
-
-  // Fast Real-Time Table Sync Heartbeat (checks every 2.5s so tables created or deleted in Pizza Management reflect instantly)
-  tableSyncIntervalHandle = setInterval(() => {
-    if (getSetting('cloud_sync_enabled', '1') === '1') {
-      syncTablesFromCloud().catch(() => {});
-    }
-  }, 2500);
-  tableSyncIntervalHandle.unref();
 }
 

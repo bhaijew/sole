@@ -153,6 +153,30 @@ function runMigrations(): void {
     db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('cloud_auto_print_kot', '1')").run();
   } catch {}
 
+  // High-performance database indexing for fast lookups & cloud sync
+  try {
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_orders_order_number ON orders(order_number);
+      CREATE INDEX IF NOT EXISTS idx_orders_cloud_id     ON orders(cloud_order_id);
+      CREATE INDEX IF NOT EXISTS idx_orders_is_synced    ON orders(is_synced);
+      CREATE INDEX IF NOT EXISTS idx_orders_shop_id      ON orders(shop_id);
+      CREATE INDEX IF NOT EXISTS idx_tables_number       ON tables(number);
+      CREATE INDEX IF NOT EXISTS idx_tables_cloud_id     ON tables(cloud_id);
+      CREATE INDEX IF NOT EXISTS idx_tables_status       ON tables(status);
+      CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items(product_id);
+      CREATE INDEX IF NOT EXISTS idx_products_shop_id    ON products(shop_id);
+      CREATE INDEX IF NOT EXISTS idx_categories_shop_id  ON categories(shop_id);
+    `);
+    console.log('[DB] Core database indexes verified');
+  } catch (idxErr: any) {
+    console.warn('[DB] Index verification note:', idxErr.message);
+  }
+
+  // Maintain WAL file size on startup
+  try {
+    db.pragma('wal_checkpoint(PASSIVE)');
+  } catch {}
+
   console.log('[DB] Migrations complete');
 }
 
