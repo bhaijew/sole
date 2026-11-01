@@ -1280,18 +1280,46 @@ export async function pullOnlineOrdersFromCloud(): Promise<{
       const orderNumber = cloudOrder.order_number || `ONL-${cloudOrder.id}`;
       const cloudOrderIdStr = String(cloudOrder.id);
 
-      const existing = db.prepare('SELECT id, status FROM orders WHERE cloud_order_id = ? OR order_number = ?')
+      const existing = db.prepare('SELECT id, status, is_verified, special_instructions FROM orders WHERE cloud_order_id = ? OR order_number = ?')
         .get(cloudOrderIdStr, orderNumber) as any;
 
       if (!existing) {
         const ok = await handleIncomingCloudOrder(cloudOrder);
         if (ok) importedCount++;
       } else {
-        // Sync status if changed in cloud
+        // Sync status and verification state if changed in Pizza Admin cloud
         const localStatus = mapCloudStatusToLocal(cloudOrder.status);
-        if (existing.status !== localStatus) {
-          db.prepare("UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ?")
-            .run(localStatus, existing.id);
+        const wasVerified = Boolean(existing.is_verified);
+        const isNowVerified = cloudOrder.is_verified === true || cloudOrder.is_verified === 1 || String(cloudOrder.notes || '').includes('VERIFIED & ACCEPTED');
+
+        const cleanNotes = [
+          cloudOrder.notes,
+          cloudOrder.customer_name ? `Customer: ${cloudOrder.customer_name}` : null,
+          cloudOrder.customer_phone ? `Phone: ${cloudOrder.customer_phone}` : null,
+          cloudOrder.delivery_rider_name ? `Rider: ${cloudOrder.delivery_rider_name}` : null
+        ].filter(Boolean).join(' | ');
+
+        if (existing.status !== localStatus || (!wasVerified && isNowVerified) || (wasVerified !== isNowVerified)) {
+          db.prepare(`
+            UPDATE orders 
+            SET status = ?, 
+                is_verified = ?, 
+                special_instructions = ?,
+                verified_at = COALESCE(verified_at, datetime('now')), 
+                updated_at = datetime('now') 
+            WHERE id = ?
+          `).run(localStatus, isNowVerified ? 1 : 0, cleanNotes || null, existing.id);
+
+          notifyKdsUpdate();
+          broadcastCloudEvent('order-status-updated', { orderNumber, status: localStatus, is_verified: isNowVerified });
+
+          // AUTO-PRINT SLIP IMMEDIATELY WHEN VERIFIED FROM ADMIN PANEL!
+          if (!wasVerified && isNowVerified) {
+            console.log(`[CloudSync] Order ${orderNumber} was VERIFIED in Admin Panel! Auto-printing bill and KOT...`);
+            triggerVerifiedOrderPrints(existing.id, cloudOrder).catch((e) => {
+              console.error('[CloudSync] Error auto-printing verified order:', e);
+            });
+          }
         }
       }
     }

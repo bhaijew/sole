@@ -327,6 +327,9 @@ export default function OrdersPage() {
               // Update status in existing order if optimistic or cloud status changed
               fetched[alreadyExistsIndex].status = effectiveStatus as any;
               (fetched[alreadyExistsIndex] as any).is_verified = cloudVerifiedFlag;
+              if (co.notes) {
+                fetched[alreadyExistsIndex].special_instructions = co.notes;
+              }
               if (co.delivery_rider_name) {
                 (fetched[alreadyExistsIndex] as any).delivery_rider_name = co.delivery_rider_name;
               }
@@ -600,23 +603,38 @@ export default function OrdersPage() {
     : orders;
 
   // Unverified online menu orders waiting in /verify
-  const unverifiedCount = orders.filter((o) =>
-    (o as any).is_verified === 0 ||
-    (o as any).is_verified === false ||
-    o.special_instructions?.includes('AWAITING_VERIFICATION') ||
-    (o as any).notes?.includes('AWAITING_VERIFICATION')
-  ).length;
+  const unverifiedCount = orders.filter((o) => {
+    const isExplicitlyVerified =
+      (o as any).is_verified === 1 ||
+      (o as any).is_verified === true ||
+      Boolean(o.special_instructions?.includes('VERIFIED & ACCEPTED')) ||
+      Boolean((o as any).notes?.includes('VERIFIED & ACCEPTED'));
+
+    return !isExplicitlyVerified && (
+      (o as any).is_verified === 0 ||
+      (o as any).is_verified === false ||
+      Boolean(o.special_instructions?.includes('AWAITING_VERIFICATION')) ||
+      Boolean((o as any).notes?.includes('AWAITING_VERIFICATION'))
+    );
+  }).length;
 
   // Filtered orders (Strictly excludes unverified orders until verified in /verify or Pizza Admin)
   const filteredOrders = baseOrders.filter((order) => {
-    const isUnverified =
+    const isExplicitlyVerified =
+      (order as any).is_verified === 1 ||
+      (order as any).is_verified === true ||
+      Boolean(order.special_instructions?.includes('VERIFIED & ACCEPTED')) ||
+      Boolean((order as any).notes?.includes('VERIFIED & ACCEPTED'));
+
+    const isUnverified = !isExplicitlyVerified && (
       (order as any).is_verified === 0 ||
       (order as any).is_verified === false ||
-      order.special_instructions?.includes('AWAITING_VERIFICATION') ||
-      (order as any).notes?.includes('AWAITING_VERIFICATION');
+      Boolean(order.special_instructions?.includes('AWAITING_VERIFICATION')) ||
+      Boolean((order as any).notes?.includes('AWAITING_VERIFICATION'))
+    );
 
     if (isUnverified) {
-      return false; // Hold back from live operational board!
+      return false; // Hold back from live operational board until verified!
     }
 
     const isOnline = (order as any).order_source === 'online' || order.type === 'online';
@@ -644,12 +662,20 @@ export default function OrdersPage() {
   });
 
   // KPI Counts scoped to verified orders in selected date range
-  const verifiedBase = baseOrders.filter((o) => !(
-    (o as any).is_verified === 0 ||
-    (o as any).is_verified === false ||
-    o.special_instructions?.includes('AWAITING_VERIFICATION') ||
-    (o as any).notes?.includes('AWAITING_VERIFICATION')
-  ));
+  const verifiedBase = baseOrders.filter((o) => {
+    const isExplicitlyVerified =
+      (o as any).is_verified === 1 ||
+      (o as any).is_verified === true ||
+      Boolean(o.special_instructions?.includes('VERIFIED & ACCEPTED')) ||
+      Boolean((o as any).notes?.includes('VERIFIED & ACCEPTED'));
+
+    return isExplicitlyVerified || !(
+      (o as any).is_verified === 0 ||
+      (o as any).is_verified === false ||
+      Boolean(o.special_instructions?.includes('AWAITING_VERIFICATION')) ||
+      Boolean((o as any).notes?.includes('AWAITING_VERIFICATION'))
+    );
+  });
   const totalCount = verifiedBase.length;
   const onlineCount = verifiedBase.filter((o) => (o as any).order_source === 'online' || o.type === 'online').length;
   const pendingCount = verifiedBase.filter((o) => o.status === 'pending').length;

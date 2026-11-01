@@ -852,6 +852,14 @@ router.post('/:id/recreate', async (req: Request, res: Response) => {
 // GET /api/orders/verify-pending — list all online orders awaiting verification
 router.get('/verify-pending', async (req: Request, res: Response) => {
   try {
+    // Proactively pull latest online orders from Pizza Admin cloud
+    try {
+      const { pullOnlineOrdersFromCloud } = require('../services/cloud-sync');
+      await pullOnlineOrdersFromCloud();
+    } catch (e: any) {
+      console.warn('[Orders] Verify-pending background cloud pull note:', e?.message || e);
+    }
+
     const db = getDatabase();
     const rows = db.prepare(`
       SELECT o.*,
@@ -860,7 +868,9 @@ router.get('/verify-pending', async (req: Request, res: Response) => {
       FROM orders o
       LEFT JOIN customers c ON o.customer_id = c.id
       WHERE (o.is_verified = 0 OR o.is_verified IS NULL OR o.special_instructions LIKE '%AWAITING_VERIFICATION%')
-        AND o.status NOT IN ('cancelled', 'completed')
+        AND (o.special_instructions NOT LIKE '%VERIFIED & ACCEPTED%' OR o.special_instructions IS NULL)
+        AND (o.is_verified != 1 OR o.is_verified IS NULL)
+        AND o.status NOT IN ('cancelled', 'completed', 'delivered')
       ORDER BY o.created_at DESC
     `).all();
 
@@ -882,7 +892,16 @@ router.post('/:id/verify', async (req: Request, res: Response) => {
     const orderId = req.params.id;
     const staff = req.body?.cashier_name || 'POS Cashier';
 
-    const order = db.prepare('SELECT * FROM orders WHERE id = ? OR order_number = ?').get(orderId, orderId) as any;
+    let order = db.prepare('SELECT * FROM orders WHERE id = ? OR order_number = ? OR cloud_order_id = ?').get(orderId, orderId, orderId) as any;
+    if (!order) {
+      // If not yet in local db, pull from cloud first
+      try {
+        const { pullOnlineOrdersFromCloud } = require('../services/cloud-sync');
+        await pullOnlineOrdersFromCloud();
+        order = db.prepare('SELECT * FROM orders WHERE id = ? OR order_number = ? OR cloud_order_id = ?').get(orderId, orderId, orderId) as any;
+      } catch {}
+    }
+
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }

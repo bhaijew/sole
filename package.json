@@ -1,6 +1,6 @@
 {
   "name": "sole-what-pos",
-  "version": "1.8.2",
+  "version": "1.8.3",
   "description": "Sole What - Smart Point of Sale System",
   "main": "dist/index.js",
   "scripts": {
@@ -26,7 +26,7 @@
     "name": "Zeeshan",
     "email": "as8759111@gmail.com"
   },
-  "homepage": "https://flo.local",
+  "homepage": "",
   "license": "MIT",
   "devDependencies": {
     "@electron/rebuild": "^4.0.3",

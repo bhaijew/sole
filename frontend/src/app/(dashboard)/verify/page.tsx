@@ -31,6 +31,9 @@ import type { Order } from '@/lib/types';
 
 type VerifyTab = 'pending' | 'verified' | 'all';
 
+const SUPABASE_BASE_URL = 'https://uadrrjrlhfttithjmdye.supabase.co/rest/v1/orders';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhZHJyanJsaGZ0dGl0aGptZHllIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MDYwNTg2OCwiZXhwIjoyMTA2MTgxODY4fQ.NuC74GhFlUEiaRR2BXPooYj7iahzrXXKCxMQYDUnfIg';
+
 export default function VerifyOrdersPage() {
   const { currentTenant, user } = useAuthStore();
   const currency = currentTenant?.currency === 'THB' ? '฿' : (currentTenant?.currency === 'INR' ? '₹' : 'Rs ');
@@ -57,7 +60,97 @@ export default function VerifyOrdersPage() {
       const res = await api.get('/orders/verify-pending');
       const pendingList: Order[] = res.data?.orders || [];
 
-      // 2. Also fetch recent verified/completed orders to display on other tabs
+      // 2. Direct Supabase fetch to catch instant real-time customer orders from website
+      const activeBranchId = (currentTenant as any)?.selected_branch_id || (currentTenant as any)?.shop_id || (currentTenant as any)?.branch_id || 8;
+      try {
+        const cloudRes = await fetch(
+          `${SUPABASE_BASE_URL}?select=*&shop_id=eq.${activeBranchId}&order=id.desc&limit=30`,
+          {
+            headers: {
+              apikey: SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            },
+          }
+        );
+        if (cloudRes.ok) {
+          const cloudOrders = await cloudRes.json();
+          for (const co of cloudOrders) {
+            const isUnverifiedCloud =
+              (co.is_verified === false || co.is_verified === 0 || String(co.notes || '').includes('[ONLINE_MENU: AWAITING_VERIFICATION]') || String(co.special_instructions || '').includes('AWAITING_VERIFICATION')) &&
+              !String(co.notes || '').includes('VERIFIED & ACCEPTED') &&
+              co.status !== 'cancelled' && co.status !== 'delivered';
+
+            if (isUnverifiedCloud) {
+              const alreadyInPending = pendingList.some(
+                (po) => po.order_number === co.order_number || po.cloud_order_id === String(co.id) || String(po.id) === String(co.id)
+              );
+              if (!alreadyInPending) {
+                let parsedItems: any[] = [];
+                if (Array.isArray(co.items)) parsedItems = co.items;
+                else if (typeof co.items === 'string') {
+                  try { parsedItems = JSON.parse(co.items); } catch {}
+                }
+                const formattedItems: any[] = parsedItems.map((it, idx) => ({
+                  id: idx + 1000,
+                  order_id: co.id,
+                  product_id: it.id || idx,
+                  product_name: it.name || it.title || it.product_name || 'Pizza Item',
+                  product_sku: null,
+                  unit_price: Number(it.price || it.unit_price) || 0,
+                  quantity: Number(it.qty || it.quantity) || 1,
+                  subtotal: Number(it.subtotal) || ((Number(it.price) || 0) * (Number(it.qty || it.quantity) || 1)),
+                  tax_amount: 0,
+                  total: Number(it.subtotal) || ((Number(it.price) || 0) * (Number(it.qty || it.quantity) || 1)),
+                  addons: null,
+                  special_instructions: it.selected_variation || it.variant_selection || null,
+                  status: 'pending' as any,
+                }));
+
+                const syntheticPending: Order = {
+                  id: co.id,
+                  order_number: co.order_number || `ONL-${co.id}`,
+                  table_id: null,
+                  customer_id: null,
+                  type: (co.order_type || (co.delivery_address ? 'delivery' : 'takeaway')) as any,
+                  status: 'pending' as any,
+                  subtotal: Math.max(0, Number(co.total) - Number(co.delivery_fee || 0)),
+                  tax_amount: 0,
+                  discount_amount: 0,
+                  delivery_charge: Number(co.delivery_fee || 0),
+                  total: Number(co.total) || 0,
+                  guest_count: null,
+                  special_instructions: co.notes || null,
+                  created_by: 0,
+                  created_at: co.created_at || new Date().toISOString(),
+                  items: formattedItems,
+                  customer: co.customer_name || co.customer_phone ? {
+                    id: co.id,
+                    name: co.customer_name || 'Online Customer',
+                    phone: co.customer_phone || '',
+                    country_code: '+92',
+                    email: null,
+                    visits_count: 1,
+                    total_spent: Number(co.total) || 0,
+                    last_visit_at: co.created_at,
+                  } : undefined,
+                  order_source: 'online',
+                  delivery_address: co.delivery_address || null,
+                  delivery_fee: Number(co.delivery_fee || 0),
+                  is_verified: 0,
+                  cloud_order_id: String(co.id),
+                  shop_id: co.shop_id,
+                };
+
+                pendingList.unshift(syntheticPending);
+              }
+            }
+          }
+        }
+      } catch (cloudErr) {
+        // Fallback silently if direct fetch fails
+      }
+
+      // 3. Also fetch recent verified/completed orders to display on other tabs
       const recentRes = await api.get('/orders?per_page=30');
       const recentList: Order[] = recentRes.data?.orders || [];
 
@@ -106,7 +199,8 @@ export default function VerifyOrdersPage() {
     setProcessingId(order.id);
     const cashierName = user?.name || currentTenant?.business_name || 'POS Cashier';
     try {
-      const res = await api.post(`/orders/${order.id}/verify`, {
+      const targetId = order.order_number || order.id;
+      const res = await api.post(`/orders/${targetId}/verify`, {
         cashier_name: cashierName,
       });
 
@@ -193,11 +287,17 @@ export default function VerifyOrdersPage() {
 
   // Filter & Counts
   const isPendingOrder = (o: Order) => {
+    const isExplicitlyVerified =
+      (o as any).is_verified === 1 ||
+      (o as any).is_verified === true ||
+      String(o.special_instructions || '').includes('VERIFIED & ACCEPTED') ||
+      String((o as any).notes || '').includes('VERIFIED & ACCEPTED');
+    if (isExplicitlyVerified) return false;
+
     const isUnverified = (o as any).is_verified === 0 || (o as any).is_verified === false || (o as any).is_verified === null;
     const hasAwaitingNote = (o.special_instructions || '').includes('AWAITING_VERIFICATION') || ((o as any).notes || '').includes('AWAITING_VERIFICATION');
-    const isOnline = o.order_source === 'online' || (o as any).source === 'online_menu';
-    const notCompleted = o.status !== 'completed' && o.status !== 'cancelled';
-    return (isUnverified || hasAwaitingNote) && isOnline && notCompleted;
+    const notCompleted = (o.status as string) !== 'completed' && (o.status as string) !== 'cancelled' && (o.status as string) !== 'delivered';
+    return (isUnverified || hasAwaitingNote) && notCompleted;
   };
 
   const pendingOrders = orders.filter(isPendingOrder);
