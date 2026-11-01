@@ -303,12 +303,17 @@ const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
 function createWindow(): void {
+  const appIconPath = isDev
+    ? path.join(__dirname, '../../assets/icon.png')
+    : path.join(process.resourcesPath, 'assets/icon.png');
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1024,
     minHeight: 768,
     title: 'Sole-What',
+    icon: appIconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

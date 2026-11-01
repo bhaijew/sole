@@ -59,7 +59,7 @@ export default function RegisterPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 py-12">
       <div className="w-full max-w-lg">
         <div className="text-center mb-8">
-          <img src="/logo.svg" alt="Sole What" width={180} height={50} className="mx-auto mb-3" />
+          <img src="/solewhat-horizontal.png" alt="Sole What" width={180} height={40} className="mx-auto mb-3 object-contain" />
           <p className="text-gray-500 mt-2">Create your account and set up your business</p>
         </div>
 
