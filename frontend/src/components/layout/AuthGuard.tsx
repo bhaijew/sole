@@ -32,17 +32,28 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="flex flex-col items-center gap-4">
-          <div className="relative w-16 h-16 flex items-center justify-center">
-            <div className="absolute inset-0 rounded-full border-2 border-red-200 border-t-red-600 border-r-orange-500 animate-spin" />
-            <div className="w-11 h-11 rounded-full bg-white shadow-sm flex items-center justify-center p-1.5 overflow-hidden">
-              <img src="/logo.png" alt="Sole What Logo" className="w-full h-full object-contain" />
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-slate-900 to-slate-950">
+        <div className="flex flex-col items-center gap-5">
+          <div className="relative w-20 h-20 flex items-center justify-center">
+            {/* Ambient Brand Glow */}
+            <div className="absolute inset-0 rounded-2xl bg-orange-500/25 blur-xl animate-pulse" />
+            {/* Animated Brand Ring */}
+            <div className="absolute inset-0 rounded-2xl border-2 border-orange-500/30 border-t-orange-500 border-r-amber-400 animate-spin" />
+            {/* Real SoleWhat Logo Emblem */}
+            <div className="relative w-14 h-14 rounded-xl bg-slate-900/90 border border-slate-700/80 shadow-2xl flex items-center justify-center p-2 overflow-hidden">
+              <img
+                src="/logo.png"
+                alt="SoleWhat Logo"
+                className="w-full h-full object-contain drop-shadow-[0_2px_8px_rgba(249,115,22,0.4)]"
+              />
             </div>
           </div>
           <div className="text-center">
-            <p className="text-xs font-black uppercase tracking-widest text-gray-900">Sole What</p>
-            <p className="text-[11px] text-gray-500 font-medium">Loading POS...</p>
+            <p className="text-sm font-black uppercase tracking-widest text-white drop-shadow-sm">SoleWhat</p>
+            <p className="text-xs text-orange-400/90 font-medium tracking-wide mt-0.5 flex items-center justify-center gap-1">
+              <span>Loading POS</span>
+              <span className="inline-flex animate-pulse">...</span>
+            </p>
           </div>
         </div>
       </div>

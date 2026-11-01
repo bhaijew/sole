@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import Link from 'next/link';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import toast from 'react-hot-toast';
@@ -812,29 +811,6 @@ export default function OrdersPage() {
           </button>
         </div>
       </div>
-
-      {/* Awaiting Verification Banner */}
-      {unverifiedCount > 0 && (
-        <div className="mb-4 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-600 text-white p-3.5 rounded-xl shadow-md flex items-center justify-between animate-pulse">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">🔔</span>
-            <div>
-              <div className="font-black text-sm tracking-wide">
-                {unverifiedCount} Online Order{unverifiedCount > 1 ? 's' : ''} Awaiting Verification!
-              </div>
-              <p className="text-xs text-amber-100">
-                New online menu orders must be verified before appearing on the live operational board.
-              </p>
-            </div>
-          </div>
-          <Link
-            href="/verify"
-            className="px-4 py-2 bg-white text-orange-700 hover:bg-orange-50 font-black text-xs rounded-lg shadow-sm transition-all flex items-center gap-1.5 shrink-0"
-          >
-            <span>Review & Verify Orders →</span>
-          </Link>
-        </div>
-      )}
 
       {/* ============================================================ */}
       {/* KPI METRICS BAR */}

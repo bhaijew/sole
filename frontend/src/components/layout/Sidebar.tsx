@@ -8,7 +8,6 @@ import {
   ShoppingCart,
   UtensilsCrossed,
   ClipboardList,
-  ShieldCheck,
   Package,
   UserCog,
   Settings,
@@ -44,7 +43,6 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { href: '/pos',             label: 'POS',          icon: ShoppingCart,    roles: ['owner', 'manager', 'cashier'],              businessTypes: null },
   { href: '/tables',          label: 'Tables',       icon: UtensilsCrossed, roles: ['owner', 'manager', 'cashier'],              businessTypes: null },
   { href: '/orders',          label: 'Orders',       icon: ClipboardList,   roles: ['owner', 'manager', 'cashier'],              businessTypes: null },
-  { href: '/verify',          label: 'Verify Orders',icon: ShieldCheck,     roles: ['owner', 'manager', 'cashier'],              businessTypes: null },
   { href: '/products',        label: 'Products',     icon: Package,         roles: ['owner', 'manager'],                         businessTypes: null },
   { href: '/staff',           label: 'Staff',        icon: UserCog,         roles: ['owner', 'manager'],                         businessTypes: null },
   { href: '/settings',        label: 'Settings',     icon: Settings,        roles: ['owner', 'manager'],                         businessTypes: null },
@@ -57,29 +55,9 @@ export default function AppSidebar() {
   const { isMobile, setOpenMobile } = useSidebar();
   const closeMobile = () => { if (isMobile) setOpenMobile(false); };
 
-  const [pendingVerifyCount, setPendingVerifyCount] = useState(0);
-
   useEffect(() => {
     fetchMode();
   }, [fetchMode]);
-
-  useEffect(() => {
-    let mounted = true;
-    const checkPending = async () => {
-      try {
-        const res = await api.get('/orders/verify-pending');
-        if (mounted && res.data?.orders) {
-          setPendingVerifyCount(res.data.orders.length);
-        }
-      } catch {}
-    };
-    checkPending();
-    const interval = setInterval(checkPending, 5000);
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-    };
-  }, []);
 
   const role = currentTenant?.role || 'cashier';
   const businessType = currentTenant?.business_type || 'restaurant';
@@ -128,11 +106,6 @@ export default function AppSidebar() {
                       <a href={item.href} onClick={closeMobile} title={item.label}>
                         <item.icon />
                         <span className="flex-1">{item.label}</span>
-                        {item.href === '/verify' && pendingVerifyCount > 0 && (
-                          <span className="ml-auto px-1.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-slate-950 animate-pulse">
-                            {pendingVerifyCount}
-                          </span>
-                        )}
                       </a>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
