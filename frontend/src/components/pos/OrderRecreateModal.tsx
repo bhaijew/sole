@@ -53,7 +53,7 @@ export default function OrderRecreateModal({
   const router = useRouter();
   const { loadItems, setOrderType: setCartOrderType, setCustomerName: setCartCustName, setCustomerPhone: setCartCustPhone, setDeliveryAddress: setCartDeliveryAddr, setDeliveryFee: setCartDeliveryFee } = useCartStore();
 
-  const [mode, setMode] = useState<'new' | 'update'>('new');
+  const [mode, setMode] = useState<'new' | 'update'>('update');
   const [items, setItems] = useState<RecreateItemState[]>([]);
   const [orderType, setOrderType] = useState<'dine_in' | 'takeaway' | 'delivery'>('takeaway');
   const [customerName, setCustomerName] = useState('');
@@ -99,7 +99,7 @@ export default function OrderRecreateModal({
     if (!order || !isOpen) return;
 
     setErrorMsg(null);
-    setMode('new');
+    setMode('update');
     setOrderType(order.type === 'dine_in' || order.type === 'delivery' ? order.type : 'takeaway');
     setCustomerName(order.customer_name || (order.customer as any)?.name || '');
     setCustomerPhone(order.customer_phone || (order.customer as any)?.phone || '');
@@ -286,10 +286,10 @@ export default function OrderRecreateModal({
 
       // Trigger automatic printing if selected
       if (printKot && createdOrder.id) {
-        api.post('/printers/print-kot', { orderId: createdOrder.id, station: 'Kitchen' }).catch(() => {});
+        api.post('/printers/print-order', { orderId: createdOrder.id, printType: 'kot' }).catch(() => {});
       }
       if (printReceipt && createdOrder.id) {
-        api.post('/printers/print-bill', { orderId: createdOrder.id }).catch(() => {});
+        api.post('/printers/print-order', { orderId: createdOrder.id, printType: 'bill' }).catch(() => {});
       }
 
       if (onOrderRecreated) {
@@ -353,18 +353,6 @@ export default function OrderRecreateModal({
           <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl">
             <button
               type="button"
-              onClick={() => setMode('new')}
-              className={`py-2 px-3 text-xs font-black rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                mode === 'new'
-                  ? 'bg-white text-orange-600 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Sparkles size={14} />
-              <span>Recreate as New Order</span>
-            </button>
-            <button
-              type="button"
               onClick={() => setMode('update')}
               className={`py-2 px-3 text-xs font-black rounded-lg transition-all flex items-center justify-center gap-1.5 ${
                 mode === 'update'
@@ -374,6 +362,18 @@ export default function OrderRecreateModal({
             >
               <RefreshCw size={14} />
               <span>Update Existing #{order.order_number}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('new')}
+              className={`py-2 px-3 text-xs font-black rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                mode === 'new'
+                  ? 'bg-white text-orange-600 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Sparkles size={14} />
+              <span>Recreate as New Order</span>
             </button>
           </div>
 

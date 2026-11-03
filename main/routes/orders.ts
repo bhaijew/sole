@@ -755,6 +755,16 @@ router.post('/:id/recreate', async (req: Request, res: Response) => {
 
       notifyKdsUpdate();
 
+      // Synchronize existing bill in bills table if present
+      try {
+        db.prepare(`
+          UPDATE bills
+          SET subtotal = ?, total = ?, delivery_charge = ?, paid_amount = ?, balance = 0,
+              payment_method = ?, updated_at = ?
+          WHERE order_id = ?
+        `).run(subtotal, total, delivery_fee, total, payment_method, now(), sourceOrder.id);
+      } catch {}
+
       const finalOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(sourceOrder.id) as any;
       const finalItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(sourceOrder.id).map(parseItemJson);
 
@@ -825,6 +835,17 @@ router.post('/:id/recreate', async (req: Request, res: Response) => {
       }
 
       notifyKdsUpdate();
+
+      // Create bill record for the new recreated order
+      const newBillNumber = `B-${newOrderNumber}`;
+      try {
+        db.prepare(`
+          INSERT INTO bills (
+            bill_number, order_id, subtotal, total, delivery_charge,
+            paid_amount, balance, payment_status, payment_method, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, 0, 'paid', ?, ?, ?)
+        `).run(newBillNumber, createdOrderId, subtotal, total, delivery_fee, total, payment_method, now(), now());
+      } catch {}
 
       const createdOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(createdOrderId) as any;
       const createdItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(createdOrderId).map(parseItemJson);

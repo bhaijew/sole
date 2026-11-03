@@ -642,11 +642,16 @@ function formatSingleReceiptCopy(
   lines.push(dash);
 
   // Items List
-  if (order?.items) {
-    for (const item of order.items) {
-      const name = item.product_name || 'Item';
-      const qty = String(item.quantity || 1).padStart(qtyColWidth);
-      const itemTotal = Number(item.total ?? (Number(item.unit_price || 0) * Number(item.quantity || 1)));
+  const receiptItems = (Array.isArray(order?.items) && order.items.length > 0)
+    ? order.items
+    : ((Array.isArray(bill?.items) && bill.items.length > 0) ? bill.items : []);
+
+  if (receiptItems && receiptItems.length > 0) {
+    for (const item of receiptItems) {
+      const name = item.product_name || item.name || item.title || 'Item';
+      const qty = String(item.quantity || item.qty || 1).padStart(qtyColWidth);
+      const unitPrice = Number(item.unit_price || item.price || 0);
+      const itemTotal = Number(item.total !== undefined ? item.total : (unitPrice * Number(item.quantity || item.qty || 1)));
       const price = formatPriceNumber(itemTotal).padStart(priceColWidth);
 
       // Clean line wrapping for long names
@@ -688,12 +693,12 @@ function formatSingleReceiptCopy(
 
   lines.push(dash);
 
-  // Subtotal / Breakdown if discounts, delivery or taxes exist
-  const subtotal = Number(bill?.subtotal || order?.subtotal || bill?.total || 0);
-  const total = Number(bill?.total || order?.total || 0);
-  const discount = Number(bill?.discount_amount || order?.discount_amount || 0);
-  const delivery = Number(bill?.delivery_charge || order?.delivery_charge || 0);
-  const tax = Number(bill?.tax_amount || order?.tax_amount || 0);
+  // Subtotal / Breakdown if discounts, delivery or taxes exist (order takes precedence over stale bill)
+  const total = Number(order?.total !== undefined ? order.total : (bill?.total || 0));
+  const subtotal = Number(order?.subtotal !== undefined ? order.subtotal : (bill?.subtotal || total));
+  const discount = Number(order?.discount_amount !== undefined ? order.discount_amount : (bill?.discount_amount || 0));
+  const delivery = Number(order?.delivery_charge !== undefined ? order.delivery_charge : (order?.delivery_fee !== undefined ? order.delivery_fee : (bill?.delivery_charge || 0)));
+  const tax = Number(order?.tax_amount !== undefined ? order.tax_amount : (bill?.tax_amount || 0));
 
   if (discount > 0 || delivery > 0 || tax > 0) {
     lines.push('{BOLD}Subtotal' + rightAlign('Rs ' + formatPriceNumber(subtotal), cols - 8) + '{/BOLD}');

@@ -1029,16 +1029,129 @@ export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck 
       console.log(`[CloudSync] Order ${orderNumber} originated on POS but not found locally. Syncing into database...`);
     }
 
-    // Check for duplicate & verify status updates
-    const existing = db.prepare('SELECT id, status, is_verified FROM orders WHERE cloud_order_id = ? OR order_number = ?').get(cloudOrderIdStr, orderNumber) as any;
+    // Check for duplicate & verify status / recreate updates
+    const existing = db.prepare('SELECT id, status, is_verified, total, subtotal, delivery_fee FROM orders WHERE cloud_order_id = ? OR order_number = ?').get(cloudOrderIdStr, orderNumber) as any;
     if (existing) {
       const localStatus = mapCloudStatusToLocal(cloudOrder.status);
       const wasVerified = Boolean(existing.is_verified);
       const isNowVerified = cloudOrder.is_verified === true || cloudOrder.is_verified === 1 || String(cloudOrder.notes || '').includes('VERIFIED & ACCEPTED');
 
-      if (existing.status !== localStatus || (!wasVerified && isNowVerified)) {
-        db.prepare("UPDATE orders SET status = ?, is_verified = ?, verified_at = COALESCE(verified_at, datetime('now')), updated_at = datetime('now') WHERE id = ?")
-          .run(localStatus, isNowVerified ? 1 : 0, existing.id);
+      // Check if order was recreated or if items/totals were modified in Pizza Admin
+      let rawItems: any[] = [];
+      if (Array.isArray(cloudOrder.items)) {
+        rawItems = cloudOrder.items;
+      } else if (typeof cloudOrder.items === 'string') {
+        try { rawItems = JSON.parse(cloudOrder.items); } catch {}
+      }
+
+      const cloudTotal = Number(cloudOrder.total || 0);
+      const cloudDeliveryFee = Number(cloudOrder.delivery_fee || 0);
+      const cloudSubtotal = cloudTotal > 0 ? Math.max(0, cloudTotal - cloudDeliveryFee) : Number(existing.subtotal || 0);
+      const totalChanged = cloudTotal > 0 && Math.abs(Number(existing.total || 0) - cloudTotal) > 0.01;
+      const isRecreated = String(cloudOrder.notes || '').includes('[RECREATED') || totalChanged;
+      const statusChanged = existing.status !== localStatus || (!wasVerified && isNowVerified);
+
+      if (isRecreated || totalChanged || statusChanged) {
+        const cleanNotes = [
+          cloudOrder.notes,
+          cloudOrder.customer_name ? `Customer: ${cloudOrder.customer_name}` : null,
+          cloudOrder.customer_phone ? `Phone: ${cloudOrder.customer_phone}` : null,
+          cloudOrder.delivery_rider_name ? `Rider: ${cloudOrder.delivery_rider_name}` : null
+        ].filter(Boolean).join(' | ');
+
+        db.prepare(`
+          UPDATE orders 
+          SET status = ?, 
+              is_verified = ?, 
+              total = CASE WHEN ? > 0 THEN ? ELSE total END,
+              subtotal = CASE WHEN ? > 0 THEN ? ELSE subtotal END,
+              delivery_fee = CASE WHEN ? >= 0 THEN ? ELSE delivery_fee END,
+              delivery_charge = CASE WHEN ? >= 0 THEN ? ELSE delivery_charge END,
+              customer_name = COALESCE(?, customer_name),
+              customer_phone = COALESCE(?, customer_phone),
+              delivery_address = COALESCE(?, delivery_address),
+              special_instructions = COALESCE(?, special_instructions),
+              cloud_order_id = ?,
+              verified_at = COALESCE(verified_at, datetime('now')), 
+              updated_at = datetime('now') 
+          WHERE id = ?
+        `).run(
+          localStatus, isNowVerified ? 1 : 0,
+          cloudTotal, cloudTotal,
+          cloudSubtotal, cloudSubtotal,
+          cloudDeliveryFee, cloudDeliveryFee,
+          cloudDeliveryFee, cloudDeliveryFee,
+          cloudOrder.customer_name || null,
+          cloudOrder.customer_phone || null,
+          cloudOrder.delivery_address || null,
+          cleanNotes || null,
+          cloudOrderIdStr,
+          existing.id
+        );
+
+        // Replace items if new items provided and total changed or order was recreated
+        if (rawItems.length > 0 && (totalChanged || isRecreated)) {
+          db.prepare('DELETE FROM order_items WHERE order_id = ?').run(existing.id);
+          const itemStmt = db.prepare(`
+            INSERT INTO order_items (
+              order_id, product_id, product_name, unit_price, quantity,
+              subtotal, total, variant_selection, items_included, status, created_at, updated_at
+            ) VALUES (
+              ?, ?, ?, ?, ?,
+              ?, ?, ?, ?, 'pending', datetime('now'), datetime('now')
+            )
+          `);
+
+          for (const item of rawItems) {
+            const prodId = String(
+              item.product_id ||
+              item.productId ||
+              (item.id ? `cloud_prod_${item.id}` : `item-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`)
+            );
+            const prodName = item.name || item.title || item.product_name || 'Pizza Item';
+            const unitPrice = Number(item.price || item.unit_price) || 0;
+            const qty = Number(item.qty || item.quantity) || 1;
+            const itemSubtotal = Number(item.subtotal) || (unitPrice * qty);
+
+            let variantInfo = '';
+            if (item.selected_variation) {
+              variantInfo = typeof item.selected_variation === 'object' ? item.selected_variation.name : String(item.selected_variation);
+            } else if (item.variant_selection) {
+              variantInfo = String(item.variant_selection);
+            }
+
+            let itemsIncStr: string | null = null;
+            if (item.items_included) {
+              itemsIncStr = Array.isArray(item.items_included)
+                ? JSON.stringify(item.items_included)
+                : String(item.items_included);
+            } else if (item.description) {
+              itemsIncStr = String(item.description);
+            }
+
+            itemStmt.run(
+              existing.id,
+              prodId,
+              prodName,
+              unitPrice,
+              qty,
+              itemSubtotal,
+              itemSubtotal,
+              variantInfo || null,
+              itemsIncStr
+            );
+          }
+        }
+
+        // Update bill in bills table to prevent stale price printing
+        if (cloudTotal > 0) {
+          db.prepare(`
+            UPDATE bills
+            SET total = ?, subtotal = ?, delivery_charge = ?, paid_amount = ?, balance = 0, updated_at = datetime('now')
+            WHERE order_id = ?
+          `).run(cloudTotal, cloudSubtotal, cloudDeliveryFee, cloudTotal, existing.id);
+        }
+
         notifyKdsUpdate();
         broadcastCloudEvent('order-status-updated', { orderNumber, status: localStatus, is_verified: isNowVerified });
 
@@ -1050,7 +1163,7 @@ export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck 
           });
         }
       }
-      return false;
+      return true;
     }
 
     console.log(`[CloudSync] New Online Order received from Pizza System: ${orderNumber}`);
@@ -1287,40 +1400,8 @@ export async function pullOnlineOrdersFromCloud(): Promise<{
         const ok = await handleIncomingCloudOrder(cloudOrder);
         if (ok) importedCount++;
       } else {
-        // Sync status and verification state if changed in Pizza Admin cloud
-        const localStatus = mapCloudStatusToLocal(cloudOrder.status);
-        const wasVerified = Boolean(existing.is_verified);
-        const isNowVerified = cloudOrder.is_verified === true || cloudOrder.is_verified === 1 || String(cloudOrder.notes || '').includes('VERIFIED & ACCEPTED');
-
-        const cleanNotes = [
-          cloudOrder.notes,
-          cloudOrder.customer_name ? `Customer: ${cloudOrder.customer_name}` : null,
-          cloudOrder.customer_phone ? `Phone: ${cloudOrder.customer_phone}` : null,
-          cloudOrder.delivery_rider_name ? `Rider: ${cloudOrder.delivery_rider_name}` : null
-        ].filter(Boolean).join(' | ');
-
-        if (existing.status !== localStatus || (!wasVerified && isNowVerified) || (wasVerified !== isNowVerified)) {
-          db.prepare(`
-            UPDATE orders 
-            SET status = ?, 
-                is_verified = ?, 
-                special_instructions = ?,
-                verified_at = COALESCE(verified_at, datetime('now')), 
-                updated_at = datetime('now') 
-            WHERE id = ?
-          `).run(localStatus, isNowVerified ? 1 : 0, cleanNotes || null, existing.id);
-
-          notifyKdsUpdate();
-          broadcastCloudEvent('order-status-updated', { orderNumber, status: localStatus, is_verified: isNowVerified });
-
-          // AUTO-PRINT SLIP IMMEDIATELY WHEN VERIFIED FROM ADMIN PANEL!
-          if (!wasVerified && isNowVerified) {
-            console.log(`[CloudSync] Order ${orderNumber} was VERIFIED in Admin Panel! Auto-printing bill and KOT...`);
-            triggerVerifiedOrderPrints(existing.id, cloudOrder).catch((e) => {
-              console.error('[CloudSync] Error auto-printing verified order:', e);
-            });
-          }
-        }
+        // Run full sync to capture status, verification, new recreate items, and updated totals
+        await handleIncomingCloudOrder(cloudOrder, true);
       }
     }
 

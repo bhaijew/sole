@@ -395,65 +395,77 @@ async function resolveOrderForPrinting(db: any, orderIdOrNumber: any, fallbackBi
     }
   }
 
-  // 3. If STILL not found in local SQLite, query Supabase Cloud on demand!
-  if (!order && rawId) {
+  // 3. Query Supabase Cloud to ensure latest recreated items and total are present
+  if (rawId) {
     try {
       const { getSupabaseClient, handleIncomingCloudOrder } = await import('../services/cloud-sync');
       const client = getSupabaseClient();
       if (client) {
         let cloudOrder: any = null;
-        if (!isNaN(numId) && numId > 0) {
+        if (order?.cloud_order_id) {
+          const res = await client.from('orders').select('*').eq('id', order.cloud_order_id).maybeSingle();
+          cloudOrder = res.data;
+        }
+        if (!cloudOrder && !isNaN(numId) && numId > 0) {
           const res = await client.from('orders').select('*').eq('id', numId).maybeSingle();
           cloudOrder = res.data;
         }
         if (!cloudOrder) {
-          const res = await client.from('orders').select('*').eq('order_number', rawId).maybeSingle();
+          const searchNum = order?.order_number || rawId;
+          const res = await client.from('orders').select('*').eq('order_number', searchNum).maybeSingle();
           cloudOrder = res.data;
         }
 
         if (cloudOrder) {
-          console.log(`[Printer] Found order ${cloudOrder.order_number} (ID: ${cloudOrder.id}) in cloud! Importing into local database...`);
-          await handleIncomingCloudOrder(cloudOrder, true);
+          const cloudTotal = Number(cloudOrder.total || 0);
+          const localTotal = Number(order?.total || 0);
+          const cloudNotes = String(cloudOrder.notes || '');
+          const isCloudRecreated = cloudNotes.includes('[RECREATED') || (cloudTotal > 0 && Math.abs(cloudTotal - localTotal) > 0.01);
 
-          order = db.prepare(`
-            SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name, COALESCE(NULLIF(o.customer_phone, ''), c.phone) as customer_phone
-            FROM orders o
-            LEFT JOIN customers c ON o.customer_id = c.id
-            WHERE o.cloud_order_id = ? OR o.order_number = ?
-          `).get(String(cloudOrder.id), String(cloudOrder.order_number || ''));
+          if (!order || isCloudRecreated) {
+            console.log(`[Printer] Found updated/recreated order ${cloudOrder.order_number} (ID: ${cloudOrder.id}) in cloud! Syncing into local database...`);
+            await handleIncomingCloudOrder(cloudOrder, true);
 
-          if (!order) {
-            // Direct memory fallback
-            let parsedItems: any[] = [];
-            if (Array.isArray(cloudOrder.items)) parsedItems = cloudOrder.items;
-            else if (typeof cloudOrder.items === 'string') {
-              try { parsedItems = JSON.parse(cloudOrder.items); } catch {}
+            order = db.prepare(`
+              SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name, COALESCE(NULLIF(o.customer_phone, ''), c.phone) as customer_phone
+              FROM orders o
+              LEFT JOIN customers c ON o.customer_id = c.id
+              WHERE o.cloud_order_id = ? OR o.order_number = ?
+            `).get(String(cloudOrder.id), String(cloudOrder.order_number || ''));
+
+            if (!order) {
+              // Direct memory fallback
+              let parsedItems: any[] = [];
+              if (Array.isArray(cloudOrder.items)) parsedItems = cloudOrder.items;
+              else if (typeof cloudOrder.items === 'string') {
+                try { parsedItems = JSON.parse(cloudOrder.items); } catch {}
+              }
+              order = {
+                id: cloudOrder.id,
+                order_number: cloudOrder.order_number || `ONL-${cloudOrder.id}`,
+                customer_name: cloudOrder.customer_name,
+                customer_phone: cloudOrder.customer_phone,
+                delivery_address: cloudOrder.delivery_address,
+                subtotal: Math.max(0, Number(cloudOrder.total || 0) - Number(cloudOrder.delivery_fee || 0)),
+                total: Number(cloudOrder.total || 0),
+                delivery_charge: Number(cloudOrder.delivery_fee || 0),
+                delivery_fee: Number(cloudOrder.delivery_fee || 0),
+                type: cloudOrder.order_type || (cloudOrder.delivery_address ? 'delivery' : 'takeaway'),
+                status: cloudOrder.status || 'pending',
+                order_source: cloudOrder.source || cloudOrder.order_source || 'online',
+                created_at: cloudOrder.created_at,
+                items: parsedItems.map((it: any, idx: number) => ({
+                  id: idx + 1,
+                  order_id: cloudOrder.id,
+                  product_name: it.name || it.title || it.product_name || 'Item',
+                  unit_price: Number(it.price || it.unit_price || 0),
+                  quantity: Number(it.qty || it.quantity || 1),
+                  total: Number(it.subtotal || (Number(it.price || 0) * Number(it.qty || 1))),
+                  variant_selection: it.selected_variation ? (typeof it.selected_variation === 'object' ? it.selected_variation.name : String(it.selected_variation)) : (it.variant_selection || null),
+                  special_instructions: it.special_instructions || null,
+                })),
+              };
             }
-            order = {
-              id: cloudOrder.id,
-              order_number: cloudOrder.order_number || `ONL-${cloudOrder.id}`,
-              customer_name: cloudOrder.customer_name,
-              customer_phone: cloudOrder.customer_phone,
-              delivery_address: cloudOrder.delivery_address,
-              subtotal: Math.max(0, Number(cloudOrder.total || 0) - Number(cloudOrder.delivery_fee || 0)),
-              total: Number(cloudOrder.total || 0),
-              delivery_charge: Number(cloudOrder.delivery_fee || 0),
-              delivery_fee: Number(cloudOrder.delivery_fee || 0),
-              type: cloudOrder.order_type || (cloudOrder.delivery_address ? 'delivery' : 'takeaway'),
-              status: cloudOrder.status || 'pending',
-              order_source: cloudOrder.source || cloudOrder.order_source || 'online',
-              created_at: cloudOrder.created_at,
-              items: parsedItems.map((it: any, idx: number) => ({
-                id: idx + 1,
-                order_id: cloudOrder.id,
-                product_name: it.name || it.title || it.product_name || 'Item',
-                unit_price: Number(it.price || it.unit_price || 0),
-                quantity: Number(it.qty || it.quantity || 1),
-                total: Number(it.subtotal || (Number(it.price || 0) * Number(it.qty || 1))),
-                variant_selection: it.selected_variation ? (typeof it.selected_variation === 'object' ? it.selected_variation.name : String(it.selected_variation)) : (it.variant_selection || null),
-                special_instructions: it.special_instructions || null,
-              })),
-            };
           }
         }
       }
@@ -464,16 +476,14 @@ async function resolveOrderForPrinting(db: any, orderIdOrNumber: any, fallbackBi
 
   if (!order) return null;
 
-  // Ensure items are attached using order.id
-  if (!order.items || order.items.length === 0) {
-    const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
-    if (items && items.length > 0) {
-      order.items = items;
-    } else if (order.cloud_order_id) {
-      const itemsByCloud = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.cloud_order_id);
-      if (itemsByCloud && itemsByCloud.length > 0) {
-        order.items = itemsByCloud;
-      }
+  // Ensure fresh items are attached using order.id
+  const localItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
+  if (localItems && localItems.length > 0) {
+    order.items = localItems;
+  } else if (order.cloud_order_id) {
+    const itemsByCloud = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.cloud_order_id);
+    if (itemsByCloud && itemsByCloud.length > 0) {
+      order.items = itemsByCloud;
     }
   }
 
@@ -558,6 +568,16 @@ router.post('/print-bill', async (req: Request, res: Response) => {
         payment_details: [{ method: order.order_source === 'online' ? 'Online' : 'Cash', amount: order.total }],
         created_at: order.created_at,
       };
+    } else if (order.total !== undefined && Number(bill.total) !== Number(order.total)) {
+      // Synchronize bill if order was recreated or modified
+      try {
+        db.prepare('UPDATE bills SET total = ?, subtotal = ?, delivery_charge = ?, paid_amount = ?, balance = 0, updated_at = ? WHERE id = ?')
+          .run(order.total, order.subtotal || order.total, order.delivery_charge || order.delivery_fee || 0, order.total, now(), bill.id);
+        bill.total = order.total;
+        bill.subtotal = order.subtotal || order.total;
+        bill.delivery_charge = order.delivery_charge || order.delivery_fee || 0;
+        bill.paid_amount = order.total;
+      } catch {}
     }
     console.log('[Print Bill] Bill:', bill.bill_number, 'Total:', bill.total);
     console.log('[Print Bill] Order:', order.order_number);
@@ -725,6 +745,16 @@ router.post('/print-order', async (req: Request, res: Response) => {
           payment_details: [{ method: order.order_source === 'online' ? 'Online' : 'Cash', amount: order.total }],
           created_at: order.created_at,
         };
+      } else if (order.total !== undefined && Number(bill.total) !== Number(order.total)) {
+        // Synchronize bill if order was recreated or modified
+        try {
+          db.prepare('UPDATE bills SET total = ?, subtotal = ?, delivery_charge = ?, paid_amount = ?, balance = 0, updated_at = ? WHERE id = ?')
+            .run(order.total, order.subtotal || order.total, order.delivery_charge || order.delivery_fee || 0, order.total, now(), bill.id);
+          bill.total = order.total;
+          bill.subtotal = order.subtotal || order.total;
+          bill.delivery_charge = order.delivery_charge || order.delivery_fee || 0;
+          bill.paid_amount = order.total;
+        } catch {}
       }
 
       const getSetting = (k: string): string => {
