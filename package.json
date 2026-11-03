@@ -1,6 +1,6 @@
 {
   "name": "sole-what-pos",
-  "version": "1.8.6",
+  "version": "1.8.7",
   "description": "Sole What - Smart Point of Sale System",
   "main": "dist/index.js",
   "scripts": {
@@ -141,7 +141,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "differentialPackage": true
+      "differentialPackage": true,
+      "include": "build/installer.nsh"
     }
   }
 }

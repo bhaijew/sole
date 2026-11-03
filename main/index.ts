@@ -53,8 +53,7 @@ function setupAutoUpdater(): void {
   });
 
   setQuitAndInstallHandler(() => {
-    isQuitting = true;
-    autoUpdater.quitAndInstall();
+    safeQuitAndInstall();
   });
 
   autoUpdater.on('checking-for-update', () => {
@@ -142,8 +141,7 @@ function setupAutoUpdater(): void {
       defaultId: 0,
     }).then((result) => {
       if (result.response === 0) {
-        isQuitting = true;
-        autoUpdater.quitAndInstall();
+        safeQuitAndInstall();
       }
     });
   });
@@ -289,10 +287,63 @@ export function cleanupAndExit(): void {
     console.error('[Flo] Error closing database:', err);
   }
 
+  try {
+    stopRealtimeOrderListener();
+  } catch {}
+
   console.log('[Flo] Resources cleaned up. Terminating process...');
   setTimeout(() => {
-    app.exit(0);
-  }, 100).unref();
+    try {
+      app.exit(0);
+    } catch {
+      process.exit(0);
+    }
+  }, 100);
+}
+
+/**
+ * Prepares the application cleanly for an NSIS auto-update installation:
+ * Destroys windows and tray, stops all background servers and sockets,
+ * then cleanly hands control to electron-updater installer.
+ */
+export function safeQuitAndInstall(): void {
+  if (isCleaningUp) return;
+  isCleaningUp = true;
+  isQuitting = true;
+  console.log('[Update] Preparing clean shutdown for auto-installer...');
+
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.removeAllListeners('close');
+      mainWindow.destroy();
+      mainWindow = null;
+    }
+  } catch {}
+
+  try {
+    if (tray) {
+      tray.destroy();
+      tray = null;
+    }
+  } catch {}
+
+  try { stopRealtimeOrderListener(); } catch {}
+  try { stopCloudSyncIntervals(); } catch {}
+  try { stopKdsIntervals(); } catch {}
+  try { stopMdns(); } catch {}
+  try { stopKdsServer(); } catch {}
+  try { stopServer(); } catch {}
+  try { closeDatabase(); } catch {}
+
+  setTimeout(() => {
+    try {
+      console.log('[Update] Launching autoUpdater.quitAndInstall...');
+      autoUpdater.quitAndInstall(false, true);
+    } catch (err) {
+      console.error('[Update] Error in quitAndInstall:', err);
+      try { app.exit(0); } catch { process.exit(0); }
+    }
+  }, 250);
 }
 
 export function getMainWindow(): BrowserWindow | null {
@@ -634,8 +685,7 @@ async function initialize(): Promise<void> {
     });
 
     ipcMain.handle('quit-and-install', () => {
-      isQuitting = true;
-      autoUpdater.quitAndInstall();
+      safeQuitAndInstall();
     });
 
     ipcMain.handle('get-status', () => {
