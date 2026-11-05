@@ -13,6 +13,11 @@ let app: Express;
 let wss: WebSocketServer | null = null;
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
+let activePort = PORT;
+
+export function getActivePort(): number {
+  return activePort;
+}
 
 export function isServerRunning(): boolean {
   return server !== null;
@@ -101,26 +106,58 @@ export function startServer(): Promise<void> {
       res.status(500).json({ error: err.message || 'Internal server error' });
     });
 
-    server = app.listen(PORT, '0.0.0.0', () => {
-      console.log(`[Server] HTTP server running on http://localhost:${PORT}`);
+    const tryListen = (portToTry: number) => {
+      const s = app.listen(portToTry, '0.0.0.0', () => {
+        server = s;
+        activePort = portToTry;
+        console.log(`[Server] HTTP server running on http://127.0.0.1:${portToTry}`);
 
-      if (server) {
-        wss = new WebSocketServer({ server, path: '/kds' });
-        setupKdsWebSocket(wss);
-        console.log(`[Server] KDS WebSocket running on ws://localhost:${PORT}/kds`);
-      }
+        // Quick self-health check: verify 127.0.0.1 is actually reaching our server (not hijacked by another app returning 426)
+        const checkReq = http.get(`http://127.0.0.1:${portToTry}/api/health`, (res) => {
+          if (res.statusCode === 200) {
+            console.log(`[Server] Port ${portToTry} verified healthy.`);
+            if (server) {
+              wss = new WebSocketServer({ server, path: '/kds' });
+              setupKdsWebSocket(wss);
+              console.log(`[Server] KDS WebSocket running on ws://localhost:${portToTry}/kds`);
+            }
+            resolve();
+          } else {
+            console.warn(`[Server] Port ${portToTry} responded with status ${res.statusCode} (${res.statusMessage}). Port collision detected!`);
+            s.close(() => {
+              const fallbackPort = portToTry === PORT ? 3088 : portToTry + 1;
+              console.log(`[Server] Falling back to port ${fallbackPort}...`);
+              tryListen(fallbackPort);
+            });
+          }
+        });
 
-      resolve();
-    });
+        checkReq.on('error', (err) => {
+          console.warn(`[Server] Health check note on port ${portToTry}:`, err.message);
+          if (server) {
+            wss = new WebSocketServer({ server, path: '/kds' });
+            setupKdsWebSocket(wss);
+          }
+          resolve();
+        });
+        checkReq.setTimeout(1500, () => {
+          checkReq.destroy();
+          resolve();
+        });
+      });
 
-    server?.on('error', (err: NodeJS.ErrnoException) => {
-      if (err.code === 'EADDRINUSE') {
-        console.log(`[Server] Port ${PORT} in use, trying ${PORT + 1}`);
-        server?.listen(PORT + 1, '0.0.0.0');
-      } else {
-        reject(err);
-      }
-    });
+      s.on('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'EADDRINUSE') {
+          const fallbackPort = portToTry === PORT ? 3088 : portToTry + 1;
+          console.log(`[Server] Port ${portToTry} in use (EADDRINUSE), trying ${fallbackPort}`);
+          tryListen(fallbackPort);
+        } else {
+          reject(err);
+        }
+      });
+    };
+
+    tryListen(PORT);
   });
 }
 

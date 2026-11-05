@@ -370,9 +370,12 @@ export default function OrdersPage() {
                 };
               });
 
+              const isPosCloudOrder = co.source === 'pos' || co.order_source === 'pos' || String(co.notes || '').includes('POS Terminal') || String(co.notes || '').startsWith('POS:');
+              const resolvedSource = isPosCloudOrder ? 'pos' : (co.order_source || (co.source === 'online_menu' ? 'online' : 'pos'));
+
               const syntheticOrder: Order = {
                 id: co.id,
-                order_number: co.order_number || `ONL-${co.id}`,
+                order_number: co.order_number || (isPosCloudOrder ? `ORD-${co.id}` : `ONL-${co.id}`),
                 table_id: null,
                 customer_id: null,
                 type: (co.order_type || (co.delivery_address ? 'delivery' : 'takeaway')) as any,
@@ -391,7 +394,7 @@ export default function OrdersPage() {
                   co.customer_name || co.customer_phone
                     ? {
                         id: co.id,
-                        name: co.customer_name || 'Online Customer',
+                        name: co.customer_name || (isPosCloudOrder ? 'Walk-in Customer' : 'Online Customer'),
                         phone: co.customer_phone || '',
                         country_code: '+92',
                         email: null,
@@ -400,7 +403,7 @@ export default function OrdersPage() {
                         last_visit_at: co.created_at,
                       }
                     : undefined,
-                order_source: 'online',
+                order_source: resolvedSource,
                 delivery_address: co.delivery_address || null,
                 delivery_fee: Number(co.delivery_fee || 0),
                 delivery_rider_name: co.delivery_rider_name || (co.notes?.match(/\[RIDER:\s*([^|]+)/i)?.[1]?.trim() ?? null),
@@ -636,7 +639,7 @@ export default function OrdersPage() {
       return false; // Hold back from live operational board until verified!
     }
 
-    const isOnline = (order as any).order_source === 'online' || order.type === 'online';
+    const isOnline = ((order as any).order_source === 'online' || order.type === 'online') && (order as any).order_source !== 'pos' && !String((order as any).notes || '').includes('POS');
     if (filterType === 'online' && !isOnline) return false;
     if (filterType === 'dine_in' && order.type !== 'dine_in') return false;
     if (filterType === 'takeaway' && (order.type !== 'takeaway' || isOnline)) return false;
@@ -995,7 +998,7 @@ export default function OrdersPage() {
         /* ================= CARDS GRID VIEW ================= */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filteredOrders.map((order) => {
-            const isOnline = (order as any).order_source === 'online' || order.type === 'online';
+            const isOnline = ((order as any).order_source === 'online' || order.type === 'online') && (order as any).order_source !== 'pos' && !String((order as any).notes || '').includes('POS');
             const customerName = order.customer?.name || order.customer_name || (order.special_instructions?.match(/Customer:\s*([^|]+)/)?.[1]?.trim());
             const customerPhone = order.customer?.phone || order.customer_phone || (order.special_instructions?.match(/Phone:\s*([^|]+)/)?.[1]?.trim());
 
@@ -1249,7 +1252,7 @@ export default function OrdersPage() {
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
                 {filteredOrders.map((order) => {
-                  const isOnline = (order as any).order_source === 'online' || order.type === 'online';
+                  const isOnline = ((order as any).order_source === 'online' || order.type === 'online') && (order as any).order_source !== 'pos' && !String((order as any).notes || '').includes('POS');
                   const customerName = order.customer?.name || order.customer_name || (order.special_instructions?.match(/Customer:\s*([^|]+)/)?.[1]?.trim());
                   const customerPhone = order.customer?.phone || order.customer_phone || (order.special_instructions?.match(/Phone:\s*([^|]+)/)?.[1]?.trim());
 

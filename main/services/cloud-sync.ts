@@ -1262,7 +1262,7 @@ export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck 
           special_instructions, customer_id, customer_name, customer_phone, shop_id,
           is_verified, verified_at, is_synced, created_at
         ) VALUES (
-          ?, ?, 'online', ?, ?,
+          ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?,
           ?, ?, 1, ?
@@ -1279,9 +1279,12 @@ export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck 
         cloudOrder.delivery_rider_name ? `Rider: ${cloudOrder.delivery_rider_name}` : null
       ].filter(Boolean).join(' | ');
 
+      const resolvedOrderSource = isFromPos ? 'pos' : (cloudOrder.order_source || (cloudOrder.source === 'online_menu' ? 'online' : 'pos'));
+
       const res = orderStmt.run(
         orderNumber,
         cloudOrderIdStr,
+        resolvedOrderSource,
         orderType,
         status,
         subtotal,
@@ -1399,7 +1402,9 @@ export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck 
     notifyKdsUpdate();
 
     // 2. Broadcast to UI / POS screens in real time
-    broadcastCloudEvent('online-order-received', { orderNumber, total, localOrderId, customerName: cloudOrder.customer_name });
+    if (!isFromPos) {
+      broadcastCloudEvent('online-order-received', { orderNumber, total, localOrderId, customerName: cloudOrder.customer_name });
+    }
     broadcastCloudEvent('order-synced', { orderNumber, localOrderId });
 
     // 3. Verification & Auto-Print Logic

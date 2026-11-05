@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { Bonjour } from 'bonjour-service';
 import { initDatabase, closeDatabase } from './db';
-import { startServer, stopServer, getLocalIP, isServerRunning } from './server';
+import { startServer, stopServer, getLocalIP, isServerRunning, getActivePort } from './server';
 import { startKdsServer, stopKdsServer, getKdsPort, isKdsServerRunning } from './kds-server';
 import { initPrinter, printReceipt, printKOT } from './printers/thermal';
 import { registerIpcHandlers } from './ipc';
@@ -382,14 +382,15 @@ function createWindow(): void {
 
   // Always load from the embedded Express server (serves static Next.js export).
   // This avoids file:// protocol issues and keeps dev/prod behaviour identical.
-  mainWindow.loadURL(`http://localhost:${PORT}`);
+  mainWindow.loadURL(`http://127.0.0.1:${getActivePort()}`);
 
   // Allow target="_blank" links to open new windows for local URLs (e.g. the KDS page).
   // External URLs are sent to the system browser instead.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    const isLocal = url.startsWith(`http://localhost:${PORT}`) ||
-                    url.startsWith(`http://127.0.0.1:${PORT}`) ||
-                    url.startsWith(`http://${getLocalIP()}:${PORT}`);
+    const activeP = getActivePort();
+    const isLocal = url.startsWith(`http://localhost:${activeP}`) ||
+                    url.startsWith(`http://127.0.0.1:${activeP}`) ||
+                    url.startsWith(`http://${getLocalIP()}:${activeP}`);
     if (isLocal) {
       return {
         action: 'allow',
@@ -448,7 +449,7 @@ function createWindow(): void {
     // Auto-retry reload if local server was waking up
     setTimeout(() => {
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.loadURL(`http://localhost:${PORT}`);
+        mainWindow.loadURL(`http://127.0.0.1:${getActivePort()}`);
       }
     }, 1500);
   });
@@ -461,6 +462,20 @@ function createWindow(): void {
         mainWindow.webContents.reloadIgnoringCache();
       }
     }, 1000);
+  });
+
+  mainWindow.webContents.on('did-finish-load', async () => {
+    try {
+      const pageText = await mainWindow?.webContents.executeJavaScript('document.body ? document.body.innerText : ""').catch(() => '');
+      if (pageText && pageText.trim().includes('Upgrade Required')) {
+        console.warn('[Window] Upgrade Required detected in page content, reloading on verified port...');
+        setTimeout(() => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.loadURL(`http://127.0.0.1:${getActivePort()}`);
+          }
+        }, 1000);
+      }
+    } catch {}
   });
 
   mainWindow.webContents.on('responsive', () => {

@@ -575,6 +575,33 @@ export default function CartPanel({
           )}
         </div>
 
+        {/* Slips Printing Toggles */}
+        <div className="flex items-center justify-between px-2.5 py-1.5 bg-slate-100/90 border border-slate-200 rounded-lg text-xs">
+          <span className="font-extrabold text-slate-700 text-[11px] flex items-center gap-1">
+            🖨️ Slips:
+          </span>
+          <div className="flex items-center gap-3">
+            <label className="inline-flex items-center gap-1.5 cursor-pointer font-bold text-slate-800 text-xs select-none">
+              <input
+                type="checkbox"
+                checked={cart.printKot}
+                onChange={(e) => cart.setPrintKot(e.target.checked)}
+                className="rounded text-orange-600 focus:ring-orange-500 cursor-pointer h-3.5 w-3.5"
+              />
+              <span>🍳 Kitchen KOT</span>
+            </label>
+            <label className="inline-flex items-center gap-1.5 cursor-pointer font-bold text-slate-800 text-xs select-none">
+              <input
+                type="checkbox"
+                checked={cart.printReceipt}
+                onChange={(e) => cart.setPrintReceipt(e.target.checked)}
+                className="rounded text-orange-600 focus:ring-orange-500 cursor-pointer h-3.5 w-3.5"
+              />
+              <span>🧾 Customer Copy</span>
+            </label>
+          </div>
+        </div>
+
         <div className="flex gap-2">
           <Button
             onClick={onPlaceOrder}

@@ -147,6 +147,8 @@ export default function POSPage() {
       });
 
       toast.success(`Order #${data.order.order_number} placed!`);
+      const shouldPrintKot = cart.printKot;
+      const shouldPrintBill = cart.printReceipt;
       cart.clearCart();
       setMobileCartOpen(false);
 
@@ -177,7 +179,7 @@ export default function POSPage() {
               },
             };
 
-            if (autoPrintBill && currentTenant) {
+            if (shouldPrintBill && autoPrintBill && currentTenant) {
               await printBill(billToPrint, {
                 business_name: currentTenant.business_name,
                 currency,
@@ -197,7 +199,7 @@ export default function POSPage() {
                 customer: finalCustomerObj,
               },
             };
-            if (autoPrintBill && currentTenant) {
+            if (shouldPrintBill && autoPrintBill && currentTenant) {
               await printBill(billToPrint, {
                 business_name: currentTenant.business_name,
                 currency,
@@ -209,7 +211,7 @@ export default function POSPage() {
         console.error('Auto bill generation failed:', billErr);
       }
 
-      if (autoPrintKot) {
+      if (shouldPrintKot && autoPrintKot) {
         try {
           const finalCustomerObj = data.order?.customer || (customerName || customerPhone ? { name: customerName || '', phone: customerPhone || '' } : undefined);
           const orderForKot = {

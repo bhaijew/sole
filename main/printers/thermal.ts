@@ -577,7 +577,8 @@ function formatSingleReceiptCopy(
   if (!customerName && order?.special_instructions && order.special_instructions.includes('Customer: ')) {
     customerName = order.special_instructions.split('Customer: ')[1]?.split('|')[0]?.trim();
   }
-  if (!customerName && order?.order_source === 'online') {
+  const isPosOrder = order?.source === 'pos' || order?.order_source === 'pos' || String(order?.notes || '').includes('POS Terminal') || String(order?.notes || '').startsWith('POS:');
+  if (!customerName && order?.order_source === 'online' && !isPosOrder) {
     customerName = 'Online Customer';
   }
 

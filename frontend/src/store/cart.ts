@@ -14,6 +14,8 @@ interface CartState {
   deliveryFee: number;
   deliveryAddress: string;
   guestCount: number;
+  printKot: boolean;
+  printReceipt: boolean;
 
   addItem: (product: Product, quantity?: number, addons?: Addon[], specialInstructions?: string, size?: string) => void;
   updateItemSize: (cartItemId: string, size: string) => void;
@@ -32,6 +34,8 @@ interface CartState {
   setDeliveryFee: (fee: number) => void;
   setDeliveryAddress: (address: string) => void;
   setGuestCount: (count: number) => void;
+  setPrintKot: (val: boolean) => void;
+  setPrintReceipt: (val: boolean) => void;
 
   subtotal: () => number;
   itemCount: () => number;
@@ -98,6 +102,8 @@ export const useCartStore = create<CartState>((set, get) => ({
   deliveryFee: 0,
   deliveryAddress: '',
   guestCount: 1,
+  printKot: true,
+  printReceipt: true,
 
   addItem: (product, quantity = 1, addons = [], specialInstructions = '', size = '') => {
     const items = get().items;
@@ -208,6 +214,8 @@ export const useCartStore = create<CartState>((set, get) => ({
   setDeliveryFee: (fee) => set({ deliveryFee: Math.max(0, Number(fee) || 0) }),
   setDeliveryAddress: (address) => set({ deliveryAddress: address }),
   setGuestCount: (count) => set({ guestCount: count }),
+  setPrintKot: (val) => set({ printKot: val }),
+  setPrintReceipt: (val) => set({ printReceipt: val }),
 
   subtotal: () => {
     return get().items.reduce((sum, item) => {
