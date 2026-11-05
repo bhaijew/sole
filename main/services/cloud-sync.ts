@@ -1346,26 +1346,29 @@ export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck 
  * Pull all recent online orders from Pizza System cloud (Supabase)
  */
 export async function pullOnlineOrdersFromCloud(): Promise<{
-      // Sync latest daily closing timestamp to maintain accurate shift boundaries
-      try {
-        const { data: latestClosing } = await client
-          .from('daily_closings')
-          .select('created_at')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (latestClosing?.created_at) {
-          db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('last_closing_at', ?, datetime('now'))")
-            .run(latestClosing.created_at);
-        }
-      } catch {}
-
   success: boolean;
   message: string;
   importedCount: number;
   totalCloudOrders: number;
 }> {
+  // Sync latest daily closing timestamp to maintain accurate shift boundaries
+  try {
+    const client = getSupabaseClient();
+    if (client) {
+      const { data: latestClosing } = await client
+        .from('daily_closings')
+        .select('created_at')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latestClosing?.created_at) {
+        const db = getDatabase();
+        db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('last_closing_at', ?, datetime('now'))")
+          .run(latestClosing.created_at);
+      }
+    }
+  } catch {}
   const syncEnabled = getSetting('cloud_sync_enabled', '1') === '1';
   if (!syncEnabled) {
     return { success: false, message: 'Cloud sync is disabled in settings', importedCount: 0, totalCloudOrders: 0 };
