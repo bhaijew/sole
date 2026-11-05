@@ -76,11 +76,11 @@ export default function CartPanel({
       className={
         isDrawer
           ? 'flex flex-col w-full'
-          : 'w-full h-full bg-white rounded-xl border border-gray-100 flex flex-col shadow-sm'
+          : 'w-full h-full bg-white rounded-xl border border-gray-100 flex flex-col shadow-sm overflow-hidden'
       }
     >
       {/* Order Type & Contextual Customer / Delivery Information */}
-      <div className="p-2.5 border-b border-gray-100 space-y-2 bg-gray-50/40">
+      <div className="p-2 border-b border-gray-100 space-y-1.5 bg-gray-50/40 shrink-0">
         {/* Top Order Type Selector */}
         <div className="flex gap-1 bg-gray-200/80 rounded-lg p-0.5">
           {(['dine_in', 'takeaway', 'delivery'] as const).map((type) => {
@@ -235,20 +235,20 @@ export default function CartPanel({
         )}
 
         {cart.orderType === 'delivery' && (
-          <div className="space-y-1.5 animate-in fade-in duration-150">
+          <div className="space-y-1 animate-in fade-in duration-150">
             {/* Row 1: Phone & Name in 2 columns */}
             <div className="grid grid-cols-2 gap-1.5">
               <div className="relative">
                 <div className="relative flex items-center">
                   <div className="absolute left-2.5 pointer-events-none">
-                    <Phone size={13} className={cart.customerPhone ? 'text-emerald-600' : 'text-gray-400'} />
+                    <Phone size={12} className={cart.customerPhone ? 'text-emerald-600' : 'text-gray-400'} />
                   </div>
                   <input
                     type="tel"
                     value={cart.customerPhone || ''}
                     onChange={(e) => handlePhoneChange(e.target.value)}
-                    placeholder="Mobile / Phone #"
-                    className="w-full pl-7 pr-6 py-1.5 text-xs bg-white border border-emerald-300 focus:border-emerald-500 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium shadow-2xs"
+                    placeholder="Phone #"
+                    className="w-full pl-7 pr-6 py-1 text-xs bg-white border border-emerald-300 focus:border-emerald-500 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium shadow-2xs"
                   />
                   {cart.customerPhone && (
                     <button
@@ -289,14 +289,14 @@ export default function CartPanel({
               {/* Customer Name */}
               <div className="relative flex items-center">
                 <div className="absolute left-2.5 text-gray-400 pointer-events-none">
-                  <User size={13} className={cart.customerName ? 'text-emerald-600' : ''} />
+                  <User size={12} className={cart.customerName ? 'text-emerald-600' : ''} />
                 </div>
                 <input
                   type="text"
                   value={cart.customerName || ''}
                   onChange={(e) => cart.setCustomerName(e.target.value)}
                   placeholder="Customer Name"
-                  className="w-full pl-7 pr-6 py-1.5 text-xs bg-white border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 shadow-2xs"
+                  className="w-full pl-7 pr-6 py-1 text-xs bg-white border border-gray-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 shadow-2xs"
                 />
                 {cart.customerName && (
                   <button
@@ -314,14 +314,14 @@ export default function CartPanel({
             {/* Row 2: Delivery Address (Compact 1-line) */}
             <div className="relative flex items-center">
               <div className="absolute left-2.5 text-emerald-600 pointer-events-none">
-                <Truck size={13} />
+                <Truck size={12} />
               </div>
               <input
                 type="text"
                 value={cart.deliveryAddress || ''}
                 onChange={(e) => cart.setDeliveryAddress(e.target.value)}
                 placeholder="House, Street, Area / Delivery Address"
-                className="w-full pl-7 pr-6 py-1.5 text-xs bg-emerald-50/30 border border-emerald-300 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 shadow-2xs font-medium"
+                className="w-full pl-7 pr-6 py-1 text-xs bg-emerald-50/30 border border-emerald-300 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 shadow-2xs font-medium"
               />
               {cart.deliveryAddress && (
                 <button
@@ -336,9 +336,9 @@ export default function CartPanel({
             </div>
 
             {/* Row 3: Compact 1-line Delivery Charges & Quick Chips */}
-            <div className="flex items-center justify-between bg-emerald-50/70 border border-emerald-200/90 rounded-lg px-2 py-1 text-xs">
+            <div className="flex items-center justify-between bg-emerald-50/70 border border-emerald-200/90 rounded-lg px-2 py-0.5 text-xs">
               <div className="flex items-center gap-1 text-emerald-900 font-bold shrink-0">
-                <span className="text-[11px] text-emerald-800">Fee:</span>
+                <span className="text-[10px] text-emerald-800">Fee:</span>
                 <div className="flex items-center bg-white border border-emerald-300 rounded px-1.5 py-0.5">
                   <span className="text-[10px] text-gray-400 mr-0.5">{currency}</span>
                   <input
@@ -348,7 +348,7 @@ export default function CartPanel({
                     value={cart.deliveryFee === 0 ? '' : cart.deliveryFee}
                     placeholder="0"
                     onChange={(e) => cart.setDeliveryFee(Math.max(0, Number(e.target.value) || 0))}
-                    className="w-12 text-xs font-mono font-bold text-gray-900 focus:outline-none"
+                    className="w-10 text-xs font-mono font-bold text-gray-900 focus:outline-none"
                   />
                 </div>
               </div>
@@ -375,7 +375,7 @@ export default function CartPanel({
       </div>
 
       {/* Cart Items */}
-      <div className={isDrawer ? 'overflow-y-auto p-3 max-h-[60vh]' : 'flex-1 overflow-y-auto p-3 min-h-[160px]'}>
+      <div className={isDrawer ? 'overflow-y-auto p-2.5 max-h-[55vh]' : 'flex-1 min-h-0 overflow-y-auto p-2.5'}>
         {cart.items.length === 0 ? (
           <div className={`flex flex-col items-center justify-center text-gray-400 ${isDrawer ? 'py-8' : 'h-full'}`}>
             <ShoppingCart size={40} />
@@ -468,41 +468,41 @@ export default function CartPanel({
       </div>
 
       {/* Cart Footer */}
-      <div className="p-4 border-t border-gray-100">
-        <div className="flex justify-between mb-1 text-xs text-gray-500">
-          <span>Items</span>
-          <span className="font-medium">{cart.itemCount()}</span>
-        </div>
-        <div className="flex justify-between mb-1 text-xs text-gray-500">
-          <span>Subtotal</span>
-          <span className="font-medium">{currency}{cart.subtotal().toLocaleString()}</span>
-        </div>
-        {cart.orderType === 'delivery' && (
-          <div className="flex justify-between mb-1 text-xs font-semibold text-emerald-600">
-            <span>🛵 Delivery Fee</span>
-            <span>{cart.deliveryFee > 0 ? `+${currency}${cart.deliveryFee.toLocaleString()}` : 'FREE'}</span>
+      <div className="p-2.5 border-t border-gray-100 shrink-0 bg-white space-y-1.5">
+        <div className="space-y-0.5 text-xs">
+          <div className="flex justify-between text-gray-500 text-[11px]">
+            <span>Items ({cart.itemCount()})</span>
+            <span className="font-medium">{currency}{cart.subtotal().toLocaleString()}</span>
           </div>
-        )}
-        <div className="flex justify-between mb-2 text-base pt-2 border-t border-gray-100">
-          <span className="font-semibold text-gray-900">Total</span>
-          <span className="font-bold text-brand text-lg">
-            {currency}{(cart.subtotal() + (cart.orderType === 'delivery' ? cart.deliveryFee : 0)).toLocaleString()}
-          </span>
+          {cart.orderType === 'delivery' && (
+            <div className="flex justify-between text-[11px] font-semibold text-emerald-600">
+              <span>🛵 Delivery Fee</span>
+              <span>{cart.deliveryFee > 0 ? `+${currency}${cart.deliveryFee.toLocaleString()}` : 'FREE'}</span>
+            </div>
+          )}
+          <div className="flex justify-between items-baseline pt-1 border-t border-gray-100">
+            <span className="font-bold text-gray-900 text-xs">Total</span>
+            <span className="font-black text-brand text-base">
+              {currency}{(cart.subtotal() + (cart.orderType === 'delivery' ? cart.deliveryFee : 0)).toLocaleString()}
+            </span>
+          </div>
         </div>
 
         {/* Quick Payment Method Selector: Cash, Online, or Paid directly above Place Order */}
-        <div className="pt-1 pb-2">
+        <div>
           <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] font-black text-gray-500 uppercase tracking-wider">
-              Payment (Printed on Slip):
+            <span className="text-[10px] font-extrabold text-gray-500 uppercase tracking-wider">
+              Payment:
             </span>
             <span
-              className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${
+              className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase ${
                 cart.paymentMethod === 'online'
                   ? 'bg-blue-100 text-blue-700'
-                  : cart.paymentMethod === 'paid'
-                  ? 'bg-emerald-100 text-emerald-800'
-                  : 'bg-amber-100 text-amber-800'
+                  : cart.paymentMethod === 'paid' || cart.paymentMethod === 'already_paid'
+                  ? 'bg-purple-100 text-purple-700'
+                  : cart.paymentMethod === 'unpaid'
+                  ? 'bg-amber-100 text-amber-800'
+                  : 'bg-emerald-100 text-emerald-800'
               }`}
             >
               {cart.paymentMethod === 'online'
@@ -510,124 +510,157 @@ export default function CartPanel({
                 : cart.paymentMethod === 'already_paid' || cart.paymentMethod === 'paid'
                 ? '✅ ALREADY PAID'
                 : cart.paymentMethod === 'unpaid'
-                ? '🛵 PAY ON DELIVERY'
+                ? '🛵 COD'
                 : '💵 CASH'}
             </span>
           </div>
 
-          <div className="grid grid-cols-3 gap-1 bg-gray-100 p-1 rounded-lg">
-            <button
-              type="button"
-              onClick={() => cart.setPaymentMethod('cash')}
-              className={`flex items-center justify-center gap-1 py-2 px-1 rounded-md text-xs font-black transition-all cursor-pointer ${
-                cart.paymentMethod === 'cash'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'bg-white text-gray-700 hover:text-gray-900 border border-gray-200'
-              }`}
-              title="Customer paying cash right now"
-            >
-              <span>💵</span>
-              <span>CASH</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => cart.setPaymentMethod('online')}
-              className={`flex items-center justify-center gap-1 py-2 px-1 rounded-md text-xs font-black transition-all cursor-pointer ${
-                cart.paymentMethod === 'online'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'bg-white text-gray-700 hover:text-gray-900 border border-gray-200'
-              }`}
-              title="Customer paying via Online, Card, EasyPaisa, or Raast"
-            >
-              <span>📱</span>
-              <span>ONLINE</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => cart.setPaymentMethod('already_paid')}
-              className={`flex items-center justify-center gap-1 py-2 px-1 rounded-md text-xs font-black transition-all cursor-pointer ${
-                cart.paymentMethod === 'already_paid' || cart.paymentMethod === 'paid'
-                  ? 'bg-purple-600 text-white shadow-sm'
-                  : 'bg-white text-gray-700 hover:text-gray-900 border border-gray-200'
-              }`}
-              title="Customer has ALREADY paid in advance (Do not collect money)"
-            >
-              <span>✅</span>
-              <span>ALREADY PAID</span>
-            </button>
-          </div>
-
-          {cart.orderType === 'delivery' && (
-            <div className="mt-1">
+          {cart.orderType === 'delivery' ? (
+            <div className="grid grid-cols-4 gap-1 bg-gray-100 p-0.5 rounded-lg">
               <button
                 type="button"
-                onClick={() => cart.setPaymentMethod(cart.paymentMethod === 'unpaid' ? 'cash' : 'unpaid')}
-                className={`w-full py-1 text-[11px] font-bold rounded border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  cart.paymentMethod === 'unpaid'
-                    ? 'bg-amber-100 border-amber-300 text-amber-900'
-                    : 'bg-white border-dashed border-gray-300 text-gray-600 hover:bg-gray-50'
+                onClick={() => cart.setPaymentMethod('cash')}
+                className={`py-1.5 px-0.5 rounded text-[10px] font-black transition-all cursor-pointer text-center ${
+                  cart.paymentMethod === 'cash'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-white text-gray-700 hover:text-gray-900'
                 }`}
+                title="Customer paying cash right now"
               >
-                <span>🛵</span>
-                <span>{cart.paymentMethod === 'unpaid' ? '✓ Set as Pay on Delivery (Unpaid COD)' : 'Click if Pay on Delivery (Unpaid COD)'}</span>
+                💵 Cash
+              </button>
+              <button
+                type="button"
+                onClick={() => cart.setPaymentMethod('unpaid')}
+                className={`py-1.5 px-0.5 rounded text-[10px] font-black transition-all cursor-pointer text-center ${
+                  cart.paymentMethod === 'unpaid'
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'bg-white text-gray-700 hover:text-gray-900'
+                }`}
+                title="Pay on Delivery (COD)"
+              >
+                🛵 COD
+              </button>
+              <button
+                type="button"
+                onClick={() => cart.setPaymentMethod('online')}
+                className={`py-1.5 px-0.5 rounded text-[10px] font-black transition-all cursor-pointer text-center ${
+                  cart.paymentMethod === 'online'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-white text-gray-700 hover:text-gray-900'
+                }`}
+                title="Online Payment"
+              >
+                📱 Online
+              </button>
+              <button
+                type="button"
+                onClick={() => cart.setPaymentMethod('already_paid')}
+                className={`py-1.5 px-0.5 rounded text-[10px] font-black transition-all cursor-pointer text-center ${
+                  cart.paymentMethod === 'already_paid' || cart.paymentMethod === 'paid'
+                    ? 'bg-purple-600 text-white shadow-xs'
+                    : 'bg-white text-gray-700 hover:text-gray-900'
+                }`}
+                title="Already Paid"
+              >
+                ✅ Paid
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-1 bg-gray-100 p-0.5 rounded-lg">
+              <button
+                type="button"
+                onClick={() => cart.setPaymentMethod('cash')}
+                className={`py-1.5 px-1 rounded text-[11px] font-black transition-all cursor-pointer text-center ${
+                  cart.paymentMethod === 'cash'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-white text-gray-700 hover:text-gray-900'
+                }`}
+                title="Customer paying cash right now"
+              >
+                💵 CASH
+              </button>
+              <button
+                type="button"
+                onClick={() => cart.setPaymentMethod('online')}
+                className={`py-1.5 px-1 rounded text-[11px] font-black transition-all cursor-pointer text-center ${
+                  cart.paymentMethod === 'online'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-white text-gray-700 hover:text-gray-900'
+                }`}
+                title="Customer paying via Online, Card, EasyPaisa, or Raast"
+              >
+                📱 ONLINE
+              </button>
+              <button
+                type="button"
+                onClick={() => cart.setPaymentMethod('already_paid')}
+                className={`py-1.5 px-1 rounded text-[11px] font-black transition-all cursor-pointer text-center ${
+                  cart.paymentMethod === 'already_paid' || cart.paymentMethod === 'paid'
+                    ? 'bg-purple-600 text-white shadow-xs'
+                    : 'bg-white text-gray-700 hover:text-gray-900'
+                }`}
+                title="Customer has ALREADY paid in advance"
+              >
+                ✅ ALREADY PAID
               </button>
             </div>
           )}
         </div>
 
         {/* Slips Printing Toggles */}
-        <div className="flex items-center justify-between px-2.5 py-1.5 bg-slate-100/90 border border-slate-200 rounded-lg text-xs">
-          <span className="font-extrabold text-slate-700 text-[11px] flex items-center gap-1">
+        <div className="flex items-center justify-between px-2 py-1 bg-slate-100/90 border border-slate-200/90 rounded-md text-xs">
+          <span className="font-extrabold text-slate-600 text-[10px] flex items-center gap-1">
             🖨️ Slips:
           </span>
-          <div className="flex items-center gap-3">
-            <label className="inline-flex items-center gap-1.5 cursor-pointer font-bold text-slate-800 text-xs select-none">
+          <div className="flex items-center gap-2.5">
+            <label className="inline-flex items-center gap-1 cursor-pointer font-bold text-slate-800 text-[11px] select-none">
               <input
                 type="checkbox"
                 checked={cart.printKot}
                 onChange={(e) => cart.setPrintKot(e.target.checked)}
                 className="rounded text-orange-600 focus:ring-orange-500 cursor-pointer h-3.5 w-3.5"
               />
-              <span>🍳 Kitchen KOT</span>
+              <span>🍳 KOT</span>
             </label>
-            <label className="inline-flex items-center gap-1.5 cursor-pointer font-bold text-slate-800 text-xs select-none">
+            <label className="inline-flex items-center gap-1 cursor-pointer font-bold text-slate-800 text-[11px] select-none">
               <input
                 type="checkbox"
                 checked={cart.printReceipt}
                 onChange={(e) => cart.setPrintReceipt(e.target.checked)}
                 className="rounded text-orange-600 focus:ring-orange-500 cursor-pointer h-3.5 w-3.5"
               />
-              <span>🧾 Customer Copy</span>
+              <span>🧾 Bill</span>
             </label>
           </div>
         </div>
 
-        <div className="flex gap-2">
-          <Button
-            onClick={onPlaceOrder}
-            disabled={submitting || cart.items.length === 0}
-            className={`flex-1 font-extrabold h-11 text-sm shadow-sm transition-all cursor-pointer ${
-              cart.paymentMethod === 'online'
-                ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                : cart.paymentMethod === 'paid'
-                ? 'bg-purple-600 hover:bg-purple-700 text-white'
-                : 'bg-orange-600 hover:bg-orange-700 text-white'
-            }`}
-            size="lg"
-          >
-            {submitting
-              ? 'Placing Order...'
-              : `Place Order (${
-                  cart.paymentMethod === 'online'
-                    ? 'Paid Online'
-                    : cart.paymentMethod === 'already_paid' || cart.paymentMethod === 'paid'
-                    ? 'Already Paid'
-                    : cart.paymentMethod === 'unpaid'
-                    ? 'Pay on Delivery'
-                    : 'Paid by Cash'
-                })`}
-          </Button>
-        </div>
+        <Button
+          onClick={onPlaceOrder}
+          disabled={submitting || cart.items.length === 0}
+          className={`w-full font-black h-10 text-xs sm:text-sm shadow-sm transition-all cursor-pointer ${
+            cart.paymentMethod === 'online'
+              ? 'bg-blue-600 hover:bg-blue-700 text-white'
+              : cart.paymentMethod === 'paid' || cart.paymentMethod === 'already_paid'
+              ? 'bg-purple-600 hover:bg-purple-700 text-white'
+              : cart.paymentMethod === 'unpaid'
+              ? 'bg-amber-600 hover:bg-amber-700 text-white'
+              : 'bg-orange-600 hover:bg-orange-700 text-white'
+          }`}
+          size="default"
+        >
+          {submitting
+            ? 'Placing Order...'
+            : `Place Order (${
+                cart.paymentMethod === 'online'
+                  ? 'Paid Online'
+                  : cart.paymentMethod === 'already_paid' || cart.paymentMethod === 'paid'
+                  ? 'Already Paid'
+                  : cart.paymentMethod === 'unpaid'
+                  ? 'COD'
+                  : 'Paid by Cash'
+              })`}
+        </Button>
       </div>
     </div>
   );
