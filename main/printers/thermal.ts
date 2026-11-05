@@ -952,18 +952,36 @@ export function extractDealItems(item: any, db?: any): string[] {
     if (activeDb) {
       const prodId = item.product_id || item.id;
       const prodName = (item.product_name || item.name || '').trim();
+      const itemPrice = Number(item.unit_price || item.price || 0);
+      const prodIdStr = String(prodId || '');
+      const isRealProdId = Boolean(prodIdStr && !prodIdStr.startsWith('item-') && !prodIdStr.startsWith('custom-'));
 
       // Check deals table first
       try {
         const dealRow = activeDb.prepare(
-          `SELECT items_included, description FROM deals 
-           WHERE (product_id = ? AND product_id IS NOT NULL AND product_id != '') 
+          `SELECT items_included, description, price FROM deals 
+           WHERE (${isRealProdId ? 'product_id = ?' : '0=1'}) 
               OR title = ? 
               OR lower(title) = lower(?)
               OR lower(title) LIKE lower(?)
               OR lower(?) LIKE lower('%' || title || '%')
+           ORDER BY 
+              CASE WHEN (${isRealProdId ? 'product_id = ?' : '0=1'}) THEN 0 ELSE 1 END ASC,
+              CASE WHEN lower(title) = lower(?) THEN 0 ELSE 1 END ASC,
+              CASE WHEN ? > 0 THEN ABS(COALESCE(price, 0) - ?) ELSE 0 END ASC,
+              id ASC
            LIMIT 1`
-        ).get(String(prodId || ''), prodName, prodName, `%${prodName}%`, prodName) as any;
+        ).get(
+          ...(isRealProdId ? [prodIdStr] : []),
+          prodName,
+          prodName,
+          `%${prodName}%`,
+          prodName,
+          ...(isRealProdId ? [prodIdStr] : []),
+          prodName,
+          itemPrice,
+          itemPrice
+        ) as any;
 
         if (dealRow) {
           if (dealRow.items_included) itemsIncluded = dealRow.items_included;
@@ -975,12 +993,29 @@ export function extractDealItems(item: any, db?: any): string[] {
       if (!itemsIncluded && !description) {
         try {
           const prodRow = activeDb.prepare(
-            `SELECT description, items_included FROM products 
-             WHERE id = ? OR name = ? OR lower(name) = lower(?)
+            `SELECT description, items_included, price FROM products 
+             WHERE (${isRealProdId ? 'id = ?' : '0=1'}) 
+                OR name = ? 
+                OR lower(name) = lower(?)
                 OR lower(name) LIKE lower(?)
                 OR lower(?) LIKE lower('%' || name || '%')
+             ORDER BY 
+                CASE WHEN (${isRealProdId ? 'id = ?' : '0=1'}) THEN 0 ELSE 1 END ASC,
+                CASE WHEN lower(name) = lower(?) THEN 0 ELSE 1 END ASC,
+                CASE WHEN ? > 0 THEN ABS(COALESCE(price, 0) - ?) ELSE 0 END ASC,
+                id ASC
              LIMIT 1`
-          ).get(String(prodId || ''), prodName, prodName, `%${prodName}%`, prodName) as any;
+          ).get(
+            ...(isRealProdId ? [prodIdStr] : []),
+            prodName,
+            prodName,
+            `%${prodName}%`,
+            prodName,
+            ...(isRealProdId ? [prodIdStr] : []),
+            prodName,
+            itemPrice,
+            itemPrice
+          ) as any;
 
           if (prodRow) {
             if (prodRow.items_included) itemsIncluded = prodRow.items_included;
@@ -1017,12 +1052,19 @@ export function extractDealItems(item: any, db?: any): string[] {
   if (description && typeof description === 'string') {
     const desc = description.trim();
 
+    // Helper to clean bullets or list numbering while PRESERVING item quantities (e.g. "2 MEDIUM PIZZA", "1 CHICKEN BURGER")
+    const cleanItemBullet = (s: string) =>
+      s
+        .replace(/^[•\-\*✓·]\s*/, '')
+        .replace(/^\d+[\.\)]\s*/, '')
+        .trim();
+
     // Bullet points "•" or "·"
     if (desc.includes('•') || desc.includes('·')) {
       const sep = desc.includes('•') ? '•' : '·';
       const parts = desc
         .split(sep)
-        .map((s) => s.replace(/^[•\-\*✓\d+\.]\s*/, '').trim())
+        .map(cleanItemBullet)
         .filter(Boolean);
       if (parts.length > 0) return parts;
     }
@@ -1031,25 +1073,25 @@ export function extractDealItems(item: any, db?: any): string[] {
     if (desc.includes('\n')) {
       const lines = desc
         .split('\n')
-        .map((s) => s.replace(/^[•\-\*✓\d+\.]\s*/, '').trim())
+        .map(cleanItemBullet)
         .filter(Boolean);
       if (lines.length > 1) return lines;
     }
 
     // Plus separated (e.g. "1 Regular Pizza + 1 Zinger Burger + 1 Drink")
     if (desc.includes('+')) {
-      const parts = desc.split('+').map((s) => s.trim()).filter(Boolean);
+      const parts = desc.split('+').map(cleanItemBullet).filter(Boolean);
       if (parts.length > 1) return parts;
     }
 
     // Comma separated if it's explicitly a deal
     if (isDeal && desc.includes(',')) {
-      const parts = desc.split(',').map((s) => s.trim()).filter(Boolean);
+      const parts = desc.split(',').map(cleanItemBullet).filter(Boolean);
       if (parts.length > 1) return parts;
     }
 
     if (isDeal && desc.length > 0) {
-      return [desc];
+      return [cleanItemBullet(desc)];
     }
   }
 

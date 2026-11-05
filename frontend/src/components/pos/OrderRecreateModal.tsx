@@ -263,6 +263,7 @@ export default function OrderRecreateModal({
           qty: Math.max(1, addQty),
           detail,
           variant_selection: selectedVariation ? { name: selectedVariation.name, price } : null,
+          items_included: currentSelectedProduct.items_included || currentSelectedProduct.description || null,
         },
       ]);
     }

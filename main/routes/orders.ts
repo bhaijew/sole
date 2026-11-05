@@ -228,9 +228,19 @@ router.post('/', async (req: Request, res: Response) => {
     `);
 
     for (const item of items) {
+      const itemPrice = Number(item.unit_price || item.price || 0);
+      const prodName = (item.product_name || item.name || '').trim();
       let product = item.product_id ? (db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any) : null;
-      if (!product && (item.product_name || item.name)) {
-        product = db.prepare('SELECT * FROM products WHERE name = ?').get(item.product_name || item.name) as any;
+      if (!product && prodName) {
+        product = db.prepare(`
+          SELECT * FROM products 
+          WHERE name = ? OR lower(name) = lower(?)
+          ORDER BY 
+            CASE WHEN lower(name) = lower(?) THEN 0 ELSE 1 END ASC,
+            CASE WHEN ? > 0 THEN ABS(COALESCE(price, 0) - ?) ELSE 0 END ASC,
+            id ASC
+          LIMIT 1
+        `).get(prodName, prodName, prodName, itemPrice, itemPrice) as any;
       }
 
       // Check stock

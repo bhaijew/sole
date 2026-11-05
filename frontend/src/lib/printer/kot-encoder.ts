@@ -263,24 +263,30 @@ export function extractDealItemsFromItem(item: any): string[] {
   const isDeal = prodName.includes('deal') || prodName.includes('bumper') || prodName.includes('combo') || prodName.includes('super');
 
   if (desc) {
+    const cleanItemBullet = (s: string) =>
+      s
+        .replace(/^[•\-\*✓·]\s*/, '')
+        .replace(/^\d+[\.\)]\s*/, '')
+        .trim();
+
     if (desc.includes('•') || desc.includes('·')) {
       const sep = desc.includes('•') ? '•' : '·';
-      return desc.split(sep).map((s) => s.replace(/^[•\-\*✓\d+\.]\s*/, '').trim()).filter(Boolean);
+      return desc.split(sep).map(cleanItemBullet).filter(Boolean);
     }
     if (desc.includes('\n')) {
-      const parts = desc.split('\n').map((s) => s.replace(/^[•\-\*✓\d+\.]\s*/, '').trim()).filter(Boolean);
+      const parts = desc.split('\n').map(cleanItemBullet).filter(Boolean);
       if (parts.length > 1) return parts;
     }
     if (desc.includes('+')) {
-      const parts = desc.split('+').map((s) => s.trim()).filter(Boolean);
+      const parts = desc.split('+').map(cleanItemBullet).filter(Boolean);
       if (parts.length > 1) return parts;
     }
     if (isDeal && desc.includes(',')) {
-      const parts = desc.split(',').map((s) => s.trim()).filter(Boolean);
+      const parts = desc.split(',').map(cleanItemBullet).filter(Boolean);
       if (parts.length > 1) return parts;
     }
     if (isDeal && desc.length > 0) {
-      return [desc];
+      return [cleanItemBullet(desc)];
     }
   }
 

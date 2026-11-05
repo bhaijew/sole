@@ -1103,7 +1103,7 @@ export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck 
           `);
 
           for (const item of rawItems) {
-            const prodId = String(
+            let prodId = String(
               item.product_id ||
               item.productId ||
               (item.id ? `cloud_prod_${item.id}` : `item-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`)
@@ -1127,6 +1127,45 @@ export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck 
                 : String(item.items_included);
             } else if (item.description) {
               itemsIncStr = String(item.description);
+            }
+
+            // Price-aware lookup to ensure deal items and correct product ID are saved
+            if (!itemsIncStr || prodId.startsWith('item-')) {
+              try {
+                const matchProd = db.prepare(`
+                  SELECT id, description, items_included FROM products
+                  WHERE (id = ? AND ? != '')
+                     OR lower(name) = lower(?)
+                     OR lower(name) LIKE lower(?)
+                  ORDER BY
+                     CASE WHEN (id = ? AND ? != '') THEN 0 ELSE 1 END ASC,
+                     CASE WHEN lower(name) = lower(?) THEN 0 ELSE 1 END ASC,
+                     CASE WHEN ? > 0 THEN ABS(COALESCE(price, 0) - ?) ELSE 0 END ASC,
+                     id ASC
+                  LIMIT 1
+                `).get(
+                  prodId, prodId,
+                  prodName, `%${prodName}%`,
+                  prodId, prodId,
+                  prodName,
+                  unitPrice, unitPrice
+                ) as any;
+
+                if (matchProd) {
+                  if (prodId.startsWith('item-') && matchProd.id) {
+                    prodId = String(matchProd.id);
+                  }
+                  if (!itemsIncStr) {
+                    if (matchProd.items_included) {
+                      itemsIncStr = typeof matchProd.items_included === 'string'
+                        ? matchProd.items_included
+                        : JSON.stringify(matchProd.items_included);
+                    } else if (matchProd.description) {
+                      itemsIncStr = String(matchProd.description);
+                    }
+                  }
+                }
+              } catch {}
             }
 
             itemStmt.run(
@@ -1273,7 +1312,7 @@ export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck 
       `);
 
       for (const item of rawItems) {
-        const prodId = String(
+        let prodId = String(
           item.product_id ||
           item.productId ||
           (item.id ? `cloud_prod_${item.id}` : `item-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`)
@@ -1297,6 +1336,45 @@ export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck 
             : String(item.items_included);
         } else if (item.description) {
           itemsIncStr = String(item.description);
+        }
+
+        // Price-aware lookup to ensure deal items and correct product ID are saved
+        if (!itemsIncStr || prodId.startsWith('item-')) {
+          try {
+            const matchProd = db.prepare(`
+              SELECT id, description, items_included FROM products
+              WHERE (id = ? AND ? != '')
+                 OR lower(name) = lower(?)
+                 OR lower(name) LIKE lower(?)
+              ORDER BY
+                 CASE WHEN (id = ? AND ? != '') THEN 0 ELSE 1 END ASC,
+                 CASE WHEN lower(name) = lower(?) THEN 0 ELSE 1 END ASC,
+                 CASE WHEN ? > 0 THEN ABS(COALESCE(price, 0) - ?) ELSE 0 END ASC,
+                 id ASC
+              LIMIT 1
+            `).get(
+              prodId, prodId,
+              prodName, `%${prodName}%`,
+              prodId, prodId,
+              prodName,
+              unitPrice, unitPrice
+            ) as any;
+
+            if (matchProd) {
+              if (prodId.startsWith('item-') && matchProd.id) {
+                prodId = String(matchProd.id);
+              }
+              if (!itemsIncStr) {
+                if (matchProd.items_included) {
+                  itemsIncStr = typeof matchProd.items_included === 'string'
+                    ? matchProd.items_included
+                    : JSON.stringify(matchProd.items_included);
+                } else if (matchProd.description) {
+                  itemsIncStr = String(matchProd.description);
+                }
+              }
+            }
+          } catch {}
         }
 
         itemStmt.run(
