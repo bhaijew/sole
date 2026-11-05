@@ -541,6 +541,14 @@ function formatSingleReceiptCopy(
   let bannerText = 'PAID BY CASH';
 
   if (
+    rawMethod.includes('already') ||
+    rawMethod === 'already_paid' ||
+    rawMethod === 'paid_advance' ||
+    rawMethod === 'advance'
+  ) {
+    payLabel = 'ALREADY PAID';
+    bannerText = '*** ALREADY PAID ***';
+  } else if (
     rawMethod.includes('online') ||
     rawMethod.includes('bank') ||
     rawMethod.includes('card') ||
@@ -1093,10 +1101,14 @@ function formatKOT(order: any, items: any[], stationName: string, cols: number =
   lines.push('{DOUBLE_HEIGHT}{BOLD}TYPE: ' + orderType.toUpperCase() + '{/BOLD}{/DOUBLE_HEIGHT}');
   const kotRawMethod = (order?.payment_method || 'cash').toString().toLowerCase();
   let kotPayLabel = 'CASH';
-  if (kotRawMethod === 'paid' || kotRawMethod.includes('paid')) {
-    kotPayLabel = 'PAID';
+  if (kotRawMethod.includes('already')) {
+    kotPayLabel = 'ALREADY PAID';
+  } else if (kotRawMethod.includes('unpaid') || kotRawMethod.includes('cod')) {
+    kotPayLabel = 'PAY ON DELIVERY';
   } else if (kotRawMethod.includes('online') || kotRawMethod.includes('bank') || kotRawMethod.includes('card') || kotRawMethod.includes('upi')) {
     kotPayLabel = 'ONLINE';
+  } else if (kotRawMethod === 'paid' || kotRawMethod.includes('paid')) {
+    kotPayLabel = 'PAID';
   }
   lines.push('{DOUBLE_HEIGHT}{BOLD}PAYMENT: ' + kotPayLabel + '{/BOLD}{/DOUBLE_HEIGHT}');
 

@@ -507,38 +507,72 @@ export default function CartPanel({
             >
               {cart.paymentMethod === 'online'
                 ? '📱 ONLINE'
-                : cart.paymentMethod === 'paid'
-                ? '✅ PAID'
+                : cart.paymentMethod === 'already_paid' || cart.paymentMethod === 'paid'
+                ? '✅ ALREADY PAID'
+                : cart.paymentMethod === 'unpaid'
+                ? '🛵 PAY ON DELIVERY'
                 : '💵 CASH'}
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-1.5 bg-gray-100 p-1 rounded-lg">
+          <div className="grid grid-cols-3 gap-1 bg-gray-100 p-1 rounded-lg">
             <button
               type="button"
               onClick={() => cart.setPaymentMethod('cash')}
-              className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-md text-xs font-black transition-all cursor-pointer ${
-                cart.paymentMethod === 'cash' || cart.paymentMethod === 'paid'
+              className={`flex items-center justify-center gap-1 py-2 px-1 rounded-md text-xs font-black transition-all cursor-pointer ${
+                cart.paymentMethod === 'cash'
                   ? 'bg-emerald-600 text-white shadow-sm'
                   : 'bg-white text-gray-700 hover:text-gray-900 border border-gray-200'
               }`}
+              title="Customer paying cash right now"
             >
               <span>💵</span>
-              <span>PAID CASH</span>
+              <span>CASH</span>
             </button>
             <button
               type="button"
               onClick={() => cart.setPaymentMethod('online')}
-              className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-md text-xs font-black transition-all cursor-pointer ${
+              className={`flex items-center justify-center gap-1 py-2 px-1 rounded-md text-xs font-black transition-all cursor-pointer ${
                 cart.paymentMethod === 'online'
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'bg-white text-gray-700 hover:text-gray-900 border border-gray-200'
               }`}
+              title="Customer paying via Online, Card, EasyPaisa, or Raast"
             >
               <span>📱</span>
-              <span>PAID ONLINE</span>
+              <span>ONLINE</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => cart.setPaymentMethod('already_paid')}
+              className={`flex items-center justify-center gap-1 py-2 px-1 rounded-md text-xs font-black transition-all cursor-pointer ${
+                cart.paymentMethod === 'already_paid' || cart.paymentMethod === 'paid'
+                  ? 'bg-purple-600 text-white shadow-sm'
+                  : 'bg-white text-gray-700 hover:text-gray-900 border border-gray-200'
+              }`}
+              title="Customer has ALREADY paid in advance (Do not collect money)"
+            >
+              <span>✅</span>
+              <span>ALREADY PAID</span>
             </button>
           </div>
+
+          {cart.orderType === 'delivery' && (
+            <div className="mt-1">
+              <button
+                type="button"
+                onClick={() => cart.setPaymentMethod(cart.paymentMethod === 'unpaid' ? 'cash' : 'unpaid')}
+                className={`w-full py-1 text-[11px] font-bold rounded border transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  cart.paymentMethod === 'unpaid'
+                    ? 'bg-amber-100 border-amber-300 text-amber-900'
+                    : 'bg-white border-dashed border-gray-300 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                <span>🛵</span>
+                <span>{cart.paymentMethod === 'unpaid' ? '✓ Set as Pay on Delivery (Unpaid COD)' : 'Click if Pay on Delivery (Unpaid COD)'}</span>
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="flex gap-2">
@@ -557,7 +591,13 @@ export default function CartPanel({
             {submitting
               ? 'Placing Order...'
               : `Place Order (${
-                  cart.paymentMethod === 'online' ? 'Paid Online' : 'Paid by Cash'
+                  cart.paymentMethod === 'online'
+                    ? 'Paid Online'
+                    : cart.paymentMethod === 'already_paid' || cart.paymentMethod === 'paid'
+                    ? 'Already Paid'
+                    : cart.paymentMethod === 'unpaid'
+                    ? 'Pay on Delivery'
+                    : 'Paid by Cash'
                 })`}
           </Button>
         </div>

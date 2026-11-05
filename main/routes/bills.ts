@@ -219,7 +219,7 @@ router.post('/:id/payment', async (req: Request, res: Response) => {
         updateCloudOrderStatus(bill.order_id, 'completed', {
           notes: `Paid via ${method} (Bill #${bill.bill_number})`,
           payment_status: 'paid',
-          payment_method: method === 'online' ? 'Card / Online Transfer' : 'cash',
+          payment_method: method === 'online' ? 'Card / Online Transfer' : (method === 'already_paid' ? 'Already Paid' : 'cash'),
         }).catch(() => {});
       } catch {}
     }
