@@ -925,6 +925,31 @@ export function cleanVariant(v: any): string {
 export function extractDealItems(item: any, db?: any): string[] {
   if (!item) return [];
 
+  const prodName = (item.product_name || item.name || item.title || '').trim();
+  const prodNameLower = prodName.toLowerCase();
+  const hasExplicitDealItems = (Array.isArray(item.deal_items) && item.deal_items.length > 0) ||
+                               (Array.isArray(item.items_included) && item.items_included.length > 0) ||
+                               (typeof item.items_included === 'string' && item.items_included.trim().length > 0);
+
+  const isDeal =
+    hasExplicitDealItems ||
+    prodNameLower.includes('deal') ||
+    prodNameLower.includes('bumper') ||
+    prodNameLower.includes('combo') ||
+    prodNameLower.includes('pack') ||
+    prodNameLower.includes('super') ||
+    prodNameLower.includes('platter') ||
+    prodNameLower.startsWith('sd ') ||
+    prodNameLower.startsWith('sd-') ||
+    prodNameLower.startsWith('md ') ||
+    prodNameLower.startsWith('md-');
+
+  // Single food/drink items (pizzas, burgers, fries, wings) are NOT deals.
+  // They must NEVER extract or print combo bullet items!
+  if (!isDeal) {
+    return [];
+  }
+
   // 1. Direct items_included or deal_items on the item object
   if (Array.isArray(item.deal_items) && item.deal_items.length > 0) {
     return item.deal_items.map((s: any) => String(s).trim()).filter(Boolean);
@@ -952,24 +977,22 @@ export function extractDealItems(item: any, db?: any): string[] {
     const activeDb = db || (typeof getDatabase === 'function' ? getDatabase() : null);
     if (activeDb) {
       const prodId = item.product_id || item.id;
-      const prodName = (item.product_name || item.name || '').trim();
       const itemPrice = Number(item.unit_price || item.price || 0);
       const prodIdStr = String(prodId || '');
       const isRealProdId = Boolean(prodIdStr && !prodIdStr.startsWith('item-') && !prodIdStr.startsWith('custom-'));
 
-      // Check deals table first
+      // Check deals table first (SQLite column is deal_price, NOT price)
       try {
         const dealRow = activeDb.prepare(
-          `SELECT items_included, description, price FROM deals 
+          `SELECT items_included, description, deal_price as price FROM deals 
            WHERE (${isRealProdId ? 'product_id = ?' : '0=1'}) 
               OR title = ? 
               OR lower(title) = lower(?)
               OR lower(title) LIKE lower(?)
-              OR lower(?) LIKE lower('%' || title || '%')
            ORDER BY 
               CASE WHEN (${isRealProdId ? 'product_id = ?' : '0=1'}) THEN 0 ELSE 1 END ASC,
               CASE WHEN lower(title) = lower(?) THEN 0 ELSE 1 END ASC,
-              CASE WHEN ? > 0 THEN ABS(COALESCE(price, 0) - ?) ELSE 0 END ASC,
+              CASE WHEN ? > 0 THEN ABS(COALESCE(deal_price, 0) - ?) ELSE 0 END ASC,
               id ASC
            LIMIT 1`
         ).get(
@@ -977,7 +1000,6 @@ export function extractDealItems(item: any, db?: any): string[] {
           prodName,
           prodName,
           `%${prodName}%`,
-          prodName,
           ...(isRealProdId ? [prodIdStr] : []),
           prodName,
           itemPrice,
@@ -999,7 +1021,6 @@ export function extractDealItems(item: any, db?: any): string[] {
                 OR name = ? 
                 OR lower(name) = lower(?)
                 OR lower(name) LIKE lower(?)
-                OR lower(?) LIKE lower('%' || name || '%')
              ORDER BY 
                 CASE WHEN (${isRealProdId ? 'id = ?' : '0=1'}) THEN 0 ELSE 1 END ASC,
                 CASE WHEN lower(name) = lower(?) THEN 0 ELSE 1 END ASC,
@@ -1011,7 +1032,6 @@ export function extractDealItems(item: any, db?: any): string[] {
             prodName,
             prodName,
             `%${prodName}%`,
-            prodName,
             ...(isRealProdId ? [prodIdStr] : []),
             prodName,
             itemPrice,
@@ -1040,14 +1060,6 @@ export function extractDealItems(item: any, db?: any): string[] {
     }
   }
 
-  // Check if item name denotes a deal
-  const prodNameLower = String(item.product_name || item.name || '').toLowerCase();
-  const isDeal =
-    prodNameLower.includes('deal') ||
-    prodNameLower.includes('bumper') ||
-    prodNameLower.includes('combo') ||
-    prodNameLower.includes('pack') ||
-    prodNameLower.includes('super');
 
   // Parse from description
   if (description && typeof description === 'string') {

@@ -1,6 +1,6 @@
 {
   "name": "sole-what-pos",
-  "version": "1.8.14",
+  "version": "1.8.15",
   "description": "Sole What - Smart Point of Sale System",
   "main": "dist/index.js",
   "scripts": {

@@ -1089,8 +1089,9 @@ export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck 
           existing.id
         );
 
-        // Replace items if new items provided and total changed or order was recreated
-        if (rawItems.length > 0 && (totalChanged || isRecreated)) {
+        // Replace items if new items provided and total changed or order was recreated, or if existing order has 0 items
+        const existingItemCount = (db.prepare('SELECT count(*) as count FROM order_items WHERE order_id = ?').get(existing.id) as any)?.count || 0;
+        if (rawItems.length > 0 && (totalChanged || isRecreated || existingItemCount === 0)) {
           db.prepare('DELETE FROM order_items WHERE order_id = ?').run(existing.id);
           const itemStmt = db.prepare(`
             INSERT INTO order_items (
