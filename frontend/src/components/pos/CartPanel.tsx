@@ -513,42 +513,30 @@ export default function CartPanel({
             </span>
           </div>
 
-          <div className="grid grid-cols-3 gap-1 bg-gray-100 p-1 rounded-lg">
+          <div className="grid grid-cols-2 gap-1.5 bg-gray-100 p-1 rounded-lg">
             <button
               type="button"
               onClick={() => cart.setPaymentMethod('cash')}
-              className={`flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-md text-xs font-black transition-all cursor-pointer ${
-                cart.paymentMethod === 'cash'
-                  ? 'bg-emerald-600 text-white shadow-xs'
+              className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-md text-xs font-black transition-all cursor-pointer ${
+                cart.paymentMethod === 'cash' || cart.paymentMethod === 'paid'
+                  ? 'bg-emerald-600 text-white shadow-sm'
                   : 'bg-white text-gray-700 hover:text-gray-900 border border-gray-200'
               }`}
             >
               <span>💵</span>
-              <span>CASH</span>
+              <span>PAID CASH</span>
             </button>
             <button
               type="button"
               onClick={() => cart.setPaymentMethod('online')}
-              className={`flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-md text-xs font-black transition-all cursor-pointer ${
+              className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-md text-xs font-black transition-all cursor-pointer ${
                 cart.paymentMethod === 'online'
-                  ? 'bg-blue-600 text-white shadow-xs'
+                  ? 'bg-blue-600 text-white shadow-sm'
                   : 'bg-white text-gray-700 hover:text-gray-900 border border-gray-200'
               }`}
             >
               <span>📱</span>
-              <span>ONLINE</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => cart.setPaymentMethod('paid')}
-              className={`flex items-center justify-center gap-1 py-1.5 px-1.5 rounded-md text-xs font-black transition-all cursor-pointer ${
-                cart.paymentMethod === 'paid'
-                  ? 'bg-purple-600 text-white shadow-xs'
-                  : 'bg-white text-gray-700 hover:text-gray-900 border border-gray-200'
-              }`}
-            >
-              <span>✅</span>
-              <span>PAID</span>
+              <span>PAID ONLINE</span>
             </button>
           </div>
         </div>
@@ -569,11 +557,7 @@ export default function CartPanel({
             {submitting
               ? 'Placing Order...'
               : `Place Order (${
-                  cart.paymentMethod === 'online'
-                    ? 'Online'
-                    : cart.paymentMethod === 'paid'
-                    ? 'PAID'
-                    : 'Cash'
+                  cart.paymentMethod === 'online' ? 'Paid Online' : 'Paid by Cash'
                 })`}
           </Button>
         </div>

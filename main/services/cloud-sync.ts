@@ -1346,6 +1346,21 @@ export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck 
  * Pull all recent online orders from Pizza System cloud (Supabase)
  */
 export async function pullOnlineOrdersFromCloud(): Promise<{
+      // Sync latest daily closing timestamp to maintain accurate shift boundaries
+      try {
+        const { data: latestClosing } = await client
+          .from('daily_closings')
+          .select('created_at')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (latestClosing?.created_at) {
+          db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('last_closing_at', ?, datetime('now'))")
+            .run(latestClosing.created_at);
+        }
+      } catch {}
+
   success: boolean;
   message: string;
   importedCount: number;
@@ -1692,7 +1707,7 @@ export async function pushOrderToCloud(order: any, rawItems: any[]): Promise<boo
 export async function updateCloudOrderStatus(
   orderIdOrNumber: string | number,
   status: string,
-  extra: { notes?: string; payment_status?: string } = {}
+  extra: { notes?: string; payment_status?: string; payment_method?: string } = {}
 ): Promise<boolean> {
   const syncEnabled = getSetting('cloud_sync_enabled', '1') === '1';
   if (!syncEnabled) return false;
@@ -1712,6 +1727,12 @@ export async function updateCloudOrderStatus(
     };
     if (extra.notes) {
       updatePayload.notes = extra.notes;
+    }
+    if (extra.payment_status) {
+      updatePayload.payment_status = extra.payment_status;
+    }
+    if (extra.payment_method) {
+      updatePayload.payment_method = extra.payment_method;
     }
 
     let query = client.from('orders').update(updatePayload);

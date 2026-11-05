@@ -533,10 +533,14 @@ function formatSingleReceiptCopy(
     'cash'
   ).toString().toLowerCase();
 
-  let payLabel = 'CASH';
-  if (rawMethod === 'paid' || rawMethod.includes('paid')) {
-    payLabel = 'PAID';
-  } else if (
+  // Precise Payment Classification: Clean, Professional, No Duplicates
+  const isDeliveryUnpaid = (order?.type === 'delivery' || order?.order_type === 'delivery') &&
+    (order?.payment_status === 'unpaid' || bill?.payment_status === 'unpaid');
+
+  let payLabel = 'PAID BY CASH';
+  let bannerText = 'PAID BY CASH';
+
+  if (
     rawMethod.includes('online') ||
     rawMethod.includes('bank') ||
     rawMethod.includes('card') ||
@@ -546,7 +550,17 @@ function formatSingleReceiptCopy(
     rawMethod.includes('jazzcash') ||
     rawMethod.includes('digital')
   ) {
-    payLabel = 'ONLINE PAYMENT';
+    payLabel = 'PAID ONLINE';
+    bannerText = 'PAID ONLINE';
+  } else if (rawMethod.includes('split')) {
+    payLabel = 'SPLIT PAYMENT';
+    bannerText = 'SPLIT PAYMENT';
+  } else if (isDeliveryUnpaid || rawMethod.includes('unpaid') || rawMethod.includes('cod')) {
+    payLabel = 'CASH ON DELIVERY';
+    bannerText = 'CASH ON DELIVERY';
+  } else {
+    payLabel = 'PAID BY CASH';
+    bannerText = 'PAID BY CASH';
   }
   let customerName = order?.customer?.name || order?.customer_name || '';
   if (!customerName && order?.notes && order.notes.includes('Customer: ')) {
@@ -719,8 +733,7 @@ function formatSingleReceiptCopy(
   lines.push(dash);
 
   // 4b. Clear Payment Method / Paid Status
-  const paidBannerText = payLabel === 'PAID' ? 'PAID' : 'PAID VIA: ' + payLabel;
-  lines.push('{CENTER}{DOUBLE_HEIGHT}{BOLD}' + paidBannerText + '{/BOLD}{/DOUBLE_HEIGHT}{/CENTER}');
+  lines.push('{CENTER}{DOUBLE_HEIGHT}{BOLD}' + bannerText + '{/BOLD}{/DOUBLE_HEIGHT}{/CENTER}');
   lines.push(dash);
 
   // 5. Payment and Footer

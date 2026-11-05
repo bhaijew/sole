@@ -13,3 +13,4 @@
   nsExec::Exec 'taskkill /F /IM "Sole What.exe" /T'
   Sleep 1000
 !macroend
+

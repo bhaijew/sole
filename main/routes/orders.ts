@@ -40,7 +40,21 @@ router.get('/', async (req: Request, res: Response) => {
       query += " AND (date(created_at, 'localtime') = ? OR date(created_at) = ?)";
       params.push(targetDate, targetDate);
     } else if (req.query.today && req.query.today !== '0' && req.query.today !== 'false') {
-      query += " AND (date(created_at, 'localtime') = date('now', 'localtime') OR date(created_at) = date('now'))";
+      // Shift-aware active orders filter: Orders stay in Today's shift until daily closing
+      try {
+        const lastClosingRow = db.prepare("SELECT value FROM settings WHERE key = 'last_closing_at' LIMIT 1").get() as any;
+        if (lastClosingRow?.value) {
+          query += " AND created_at >= ?";
+          params.push(lastClosingRow.value);
+        } else {
+          // Fallback standard restaurant shift:
+          // If local hour < 6 AM (e.g. 12 AM - 5:59 AM late night rush), include orders from yesterday 6:00 AM onwards!
+          // If local hour >= 6 AM, include orders from today 6:00 AM onwards!
+          query += " AND created_at >= datetime('now', 'localtime', CASE WHEN strftime('%H', 'now', 'localtime') < '06' THEN '-1 day' ELSE '0 day' END, 'start of day', '+6 hours')";
+        }
+      } catch {
+        query += " AND (date(created_at, 'localtime') = date('now', 'localtime') OR date(created_at) = date('now'))";
+      }
     }
     if (req.query.table_id) {
       query += ' AND table_id = ?';
