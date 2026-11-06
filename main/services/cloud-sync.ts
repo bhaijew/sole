@@ -990,8 +990,13 @@ export async function syncAllFromCloud(): Promise<{
 /**
  * Handle new online order received from Supabase Realtime
  */
-export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck = false): Promise<boolean> {
+export async function handleIncomingCloudOrder(
+  cloudOrder: any,
+  bypassShopCheck = false,
+  opts: { suppressAutoPrint?: boolean } = {}
+): Promise<boolean> {
   const db = getDatabase();
+  const suppressAutoPrint = Boolean(opts.suppressAutoPrint);
 
   if (!cloudOrder || !cloudOrder.id) return false;
 
@@ -1196,7 +1201,7 @@ export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck 
         broadcastCloudEvent('order-status-updated', { orderNumber, status: localStatus, is_verified: isNowVerified });
 
         // AUTO-PRINT SLIP IMMEDIATELY WHEN VERIFIED FROM ADMIN PANEL!
-        if (!wasVerified && isNowVerified) {
+        if (!wasVerified && isNowVerified && !suppressAutoPrint) {
           console.log(`[CloudSync] Order ${orderNumber} was VERIFIED in Admin Panel! Auto-printing bill and KOT...`);
           triggerVerifiedOrderPrints(existing.id, cloudOrder).catch((e) => {
             console.error('[CloudSync] Error auto-printing verified order:', e);
@@ -1414,7 +1419,7 @@ export async function handleIncomingCloudOrder(cloudOrder: any, bypassShopCheck 
     if (isUnverifiedOnline) {
       console.log(`[CloudSync] Order ${orderNumber} is AWAITING VERIFICATION from Admin / POS. Holding auto-print until verified.`);
       broadcastCloudEvent('order-awaiting-verification', { orderNumber, total, localOrderId, customerName: cloudOrder.customer_name });
-    } else {
+    } else if (!suppressAutoPrint) {
       // Verified order: Auto-print Customer Bill + Kitchen KOT
       await triggerVerifiedOrderPrints(localOrderId, cloudOrder);
     }
@@ -1503,7 +1508,7 @@ export async function pullOnlineOrdersFromCloud(): Promise<{
         if (ok) importedCount++;
       } else {
         // Run full sync to capture status, verification, new recreate items, and updated totals
-        await handleIncomingCloudOrder(cloudOrder, true);
+        await handleIncomingCloudOrder(cloudOrder);
       }
     }
 
@@ -2383,6 +2388,9 @@ export async function initCloudSync(): Promise<void> {
  * Automatically prints Customer Bill (Receipt) and Kitchen KOT when an online menu order is verified
  * (either from Pizza Admin /admin/verify or from FloDesktop POS /verify).
  */
+const AUTO_PRINT_MAX_AGE_MINUTES = 90;
+const autoPrintedOrderKeys = new Set<string>();
+
 export async function triggerVerifiedOrderPrints(localOrderId: number, cloudOrder?: any): Promise<boolean> {
   const db = getDatabase();
   try {
@@ -2406,6 +2414,33 @@ export async function triggerVerifiedOrderPrints(localOrderId: number, cloudOrde
     }
 
     const orderNumber = localOrder.order_number;
+
+    // ── Safety guards against printing wrong / old / other-shop orders ──
+    const currentShopId = getSetting('cloud_shop_id', '');
+    const orderShopId = String(cloudOrder?.shop_id ?? localOrder.shop_id ?? '');
+    if (currentShopId && orderShopId && orderShopId !== String(currentShopId)) {
+      console.warn(`[CloudSync] Skip auto-print ${orderNumber}: belongs to shop #${orderShopId}, current shop #${currentShopId}`);
+      return false;
+    }
+
+    // Auto-print (cloud-triggered) only for fresh orders, never for old historical orders being synced
+    if (cloudOrder) {
+      const createdMs = new Date(cloudOrder.created_at || localOrder.created_at || 0).getTime();
+      const ageMinutes = (Date.now() - createdMs) / 60000;
+      if (!createdMs || isNaN(createdMs) || ageMinutes > AUTO_PRINT_MAX_AGE_MINUTES) {
+        console.warn(`[CloudSync] Skip auto-print ${orderNumber}: order is ${Math.round(ageMinutes)} min old (stale)`);
+        return false;
+      }
+    }
+
+    // Never auto-print the same order twice in one session
+    const printKey = String(cloudOrder?.id || localOrder.cloud_order_id || `local-${localOrderId}`);
+    if (cloudOrder && autoPrintedOrderKeys.has(printKey)) {
+      console.warn(`[CloudSync] Skip auto-print ${orderNumber}: already auto-printed`);
+      return false;
+    }
+    autoPrintedOrderKeys.add(printKey);
+
     const autoPrintBill = getSetting('cloud_auto_print_bill', '1') === '1';
     const autoPrintKot = getSetting('cloud_auto_print_kot', '1') === '1';
 

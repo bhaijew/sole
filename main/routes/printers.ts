@@ -401,19 +401,36 @@ async function resolveOrderForPrinting(db: any, orderIdOrNumber: any, fallbackBi
       const { getSupabaseClient, handleIncomingCloudOrder } = await import('../services/cloud-sync');
       const client = getSupabaseClient();
       if (client) {
+        const shopRow = db.prepare("SELECT value FROM settings WHERE key = 'cloud_shop_id'").get() as any;
+        const currentShopId = shopRow?.value ? String(shopRow.value) : '';
+
         let cloudOrder: any = null;
         if (order?.cloud_order_id) {
           const res = await client.from('orders').select('*').eq('id', order.cloud_order_id).maybeSingle();
           cloudOrder = res.data;
         }
-        if (!cloudOrder && !isNaN(numId) && numId > 0) {
+        // IMPORTANT: A local SQLite id is NOT a Supabase id. Only look up cloud by numeric id
+        // when no local order was found (i.e. caller passed a cloud order id directly).
+        if (!cloudOrder && !order && !isNaN(numId) && numId > 0) {
           const res = await client.from('orders').select('*').eq('id', numId).maybeSingle();
           cloudOrder = res.data;
         }
         if (!cloudOrder) {
           const searchNum = order?.order_number || rawId;
-          const res = await client.from('orders').select('*').eq('order_number', searchNum).maybeSingle();
+          let q = client.from('orders').select('*').eq('order_number', searchNum);
+          if (currentShopId) q = q.eq('shop_id', Number(currentShopId));
+          const res = await q.limit(1).maybeSingle();
           cloudOrder = res.data;
+        }
+
+        // Safety guards: never print another shop's order, and never swap a local order with a different cloud order
+        if (cloudOrder && currentShopId && String(cloudOrder.shop_id || '') !== currentShopId) {
+          console.warn(`[Printer] Ignoring cloud order ${cloudOrder.order_number} from shop #${cloudOrder.shop_id} (current shop #${currentShopId})`);
+          cloudOrder = null;
+        }
+        if (cloudOrder && order?.order_number && cloudOrder.order_number && String(cloudOrder.order_number) !== String(order.order_number)) {
+          console.warn(`[Printer] Cloud order ${cloudOrder.order_number} does not match local ${order.order_number}. Ignoring.`);
+          cloudOrder = null;
         }
 
         if (cloudOrder) {
@@ -424,7 +441,8 @@ async function resolveOrderForPrinting(db: any, orderIdOrNumber: any, fallbackBi
 
           if (!order || isCloudRecreated) {
             console.log(`[Printer] Found updated/recreated order ${cloudOrder.order_number} (ID: ${cloudOrder.id}) in cloud! Syncing into local database...`);
-            await handleIncomingCloudOrder(cloudOrder, true);
+            // Sync only (no auto-print here; the caller is already printing this order)
+            await handleIncomingCloudOrder(cloudOrder, false, { suppressAutoPrint: true });
 
             order = db.prepare(`
               SELECT o.*, COALESCE(NULLIF(o.customer_name, ''), c.name) as customer_name, COALESCE(NULLIF(o.customer_phone, ''), c.phone) as customer_phone
