@@ -395,8 +395,22 @@ async function resolveOrderForPrinting(db: any, orderIdOrNumber: any, fallbackBi
     }
   }
 
-  // 3. Query Supabase Cloud to ensure latest recreated items and total are present
-  if (rawId) {
+  // If order was found locally and already has items in order_items, use local order directly!
+  // CRITICAL: NEVER query cloud and overwrite local order items when local order already exists with items.
+  if (order && order.id) {
+    const existingLocalItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
+    if (existingLocalItems && existingLocalItems.length > 0) {
+      order.items = existingLocalItems;
+      if (order.table_id && !order.table) {
+        const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id);
+        if (table) order.table = { name: table.number };
+      }
+      return order;
+    }
+  }
+
+  // 3. Fallback: Query Supabase Cloud ONLY when order is not found locally or has 0 local items
+  if (rawId && (!order || !order.items || order.items.length === 0)) {
     try {
       const { getSupabaseClient, handleIncomingCloudOrder } = await import('../services/cloud-sync');
       const client = getSupabaseClient();
@@ -434,13 +448,11 @@ async function resolveOrderForPrinting(db: any, orderIdOrNumber: any, fallbackBi
         }
 
         if (cloudOrder) {
-          const cloudTotal = Number(cloudOrder.total || 0);
-          const localTotal = Number(order?.total || 0);
           const cloudNotes = String(cloudOrder.notes || '');
-          const isCloudRecreated = cloudNotes.includes('[RECREATED') || (cloudTotal > 0 && Math.abs(cloudTotal - localTotal) > 0.01);
+          const isExplicitCloudRecreate = cloudNotes.includes('[RECREATED');
 
-          if (!order || isCloudRecreated) {
-            console.log(`[Printer] Found updated/recreated order ${cloudOrder.order_number} (ID: ${cloudOrder.id}) in cloud! Syncing into local database...`);
+          if (!order || isExplicitCloudRecreate) {
+            console.log(`[Printer] Found missing or admin-recreated order ${cloudOrder.order_number} (ID: ${cloudOrder.id}) in cloud! Syncing into local database...`);
             // Sync only (no auto-print here; the caller is already printing this order)
             await handleIncomingCloudOrder(cloudOrder, false, { suppressAutoPrint: true });
 
@@ -706,7 +718,7 @@ router.post('/print-kot', async (req: Request, res: Response) => {
 // POST /api/printers/print-order — one-click print for order (receipt, KOT, or both)
 router.post('/print-order', async (req: Request, res: Response) => {
   try {
-    const { orderId, printType = 'bill', delivery_charge, delivery_fee } = req.body;
+    const { orderId, printType = 'bill', delivery_charge, delivery_fee, items: bodyItems } = req.body;
     const overrideFee = delivery_charge !== undefined || delivery_fee !== undefined
       ? Math.max(0, Number(delivery_charge ?? delivery_fee ?? 0))
       : null;
@@ -733,7 +745,11 @@ router.post('/print-order', async (req: Request, res: Response) => {
       order.total = Math.max(0, Number(order.total || 0) + diff);
     }
 
-    const items: any[] = order.items || db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
+    const items: any[] = (Array.isArray(bodyItems) && bodyItems.length > 0)
+      ? bodyItems
+      : (order.items && order.items.length > 0
+          ? order.items
+          : db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id));
     order.items = items;
 
     if (order.table_id && !order.table) {

@@ -792,11 +792,14 @@ router.post('/:id/recreate', async (req: Request, res: Response) => {
       const finalOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(sourceOrder.id) as any;
       const finalItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(sourceOrder.id).map(parseItemJson);
 
-      // Cloud push update
+      // Cloud push update — await to ensure cloud has latest recreated items before printing or refreshing
       try {
         const { pushOrderToCloud } = await import('../services/cloud-sync');
-        pushOrderToCloud(finalOrder, finalItems).catch(() => {});
-      } catch {}
+        await pushOrderToCloud(finalOrder, finalItems);
+        db.prepare('UPDATE orders SET is_synced = 1 WHERE id = ?').run(sourceOrder.id);
+      } catch (pushErr) {
+        console.warn('[Orders] Cloud push update error:', pushErr);
+      }
 
       return res.json({
         success: true,
@@ -874,11 +877,14 @@ router.post('/:id/recreate', async (req: Request, res: Response) => {
       const createdOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(createdOrderId) as any;
       const createdItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(createdOrderId).map(parseItemJson);
 
-      // Cloud push new order to Supabase
+      // Cloud push new order to Supabase — await to ensure cloud has latest recreated items before printing or refreshing
       try {
         const { pushOrderToCloud } = await import('../services/cloud-sync');
-        pushOrderToCloud(createdOrder, createdItems).catch(() => {});
-      } catch {}
+        await pushOrderToCloud(createdOrder, createdItems);
+        db.prepare('UPDATE orders SET is_synced = 1 WHERE id = ?').run(createdOrderId);
+      } catch (pushErr) {
+        console.warn('[Orders] Cloud push new order error:', pushErr);
+      }
 
       return res.status(201).json({
         success: true,

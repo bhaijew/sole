@@ -371,12 +371,17 @@ export default function OrderRecreateModal({
           : `Order #${createdOrder.order_number} Updated & Re-sent to Kitchen!`
       );
 
-      // Trigger automatic printing if selected
-      if (printKot && createdOrder.id) {
-        api.post('/printers/print-order', { orderId: createdOrder.id, printType: 'kot' }).catch(() => {});
-      }
-      if (printReceipt && createdOrder.id) {
-        api.post('/printers/print-order', { orderId: createdOrder.id, printType: 'bill' }).catch(() => {});
+      // Trigger automatic printing if selected with fresh items attached
+      const itemsToPrint = Array.isArray(createdOrder.items) && createdOrder.items.length > 0
+        ? createdOrder.items
+        : payload.items;
+
+      if (printKot && printReceipt && createdOrder.id) {
+        api.post('/printers/print-order', { orderId: createdOrder.id, printType: 'both', items: itemsToPrint }).catch(() => {});
+      } else if (printKot && createdOrder.id) {
+        api.post('/printers/print-order', { orderId: createdOrder.id, printType: 'kot', items: itemsToPrint }).catch(() => {});
+      } else if (printReceipt && createdOrder.id) {
+        api.post('/printers/print-order', { orderId: createdOrder.id, printType: 'bill', items: itemsToPrint }).catch(() => {});
       }
 
       if (onOrderRecreated) {

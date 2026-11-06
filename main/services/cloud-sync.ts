@@ -1035,11 +1035,12 @@ export async function handleIncomingCloudOrder(
     }
 
     // Check for duplicate & verify status / recreate updates
-    const existing = db.prepare('SELECT id, status, is_verified, total, subtotal, delivery_fee FROM orders WHERE cloud_order_id = ? OR order_number = ?').get(cloudOrderIdStr, orderNumber) as any;
+    const existing = db.prepare('SELECT id, status, is_verified, total, subtotal, delivery_fee, is_synced, order_source FROM orders WHERE cloud_order_id = ? OR order_number = ?').get(cloudOrderIdStr, orderNumber) as any;
     if (existing) {
       const localStatus = mapCloudStatusToLocal(cloudOrder.status);
       const wasVerified = Boolean(existing.is_verified);
       const isNowVerified = cloudOrder.is_verified === true || cloudOrder.is_verified === 1 || String(cloudOrder.notes || '').includes('VERIFIED & ACCEPTED');
+      const hasUnsyncedLocalChanges = existing.is_synced === 0;
 
       // Check if order was recreated or if items/totals were modified in Pizza Admin
       let rawItems: any[] = [];
@@ -1053,10 +1054,10 @@ export async function handleIncomingCloudOrder(
       const cloudDeliveryFee = Number(cloudOrder.delivery_fee || 0);
       const cloudSubtotal = cloudTotal > 0 ? Math.max(0, cloudTotal - cloudDeliveryFee) : Number(existing.subtotal || 0);
       const totalChanged = cloudTotal > 0 && Math.abs(Number(existing.total || 0) - cloudTotal) > 0.01;
-      const isRecreated = String(cloudOrder.notes || '').includes('[RECREATED') || totalChanged;
+      const isExplicitCloudRecreate = String(cloudOrder.notes || '').includes('[RECREATED');
       const statusChanged = existing.status !== localStatus || (!wasVerified && isNowVerified);
 
-      if (isRecreated || totalChanged || statusChanged) {
+      if (isExplicitCloudRecreate || (!hasUnsyncedLocalChanges && totalChanged) || statusChanged) {
         const cleanNotes = [
           cloudOrder.notes,
           cloudOrder.customer_name ? `Customer: ${cloudOrder.customer_name}` : null,
@@ -1064,39 +1065,63 @@ export async function handleIncomingCloudOrder(
           cloudOrder.delivery_rider_name ? `Rider: ${cloudOrder.delivery_rider_name}` : null
         ].filter(Boolean).join(' | ');
 
-        db.prepare(`
-          UPDATE orders 
-          SET status = ?, 
-              is_verified = ?, 
-              total = CASE WHEN ? > 0 THEN ? ELSE total END,
-              subtotal = CASE WHEN ? > 0 THEN ? ELSE subtotal END,
-              delivery_fee = CASE WHEN ? >= 0 THEN ? ELSE delivery_fee END,
-              delivery_charge = CASE WHEN ? >= 0 THEN ? ELSE delivery_charge END,
-              customer_name = COALESCE(?, customer_name),
-              customer_phone = COALESCE(?, customer_phone),
-              delivery_address = COALESCE(?, delivery_address),
-              special_instructions = COALESCE(?, special_instructions),
-              cloud_order_id = ?,
-              verified_at = COALESCE(verified_at, datetime('now')), 
-              updated_at = datetime('now') 
-          WHERE id = ?
-        `).run(
-          localStatus, isNowVerified ? 1 : 0,
-          cloudTotal, cloudTotal,
-          cloudSubtotal, cloudSubtotal,
-          cloudDeliveryFee, cloudDeliveryFee,
-          cloudDeliveryFee, cloudDeliveryFee,
-          cloudOrder.customer_name || null,
-          cloudOrder.customer_phone || null,
-          cloudOrder.delivery_address || null,
-          cleanNotes || null,
-          cloudOrderIdStr,
-          existing.id
-        );
+        if (hasUnsyncedLocalChanges) {
+          // Local has pending unsynced edits: protect local totals and items, only sync status/verification
+          db.prepare(`
+            UPDATE orders 
+            SET status = ?, 
+                is_verified = ?, 
+                cloud_order_id = ?,
+                verified_at = COALESCE(verified_at, datetime('now')), 
+                updated_at = datetime('now') 
+            WHERE id = ?
+          `).run(
+            localStatus, isNowVerified ? 1 : 0,
+            cloudOrderIdStr,
+            existing.id
+          );
+        } else {
+          db.prepare(`
+            UPDATE orders 
+            SET status = ?, 
+                is_verified = ?, 
+                total = CASE WHEN ? > 0 THEN ? ELSE total END,
+                subtotal = CASE WHEN ? > 0 THEN ? ELSE subtotal END,
+                delivery_fee = CASE WHEN ? >= 0 THEN ? ELSE delivery_fee END,
+                delivery_charge = CASE WHEN ? >= 0 THEN ? ELSE delivery_charge END,
+                customer_name = COALESCE(?, customer_name),
+                customer_phone = COALESCE(?, customer_phone),
+                delivery_address = COALESCE(?, delivery_address),
+                special_instructions = COALESCE(?, special_instructions),
+                cloud_order_id = ?,
+                verified_at = COALESCE(verified_at, datetime('now')), 
+                updated_at = datetime('now') 
+            WHERE id = ?
+          `).run(
+            localStatus, isNowVerified ? 1 : 0,
+            cloudTotal, cloudTotal,
+            cloudSubtotal, cloudSubtotal,
+            cloudDeliveryFee, cloudDeliveryFee,
+            cloudDeliveryFee, cloudDeliveryFee,
+            cloudOrder.customer_name || null,
+            cloudOrder.customer_phone || null,
+            cloudOrder.delivery_address || null,
+            cleanNotes || null,
+            cloudOrderIdStr,
+            existing.id
+          );
+        }
 
         // Replace items if new items provided and total changed or order was recreated, or if existing order has 0 items
         const existingItemCount = (db.prepare('SELECT count(*) as count FROM order_items WHERE order_id = ?').get(existing.id) as any)?.count || 0;
-        if (rawItems.length > 0 && (totalChanged || isRecreated || existingItemCount === 0)) {
+        const isPosOrder = isFromPos || existing.order_source === 'pos';
+        const shouldReplaceItems = rawItems.length > 0 && !hasUnsyncedLocalChanges && (
+          existingItemCount === 0 ||
+          isExplicitCloudRecreate ||
+          (!isPosOrder && totalChanged)
+        );
+
+        if (shouldReplaceItems) {
           db.prepare('DELETE FROM order_items WHERE order_id = ?').run(existing.id);
           const itemStmt = db.prepare(`
             INSERT INTO order_items (
@@ -1638,9 +1663,11 @@ export async function pushOrderToCloud(order: any, rawItems: any[]): Promise<boo
       price: Number(i.unit_price || i.price) || 0,
       quantity: Number(i.quantity || i.qty) || 1,
       qty: Number(i.quantity || i.qty) || 1,
-      subtotal: Number(i.subtotal) || 0,
+      subtotal: Number(i.subtotal) || (Number(i.unit_price || i.price || 0) * Number(i.quantity || i.qty || 1)),
       selected_variation: i.variant_selection || null,
       selectedVariation: i.variant_selection || null,
+      items_included: i.items_included || null,
+      special_instructions: i.special_instructions || null,
     }));
 
     // Find table name/number if dine_in
