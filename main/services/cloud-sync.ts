@@ -1709,14 +1709,17 @@ export async function pushOrderToCloud(order: any, rawItems: any[]): Promise<boo
 
     let cloudId: string | null = order.cloud_order_id ? String(order.cloud_order_id) : null;
 
-    // If no local cloud_order_id, check if order already exists in Supabase by order_number
+    // If no local cloud_order_id, check if order already exists in Supabase by order_number (isolated by shopId)
     if (!cloudId && order.order_number) {
       try {
-        const { data: existing } = await client
+        let lookupQuery = client
           .from('orders')
           .select('id')
-          .eq('order_number', order.order_number)
-          .maybeSingle();
+          .eq('order_number', order.order_number);
+        if (shopId) {
+          lookupQuery = lookupQuery.eq('shop_id', shopId);
+        }
+        const { data: existing } = await lookupQuery.maybeSingle();
         if (existing?.id) {
           cloudId = String(existing.id);
         }
@@ -1724,7 +1727,7 @@ export async function pushOrderToCloud(order: any, rawItems: any[]): Promise<boo
     }
 
     if (cloudId) {
-      // UPDATE existing cloud order
+      // UPDATE existing cloud order (isolated by shopId)
       const updatePayload: Record<string, any> = {
         order_type: payload.order_type,
         status: payload.status,
@@ -1741,10 +1744,15 @@ export async function pushOrderToCloud(order: any, rawItems: any[]): Promise<boo
         updated_at: new Date().toISOString(),
       };
 
-      const { data: updated, error: updateErr } = await client
+      let updateQuery = client
         .from('orders')
         .update(updatePayload)
-        .eq('id', cloudId)
+        .eq('id', cloudId);
+      if (shopId) {
+        updateQuery = updateQuery.eq('shop_id', shopId);
+      }
+
+      const { data: updated, error: updateErr } = await updateQuery
         .select('id')
         .maybeSingle();
 

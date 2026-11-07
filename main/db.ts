@@ -960,8 +960,42 @@ function seedData(): void {
   console.log('[DB] Seed data loaded');
 }
 
+export function getShopUniqueCode(): string {
+  try {
+    const sSlug = db.prepare("SELECT value FROM settings WHERE key = 'cloud_shop_slug'").get() as { value?: string } | undefined;
+    if (sSlug?.value && sSlug.value.trim()) {
+      const clean = sSlug.value.trim().toLowerCase();
+      if (clean === "pizza-mafia" || clean === "pizza_mafia" || clean === "pizzamafia") return "pm";
+      if (clean === "demo") return "demo";
+      const parts = clean.split(/[-_]/).filter(Boolean);
+      return parts.length > 1 ? parts.map(p => p[0]).join("") : clean.slice(0, 4);
+    }
+    const sName = db.prepare("SELECT value FROM settings WHERE key = 'cloud_shop_name'").get() as { value?: string } | undefined;
+    if (sName?.value && sName.value.trim()) {
+      const clean = sName.value.trim().toLowerCase();
+      if (clean.includes("mafia")) return "pm";
+      if (clean.includes("demo")) return "demo";
+      const parts = clean.split(/\s+/).filter(Boolean);
+      return parts.length > 1 ? parts.map(p => p[0]).join("") : clean.slice(0, 4);
+    }
+    const sId = db.prepare("SELECT value FROM settings WHERE key = 'cloud_shop_id'").get() as { value?: string } | undefined;
+    if (sId?.value && sId.value.trim()) {
+      const idNum = parseInt(sId.value.trim(), 10);
+      if (idNum === 7) return "pm";
+      if (idNum === 8) return "demo";
+      return `s${idNum}`;
+    }
+  } catch {}
+  return "pm";
+}
+
 export function generateOrderNumber(): string {
-  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const shopCode = getShopUniqueCode();
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, '0');
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dateCode = `${dd}${mm}`;
+
   let terminalPrefix = '';
   try {
     const s = db.prepare("SELECT value FROM settings WHERE key = 'terminal_code'").get() as { value?: string } | undefined;
@@ -970,7 +1004,7 @@ export function generateOrderNumber(): string {
     }
   } catch {}
 
-  const prefix = `ORD-${date}-${terminalPrefix}`;
+  const prefix = `ORD-${shopCode}${dateCode}-${terminalPrefix}`;
   const latest = db.prepare(
     "SELECT order_number FROM orders WHERE order_number LIKE ? ORDER BY id DESC LIMIT 1"
   ).get(`${prefix}%`) as { order_number?: string } | undefined;
@@ -992,7 +1026,12 @@ export function generateOrderNumber(): string {
 }
 
 export function generateBillNumber(): string {
-  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const shopCode = getShopUniqueCode();
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, '0');
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dateCode = `${dd}${mm}`;
+
   let terminalPrefix = '';
   try {
     const s = db.prepare("SELECT value FROM settings WHERE key = 'terminal_code'").get() as { value?: string } | undefined;
@@ -1001,7 +1040,7 @@ export function generateBillNumber(): string {
     }
   } catch {}
 
-  const prefix = `INV-${date}-${terminalPrefix}`;
+  const prefix = `INV-${shopCode}${dateCode}-${terminalPrefix}`;
   const latest = db.prepare(
     "SELECT bill_number FROM bills WHERE bill_number LIKE ? ORDER BY id DESC LIMIT 1"
   ).get(`${prefix}%`) as { bill_number?: string } | undefined;
