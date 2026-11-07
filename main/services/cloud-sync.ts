@@ -1771,9 +1771,9 @@ export async function pushOrderToCloud(order: any, rawItems: any[]): Promise<boo
         .maybeSingle();
 
       if (error) {
-        // Fallback: If conflict on unique order_number, update by order_number
+        // Fallback: If conflict on unique order_number, update by order_number (strictly isolated by shopId)
         if (order.order_number) {
-          const { data: upd, error: updErr } = await client
+          let updQuery = client
             .from('orders')
             .update({
               order_type: payload.order_type,
@@ -1790,7 +1790,13 @@ export async function pushOrderToCloud(order: any, rawItems: any[]): Promise<boo
               shop_id: payload.shop_id,
               updated_at: new Date().toISOString(),
             })
-            .eq('order_number', order.order_number)
+            .eq('order_number', order.order_number);
+
+          if (shopId) {
+            updQuery = updQuery.eq('shop_id', shopId);
+          }
+
+          const { data: upd, error: updErr } = await updQuery
             .select('id')
             .maybeSingle();
 
