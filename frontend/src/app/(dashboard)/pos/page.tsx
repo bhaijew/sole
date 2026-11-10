@@ -108,6 +108,13 @@ export default function POSPage() {
     if (customerPhone) {
       notesParts.push(`Phone: ${customerPhone}`);
     }
+    if (cart.orderCrust) {
+      const crustLabel = cart.orderCrust === 'thin' ? 'Thin Crust' : 'Normal / Pan';
+      notesParts.push(`[Crust: ${crustLabel}]`);
+    }
+    if (cart.orderNote?.trim()) {
+      notesParts.push(`[Note: ${cart.orderNote.trim()}]`);
+    }
     const orderSpecialInstructions = notesParts.length > 0 ? notesParts.join(' | ') : null;
 
     setSubmitting(true);
@@ -125,6 +132,8 @@ export default function POSPage() {
         delivery_charge: safeDeliveryFee,
         delivery_fee: safeDeliveryFee,
         delivery_address: deliveryAddress || null,
+        crust: cart.orderCrust ? (cart.orderCrust === 'thin' ? 'Thin Crust' : 'Normal / Pan') : null,
+        order_note: cart.orderNote?.trim() || null,
         special_instructions: orderSpecialInstructions,
         items: cart.items.map((item) => {
           const itemSize = item.size ? `Size: ${item.size}` : '';

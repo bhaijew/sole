@@ -81,6 +81,41 @@ export function buildKotBytes(
   enc.text(`Time: ${formatTime(order.created_at)}`).newline();
   enc.rule({ style: 'double' });
 
+  // ── Crust & Kitchen Instructions Box (Solid Border) ──
+  const combinedInstructions = `${order.special_instructions || ''} ${(order as any).notes || ''}`;
+  let orderCrust = (order as any).crust || '';
+  if (!orderCrust) {
+    const crustMatch = combinedInstructions.match(/(?:\[Crust:\s*([^\]]+)\]|Crust:\s*([^|\[\n]+))/i);
+    if (crustMatch) orderCrust = (crustMatch[1] || crustMatch[2] || '').trim();
+  }
+
+  let orderKitchenNote = (order as any).order_note || '';
+  if (!orderKitchenNote) {
+    const noteMatch = combinedInstructions.match(/(?:\[Note:\s*([^\]]+)\]|Note:\s*([^|\[\n]+))/i);
+    if (noteMatch) orderKitchenNote = (noteMatch[1] || noteMatch[2] || '').trim();
+  }
+
+  if (orderCrust || orderKitchenNote) {
+    const boxBorder = '+' + '-'.repeat(cols - 2) + '+';
+    enc.bold(true).text(boxBorder).newline();
+    enc.align('center').bold(true).height(2).text('| *** KITCHEN INSTRUCTIONS *** |').height(1).newline();
+    enc.align('left').bold(true);
+    if (orderCrust) {
+      const cLine = `| CRUST: ${orderCrust.toUpperCase()}`;
+      enc.height(2).text(cLine.padEnd(cols - 1) + '|').height(1).newline();
+    }
+    if (orderKitchenNote) {
+      const nLine = `| NOTE: ${orderKitchenNote.toUpperCase()}`;
+      const wrapped = wrapText(nLine, cols - 4);
+      for (const w of wrapped) {
+        const padded = (w.startsWith('|') ? w : '| ' + w).padEnd(cols - 1) + '|';
+        enc.height(2).text(padded).height(1).newline();
+      }
+    }
+    enc.text(boxBorder).newline();
+    enc.rule({ style: 'single' });
+  }
+
   // ── Items ────────────────────────────────────────────────────────────────────
   const items = order.items ?? [];
   let hasItems = false;
@@ -205,6 +240,26 @@ export function cleanVariant(v: any): string {
 
 function truncate(str: string, max: number): string {
   return str.length > max ? str.slice(0, max - 1) + '…' : str;
+}
+
+function wrapText(text: string, maxWidth: number): string[] {
+  if (!text) return [''];
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let current = '';
+
+  for (const word of words) {
+    if (!current) {
+      current = word;
+    } else if ((current + ' ' + word).length <= maxWidth) {
+      current += ' ' + word;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.length > 0 ? lines : [text.substring(0, maxWidth)];
 }
 
 function formatTime(iso?: string): string {

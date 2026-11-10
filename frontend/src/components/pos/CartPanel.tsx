@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react';
 import {
   ShoppingCart, UtensilsCrossed, Package, Truck,
-  Plus, Minus, Trash2, User, X, Phone, Hash, Sparkles,
+  Plus, Minus, Trash2, User, X, Phone, Hash, Sparkles, MessageSquare,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCartStore, getProductPriceForSize, hasProductSizes } from '@/store/cart';
@@ -469,6 +469,76 @@ export default function CartPanel({
 
       {/* Cart Footer */}
       <div className="p-2.5 border-t border-gray-100 shrink-0 bg-white space-y-1.5">
+        {/* Crust Selection & Customer / Kitchen Note */}
+        <div className="space-y-1.5 bg-amber-50/60 border border-amber-200/80 rounded-lg p-1.5 shadow-2xs">
+          {/* Crust Toggle (Optional) */}
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] font-black text-amber-950 uppercase tracking-wide flex items-center gap-1">
+              🍕 Crust:
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => cart.setOrderCrust(cart.orderCrust === 'normal' ? '' : 'normal')}
+                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer border ${
+                  cart.orderCrust === 'normal'
+                    ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                    : 'bg-white text-gray-700 border-gray-200 hover:border-amber-300'
+                }`}
+                title="Normal Pan Crust"
+              >
+                Normal (Pan)
+              </button>
+              <button
+                type="button"
+                onClick={() => cart.setOrderCrust(cart.orderCrust === 'thin' ? '' : 'thin')}
+                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer border ${
+                  cart.orderCrust === 'thin'
+                    ? 'bg-orange-600 text-white border-orange-600 shadow-xs'
+                    : 'bg-white text-gray-700 border-gray-200 hover:border-orange-300'
+                }`}
+                title="Thin Crust"
+              >
+                Thin Crust
+              </button>
+              {cart.orderCrust && (
+                <button
+                  type="button"
+                  onClick={() => cart.setOrderCrust('')}
+                  className="text-gray-400 hover:text-red-500 p-0.5 rounded"
+                  title="Clear crust selection"
+                >
+                  <X size={11} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Info bar / Customer Note */}
+          <div className="relative flex items-center">
+            <div className="absolute left-2 text-amber-700 pointer-events-none">
+              <MessageSquare size={11} />
+            </div>
+            <input
+              type="text"
+              value={cart.orderNote || ''}
+              onChange={(e) => cart.setOrderNote(e.target.value)}
+              placeholder="Note: e.g. normal rakhna spicy nhi..."
+              className="w-full pl-6 pr-6 py-1 text-[11px] bg-white border border-amber-200 focus:border-amber-500 rounded-md text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-2xs font-medium"
+            />
+            {cart.orderNote && (
+              <button
+                type="button"
+                onClick={() => cart.setOrderNote('')}
+                className="absolute right-1.5 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
+                title="Clear"
+              >
+                <X size={11} />
+              </button>
+            )}
+          </div>
+        </div>
+
         <div className="space-y-0.5 text-xs">
           <div className="flex justify-between text-gray-500 text-[11px]">
             <span>Items ({cart.itemCount()})</span>

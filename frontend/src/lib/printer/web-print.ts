@@ -447,6 +447,30 @@ function renderSingleReceipt(
         </tbody>
       </table>
 
+      <!-- Customer Slip Note & Crust -->
+      ${(() => {
+        const combined = `${order?.special_instructions || ''} ${(order as any)?.notes || ''}`;
+        let c = (order as any)?.crust || '';
+        if (!c) {
+          const cm = combined.match(/(?:\[Crust:\s*([^\]]+)\]|Crust:\s*([^|\[\n]+))/i);
+          if (cm) c = (cm[1] || cm[2] || '').trim();
+        }
+        let n = (order as any)?.order_note || '';
+        if (!n) {
+          const nm = combined.match(/(?:\[Note:\s*([^\]]+)\]|Note:\s*([^|\[\n]+))/i);
+          if (nm) n = (nm[1] || nm[2] || '').trim();
+        }
+        if (!c && !n) return '';
+        const parts: string[] = [];
+        if (n) parts.push(escapeHtml(n));
+        if (c) parts.push(`Crust: ${escapeHtml(c)}`);
+        return `
+          <div style="margin: 4px 0; padding: 3px 0; border-top: 1px dashed #000; font-size: 12px; font-weight: bold;">
+            Note: ${parts.join(' | ')}
+          </div>
+        `;
+      })()}
+
       <!-- Breakdown if discount or taxes exist -->
       ${hasBreakdown ? `
         <div style="margin: 4px 0;">

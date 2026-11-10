@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import type { Customer, Product, Addon, CartItem } from '@/lib/types';
 
+export type CrustOption = '' | 'normal' | 'thin';
+
 interface CartState {
   items: CartItem[];
   orderType: 'dine_in' | 'takeaway' | 'delivery' | 'online';
@@ -14,6 +16,8 @@ interface CartState {
   deliveryFee: number;
   deliveryAddress: string;
   guestCount: number;
+  orderCrust: CrustOption;
+  orderNote: string;
   printKot: boolean;
   printReceipt: boolean;
 
@@ -34,6 +38,8 @@ interface CartState {
   setDeliveryFee: (fee: number) => void;
   setDeliveryAddress: (address: string) => void;
   setGuestCount: (count: number) => void;
+  setOrderCrust: (crust: CrustOption) => void;
+  setOrderNote: (note: string) => void;
   setPrintKot: (val: boolean) => void;
   setPrintReceipt: (val: boolean) => void;
 
@@ -102,6 +108,8 @@ export const useCartStore = create<CartState>((set, get) => ({
   deliveryFee: 0,
   deliveryAddress: '',
   guestCount: 1,
+  orderCrust: '',
+  orderNote: '',
   printKot: true,
   printReceipt: true,
 
@@ -190,6 +198,8 @@ export const useCartStore = create<CartState>((set, get) => ({
       guestCount: 1,
       deliveryFee: 0,
       deliveryAddress: '',
+      orderCrust: '',
+      orderNote: '',
     });
   },
 
@@ -214,6 +224,8 @@ export const useCartStore = create<CartState>((set, get) => ({
   setDeliveryFee: (fee) => set({ deliveryFee: Math.max(0, Number(fee) || 0) }),
   setDeliveryAddress: (address) => set({ deliveryAddress: address }),
   setGuestCount: (count) => set({ guestCount: count }),
+  setOrderCrust: (crust) => set({ orderCrust: crust }),
+  setOrderNote: (note) => set({ orderNote: note }),
   setPrintKot: (val) => set({ printKot: val }),
   setPrintReceipt: (val) => set({ printReceipt: val }),
 

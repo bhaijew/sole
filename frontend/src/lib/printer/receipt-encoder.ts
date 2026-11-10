@@ -253,6 +253,29 @@ function buildSingleCopyBytes(
 
   enc.text('-'.repeat(cols)).newline();
 
+  // ── Customer Slip Note (Crust & Customer Note) ──
+  const combinedInstructions = `${order?.special_instructions || ''} ${(order as any)?.notes || ''}`;
+  let orderCrust = (order as any)?.crust || '';
+  if (!orderCrust) {
+    const crustMatch = combinedInstructions.match(/(?:\[Crust:\s*([^\]]+)\]|Crust:\s*([^|\[\n]+))/i);
+    if (crustMatch) orderCrust = (crustMatch[1] || crustMatch[2] || '').trim();
+  }
+
+  let orderKitchenNote = (order as any)?.order_note || '';
+  if (!orderKitchenNote) {
+    const noteMatch = combinedInstructions.match(/(?:\[Note:\s*([^\]]+)\]|Note:\s*([^|\[\n]+))/i);
+    if (noteMatch) orderKitchenNote = (noteMatch[1] || noteMatch[2] || '').trim();
+  }
+
+  if (orderKitchenNote || orderCrust) {
+    const noteDisplayParts: string[] = [];
+    if (orderKitchenNote) noteDisplayParts.push(orderKitchenNote);
+    if (orderCrust) noteDisplayParts.push(`Crust: ${orderCrust}`);
+    const noteText = `Note: ${noteDisplayParts.join(' | ')}`;
+    enc.bold(true).text(truncate(noteText, cols)).bold(false).newline();
+    enc.text('-'.repeat(cols)).newline();
+  }
+
   // Breakdown if discounts, delivery or taxes exist (Bold)
   const subtotal = Number(bill.subtotal || order?.subtotal || bill.total || 0);
   const total = Number(bill.total || order?.total || 0);

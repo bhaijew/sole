@@ -716,6 +716,29 @@ function formatSingleReceiptCopy(
 
   lines.push(dash);
 
+  // ── Customer Slip Note (Crust & Customer Note) ──
+  const combinedInstructions = `${order?.special_instructions || ''} ${order?.notes || ''}`;
+  let orderCrust = order?.crust || '';
+  if (!orderCrust) {
+    const crustMatch = combinedInstructions.match(/(?:\[Crust:\s*([^\]]+)\]|Crust:\s*([^|\[\n]+))/i);
+    if (crustMatch) orderCrust = (crustMatch[1] || crustMatch[2] || '').trim();
+  }
+
+  let orderKitchenNote = order?.order_note || '';
+  if (!orderKitchenNote) {
+    const noteMatch = combinedInstructions.match(/(?:\[Note:\s*([^\]]+)\]|Note:\s*([^|\[\n]+))/i);
+    if (noteMatch) orderKitchenNote = (noteMatch[1] || noteMatch[2] || '').trim();
+  }
+
+  if (orderKitchenNote || orderCrust) {
+    const noteDisplayParts: string[] = [];
+    if (orderKitchenNote) noteDisplayParts.push(orderKitchenNote);
+    if (orderCrust) noteDisplayParts.push(`Crust: ${orderCrust}`);
+    const noteLine = `Note: ${noteDisplayParts.join(' | ')}`;
+    lines.push('{BOLD}' + truncate(noteLine, cols) + '{/BOLD}');
+    lines.push(dash);
+  }
+
   // Subtotal / Breakdown if discounts, delivery or taxes exist (order takes precedence over stale bill)
   const total = Number(order?.total !== undefined ? order.total : (bill?.total || 0));
   const subtotal = Number(order?.subtotal !== undefined ? order.subtotal : (bill?.subtotal || total));
@@ -1183,6 +1206,41 @@ function formatKOT(order: any, items: any[], stationName: string, cols: number =
   }
   lines.push('{BOLD}Time: ' + timeStr + '{/BOLD}');
   lines.push(bar);
+
+  // ── Crust & Kitchen Instructions Box (Solid 1px Border) ──
+  const combinedInstructions = `${order?.special_instructions || ''} ${order?.notes || ''}`;
+  let orderCrust = order?.crust || '';
+  if (!orderCrust) {
+    const crustMatch = combinedInstructions.match(/(?:\[Crust:\s*([^\]]+)\]|Crust:\s*([^|\[\n]+))/i);
+    if (crustMatch) orderCrust = (crustMatch[1] || crustMatch[2] || '').trim();
+  }
+
+  let orderKitchenNote = order?.order_note || '';
+  if (!orderKitchenNote) {
+    const noteMatch = combinedInstructions.match(/(?:\[Note:\s*([^\]]+)\]|Note:\s*([^|\[\n]+))/i);
+    if (noteMatch) orderKitchenNote = (noteMatch[1] || noteMatch[2] || '').trim();
+  }
+
+  if (orderCrust || orderKitchenNote) {
+    const boxBorder = '+' + '-'.repeat(cols - 2) + '+';
+    lines.push('{BOLD}' + boxBorder + '{/BOLD}');
+    lines.push('{CENTER}{DOUBLE_HEIGHT}{BOLD}| *** KITCHEN INSTRUCTIONS *** |{/BOLD}{/DOUBLE_HEIGHT}{/CENTER}');
+    if (orderCrust) {
+      const cLine = `| CRUST: ${orderCrust.toUpperCase()}`;
+      lines.push('{DOUBLE_HEIGHT}{BOLD}' + cLine.padEnd(cols - 1) + '|{/BOLD}{/DOUBLE_HEIGHT}');
+    }
+    if (orderKitchenNote) {
+      const nLine = `| NOTE: ${orderKitchenNote.toUpperCase()}`;
+      const wrapped = wrapText(nLine, cols - 4);
+      for (const w of wrapped) {
+        const padded = (w.startsWith('|') ? w : '| ' + w).padEnd(cols - 1) + '|';
+        lines.push('{DOUBLE_HEIGHT}{BOLD}' + padded + '{/BOLD}{/DOUBLE_HEIGHT}');
+      }
+    }
+    lines.push('{BOLD}' + boxBorder + '{/BOLD}');
+    lines.push(dash);
+  }
+
   lines.push('');
 
   // 3. Items (Large Double-Height + Double-Width & Bold for quick kitchen reading)
