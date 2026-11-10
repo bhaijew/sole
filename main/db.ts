@@ -991,10 +991,33 @@ export function getShopUniqueCode(): string {
 
 export function generateOrderNumber(): string {
   const shopCode = getShopUniqueCode();
-  const now = new Date();
-  const dd = String(now.getDate()).padStart(2, '0');
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dateCode = `${dd}${mm}`;
+
+  // Operating Business Shift Date in Pakistan (UTC+5)
+  // Shifts start at 11:00 AM. Orders placed between 12:00 AM and 11:00 AM
+  // belong to yesterday's operational cycle so order number does NOT reset at midnight!
+  let dateCode = '0911';
+  try {
+    const nowUtc = new Date();
+    // PKT is UTC + 5 hours
+    const pktNow = new Date(nowUtc.getTime() + 5 * 3600000);
+    const pktHours = pktNow.getUTCHours();
+    const pktMinutes = pktNow.getUTCMinutes();
+    const currentMins = pktHours * 60 + pktMinutes;
+    const openMins = 11 * 60; // 11:00 AM
+
+    let targetDate = pktNow;
+    if (currentMins < openMins) {
+      targetDate = new Date(pktNow.getTime() - 24 * 3600000);
+    }
+    const dd = String(targetDate.getUTCDate()).padStart(2, '0');
+    const mm = String(targetDate.getUTCMonth() + 1).padStart(2, '0');
+    dateCode = `${dd}${mm}`;
+  } catch {
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, '0');
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    dateCode = `${dd}${mm}`;
+  }
 
   let terminalPrefix = '';
   try {
