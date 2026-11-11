@@ -1547,6 +1547,11 @@ export async function pullOnlineOrdersFromCloud(): Promise<{
         // Run full sync to capture status, verification, new recreate items, and updated totals
         await handleIncomingCloudOrder(cloudOrder);
       }
+
+      // Check if order has a pending remote print request from mobile app
+      if (String(cloudOrder.notes || '').includes('[PRINT_REQ:')) {
+        await executeRemotePrintRequest(cloudOrder);
+      }
     }
 
     // Reconcile and purge any local orders that were deleted from Pizza Admin (Supabase)
@@ -2054,39 +2059,7 @@ export function startRealtimeOrderListener(): void {
             // ── Remote Cloud Print Request from Mobile App ──
             const noteStr = String(updated.notes || '');
             if (noteStr.includes('[PRINT_REQ:')) {
-              try {
-                console.log(`[CloudSync] Remote Print Request detected for order #${updated.order_number}!`);
-                const localOrder = db.prepare('SELECT * FROM orders WHERE cloud_order_id = ? OR order_number = ?').get(String(updated.id), updated.order_number) as any;
-                if (localOrder) {
-                  const localItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(localOrder.id);
-                  localOrder.items = localItems;
-
-                  if (noteStr.includes('[PRINT_REQ: KOT]') || noteStr.includes('[PRINT_REQ: BOTH]')) {
-                    console.log(`[CloudSync] Remote printing KOT for order #${updated.order_number}...`);
-                    await printKOT(localOrder, localItems, 'Kitchen (Mobile)');
-                  }
-                  if (noteStr.includes('[PRINT_REQ: BILL]') || noteStr.includes('[PRINT_REQ: BOTH]')) {
-                    console.log(`[CloudSync] Remote printing Customer Bill for order #${updated.order_number}...`);
-                    const bill = {
-                      order_id: localOrder.id,
-                      subtotal: localOrder.subtotal,
-                      total: localOrder.total,
-                      bill_number: `B-${localOrder.order_number}`,
-                      payment_status: 'paid',
-                      payment_method: localOrder.payment_method || 'cash',
-                      items: localItems,
-                      order: localOrder,
-                    };
-                    await printReceipt(localOrder, bill, undefined, 'customer');
-                  }
-
-                  // Clear the print request tag from cloud so it doesn't loop
-                  const cleanedNotes = noteStr.replace(/\[PRINT_REQ:\s*(?:KOT|BILL|BOTH)\]\s*/gi, '').trim();
-                  await client.from('orders').update({ notes: cleanedNotes }).eq('id', updated.id);
-                }
-              } catch (printErr: any) {
-                console.error('[CloudSync] Remote print execution error:', printErr.message);
-              }
+              await executeRemotePrintRequest(updated);
             }
           } catch (e) {
             console.error('[CloudSync] Error updating local order status from cloud:', e);
@@ -2579,6 +2552,92 @@ export async function triggerVerifiedOrderPrints(localOrderId: number, cloudOrde
     return true;
   } catch (err) {
     console.error('[CloudSync] triggerVerifiedOrderPrints failed:', err);
+    return false;
+  }
+}
+
+/**
+ * Execute remote print request triggered from Mobile App
+ */
+export async function executeRemotePrintRequest(cloudOrder: any): Promise<boolean> {
+  if (!cloudOrder) return false;
+  const noteStr = String(cloudOrder.notes || '');
+  if (!noteStr.includes('[PRINT_REQ:')) return false;
+
+  console.log(`[CloudSync] Remote Print Request detected for order #${cloudOrder.order_number || cloudOrder.id}: ${noteStr}`);
+  const db = getDatabase();
+
+  try {
+    // 1. Ensure order exists locally; if not, import it first
+    let localOrder = db.prepare('SELECT * FROM orders WHERE cloud_order_id = ? OR order_number = ?')
+      .get(String(cloudOrder.id), cloudOrder.order_number) as any;
+
+    if (!localOrder) {
+      console.log(`[CloudSync] Order #${cloudOrder.order_number} not in local SQLite yet. Importing before print...`);
+      await handleIncomingCloudOrder(cloudOrder, true, { suppressAutoPrint: true });
+      localOrder = db.prepare('SELECT * FROM orders WHERE cloud_order_id = ? OR order_number = ?')
+        .get(String(cloudOrder.id), cloudOrder.order_number) as any;
+    }
+
+    if (!localOrder) {
+      console.warn(`[CloudSync] Failed to find or import order #${cloudOrder.order_number} for remote printing.`);
+      return false;
+    }
+
+    const localItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(localOrder.id) as any[];
+    localOrder.items = localItems;
+
+    if (cloudOrder.customer_name) localOrder.customer_name = cloudOrder.customer_name;
+    if (cloudOrder.customer_phone) localOrder.customer_phone = cloudOrder.customer_phone;
+
+    const isKot = noteStr.includes('[PRINT_REQ: KOT]') || noteStr.includes('[PRINT_REQ: BOTH]');
+    const isBill = noteStr.includes('[PRINT_REQ: BILL]') || noteStr.includes('[PRINT_REQ: CUSTOMER]') || noteStr.includes('[PRINT_REQ: BOTH]');
+
+    if (isKot) {
+      console.log(`[CloudSync] Remote printing Kitchen KOT for order #${localOrder.order_number}...`);
+      await printKOT(localOrder, localItems, 'Kitchen (Mobile)');
+    }
+
+    if (isBill) {
+      console.log(`[CloudSync] Remote printing Customer Bill for order #${localOrder.order_number}...`);
+      const bill = {
+        order_id: localOrder.id,
+        subtotal: localOrder.subtotal,
+        total: localOrder.total,
+        bill_number: `B-${localOrder.order_number}`,
+        payment_status: 'paid',
+        payment_method: localOrder.payment_method || 'cash',
+        payment_details: [{ method: localOrder.payment_method || 'Online', amount: localOrder.total }],
+        items: localItems,
+        order: localOrder,
+        created_at: localOrder.created_at,
+      };
+
+      const business = {
+        name: getSetting('business_name') || getSetting('cloud_shop_name') || getSetting('shop_name') || 'Sole What POS',
+        address: getSetting('business_address') || getSetting('address') || '',
+        phone: getSetting('business_phone') || getSetting('phone') || '',
+        gstin: getSetting('gstin'),
+        easypaisa_number: getSetting('easypaisa_number'),
+        easypaisa_title: getSetting('easypaisa_title'),
+        complaint_number: getSetting('complaint_number') || getSetting('business_phone') || getSetting('phone') || '',
+        footer_message: getSetting('bill_footer_message'),
+      };
+
+      await printReceipt(localOrder, bill, business, 'classic', 'customer');
+    }
+
+    // Clear print request tag from Supabase to prevent duplicate execution
+    const client = getSupabaseClient();
+    if (client) {
+      const cleanedNotes = noteStr.replace(/\[PRINT_REQ:\s*(?:KOT|BILL|CUSTOMER|BOTH)\]\s*/gi, '').trim();
+      await client.from('orders').update({ notes: cleanedNotes }).eq('id', cloudOrder.id);
+      console.log(`[CloudSync] Cleared [PRINT_REQ:] tag for order #${localOrder.order_number}`);
+    }
+
+    return true;
+  } catch (err: any) {
+    console.error('[CloudSync] executeRemotePrintRequest failed:', err?.message || err);
     return false;
   }
 }
