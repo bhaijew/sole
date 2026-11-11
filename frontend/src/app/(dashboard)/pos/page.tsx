@@ -118,44 +118,69 @@ export default function POSPage() {
     const orderSpecialInstructions = notesParts.length > 0 ? notesParts.join(' | ') : null;
 
     setSubmitting(true);
-    try {
-      const { data } = await api.post('/orders', {
-        shop_id: (currentTenant as any)?.shop_id || undefined,
-        table_id: null,
-        customer_id: null,
-        customer_name: customerName || null,
-        customer_phone: customerPhone || null,
-        phone: customerPhone || null,
-        type: finalOrderType,
-        payment_method: chosenPaymentMethod,
-        guest_count: 1,
-        delivery_charge: safeDeliveryFee,
-        delivery_fee: safeDeliveryFee,
-        delivery_address: deliveryAddress || null,
-        crust: cart.orderCrust ? (cart.orderCrust === 'thin' ? 'Thin Crust' : 'Normal / Pan') : null,
-        order_note: cart.orderNote?.trim() || null,
-        special_instructions: orderSpecialInstructions,
-        items: cart.items.map((item) => {
-          const itemSize = item.size ? `Size: ${item.size}` : '';
-          const instructionsCombined = [itemSize, item.special_instructions].filter(Boolean).join(' | ');
-          const effectivePrice = item.unit_price ?? getProductPriceForSize(item.product, item.size);
+    const isRecreateUpdate = Boolean(cart.recreatingOrderId);
 
-          return {
-            product_id: String(item.product?.id || `prod-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`),
-            product_name: item.product?.name || 'Item',
-            quantity: item.quantity,
-            unit_price: effectivePrice,
-            addons: item.addons.length > 0
-              ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price }))
-              : null,
-            special_instructions: instructionsCombined || null,
-            variant_selection: item.size || null,
-            items_included: (item.product as any)?.items_included ? JSON.stringify((item.product as any).items_included) : (item.product.description || null),
-          };
-        }),
+    try {
+      const orderItemsPayload = cart.items.map((item) => {
+        const itemSize = item.size ? `Size: ${item.size}` : '';
+        const instructionsCombined = [itemSize, item.special_instructions].filter(Boolean).join(' | ');
+        const effectivePrice = item.unit_price ?? getProductPriceForSize(item.product, item.size);
+
+        return {
+          product_id: String(item.product?.id || `prod-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`),
+          product_name: item.product?.name || 'Item',
+          quantity: item.quantity,
+          unit_price: effectivePrice,
+          addons: item.addons.length > 0
+            ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price }))
+            : null,
+          special_instructions: instructionsCombined || null,
+          variant_selection: item.size || null,
+          detail: item.size || null,
+          items_included: (item.product as any)?.items_included ? JSON.stringify((item.product as any).items_included) : (item.product.description || null),
+        };
       });
 
-      toast.success(`Order #${data.order.order_number} placed!`);
+      let data: any;
+      if (isRecreateUpdate) {
+        // Recreate existing order keeping SAME ID & SAME Order Number!
+        const res = await api.post(`/orders/${cart.recreatingOrderId}/recreate`, {
+          mode: 'update',
+          shop_id: (currentTenant as any)?.shop_id || undefined,
+          type: finalOrderType,
+          customer_name: customerName || null,
+          customer_phone: customerPhone || null,
+          delivery_address: deliveryAddress || null,
+          delivery_fee: safeDeliveryFee,
+          payment_method: chosenPaymentMethod,
+          special_instructions: orderSpecialInstructions,
+          items: orderItemsPayload,
+        });
+        data = res.data;
+        toast.success(`Order #${data.order.order_number} Recreated & Updated! (Same ID preserved)`);
+      } else {
+        const res = await api.post('/orders', {
+          shop_id: (currentTenant as any)?.shop_id || undefined,
+          table_id: null,
+          customer_id: null,
+          customer_name: customerName || null,
+          customer_phone: customerPhone || null,
+          phone: customerPhone || null,
+          type: finalOrderType,
+          payment_method: chosenPaymentMethod,
+          guest_count: 1,
+          delivery_charge: safeDeliveryFee,
+          delivery_fee: safeDeliveryFee,
+          delivery_address: deliveryAddress || null,
+          crust: cart.orderCrust ? (cart.orderCrust === 'thin' ? 'Thin Crust' : 'Normal / Pan') : null,
+          order_note: cart.orderNote?.trim() || null,
+          special_instructions: orderSpecialInstructions,
+          items: orderItemsPayload,
+        });
+        data = res.data;
+        toast.success(`Order #${data.order.order_number} placed!`);
+      }
+
       const shouldPrintKot = cart.printKot;
       const shouldPrintBill = cart.printReceipt;
       cart.clearCart();

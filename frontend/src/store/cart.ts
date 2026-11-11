@@ -20,6 +20,8 @@ interface CartState {
   orderNote: string;
   printKot: boolean;
   printReceipt: boolean;
+  recreatingOrderId: number | null;
+  recreatingOrderNumber: string | null;
 
   addItem: (product: Product, quantity?: number, addons?: Addon[], specialInstructions?: string, size?: string) => void;
   updateItemSize: (cartItemId: string, size: string) => void;
@@ -27,6 +29,7 @@ interface CartState {
   updateQuantity: (cartItemId: string, quantity: number) => void;
   clearCart: () => void;
   loadItems: (items: CartItem[], tableId: number | null, customerId: number | null, guestCount: number) => void;
+  setRecreatingOrder: (id: number | null, orderNumber: string | null) => void;
   setOrderType: (type: CartState['orderType']) => void;
   setPaymentMethod: (method: CartState['paymentMethod']) => void;
   setTableId: (id: number | null) => void;
@@ -112,6 +115,10 @@ export const useCartStore = create<CartState>((set, get) => ({
   orderNote: '',
   printKot: true,
   printReceipt: true,
+  recreatingOrderId: null,
+  recreatingOrderNumber: null,
+
+  setRecreatingOrder: (id, orderNumber) => set({ recreatingOrderId: id, recreatingOrderNumber: orderNumber }),
 
   addItem: (product, quantity = 1, addons = [], specialInstructions = '', size = '') => {
     const items = get().items;
@@ -200,6 +207,8 @@ export const useCartStore = create<CartState>((set, get) => ({
       deliveryAddress: '',
       orderCrust: '',
       orderNote: '',
+      recreatingOrderId: null,
+      recreatingOrderNumber: null,
     });
   },
 

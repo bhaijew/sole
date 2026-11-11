@@ -81,6 +81,25 @@ export default function CartPanel({
     >
       {/* Order Type & Contextual Customer / Delivery Information */}
       <div className="p-2 border-b border-gray-100 space-y-1.5 bg-gray-50/40 shrink-0">
+        {/* Recreating Order Mode Indicator */}
+        {cart.recreatingOrderId && (
+          <div className="flex items-center justify-between bg-amber-500/10 border border-amber-500/30 rounded-lg px-2.5 py-1 text-amber-800 animate-in fade-in duration-150">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+              <span className="text-[11px] font-black truncate">
+                Recreating #{cart.recreatingOrderNumber} (Same ID Preserved)
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => cart.setRecreatingOrder(null, null)}
+              className="text-[10px] text-amber-700 hover:text-amber-900 underline font-bold shrink-0 ml-1 cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
         {/* Top Order Type Selector */}
         <div className="flex gap-1 bg-gray-200/80 rounded-lg p-0.5">
           {(['dine_in', 'takeaway', 'delivery'] as const).map((type) => {
@@ -709,7 +728,9 @@ export default function CartPanel({
           onClick={onPlaceOrder}
           disabled={submitting || cart.items.length === 0}
           className={`w-full font-black h-10 text-xs sm:text-sm shadow-sm transition-all cursor-pointer ${
-            cart.paymentMethod === 'online'
+            cart.recreatingOrderId
+              ? 'bg-amber-600 hover:bg-amber-700 text-white'
+              : cart.paymentMethod === 'online'
               ? 'bg-blue-600 hover:bg-blue-700 text-white'
               : cart.paymentMethod === 'paid' || cart.paymentMethod === 'already_paid'
               ? 'bg-purple-600 hover:bg-purple-700 text-white'
@@ -720,7 +741,9 @@ export default function CartPanel({
           size="default"
         >
           {submitting
-            ? 'Placing Order...'
+            ? (cart.recreatingOrderId ? 'Updating Order...' : 'Placing Order...')
+            : cart.recreatingOrderId
+            ? `Update & Recreate #${cart.recreatingOrderNumber} (Same ID)`
             : `Place Order (${
                 cart.paymentMethod === 'online'
                   ? 'Paid Online'

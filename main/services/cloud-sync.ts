@@ -1149,6 +1149,12 @@ export async function handleIncomingCloudOrder(
               variantInfo = typeof item.selected_variation === 'object' ? item.selected_variation.name : String(item.selected_variation);
             } else if (item.variant_selection) {
               variantInfo = String(item.variant_selection);
+            } else if (item.variation) {
+              variantInfo = typeof item.variation === 'object' ? item.variation.name : String(item.variation);
+            } else if (item.size) {
+              variantInfo = String(item.size);
+            } else if (item.variant) {
+              variantInfo = String(item.variant);
             }
 
             let itemsIncStr: string | null = null;
@@ -1361,6 +1367,12 @@ export async function handleIncomingCloudOrder(
           variantInfo = typeof item.selected_variation === 'object' ? item.selected_variation.name : String(item.selected_variation);
         } else if (item.variant_selection) {
           variantInfo = String(item.variant_selection);
+        } else if (item.variation) {
+          variantInfo = typeof item.variation === 'object' ? item.variation.name : String(item.variation);
+        } else if (item.size) {
+          variantInfo = String(item.size);
+        } else if (item.variant) {
+          variantInfo = String(item.variant);
         }
 
         let itemsIncStr: string | null = null;
@@ -2038,6 +2050,44 @@ export function startRealtimeOrderListener(): void {
               .run(localStatus, String(updated.id), updated.order_number);
             notifyKdsUpdate();
             broadcastCloudEvent('order-status-updated', { orderNumber: updated.order_number, status: localStatus });
+
+            // ── Remote Cloud Print Request from Mobile App ──
+            const noteStr = String(updated.notes || '');
+            if (noteStr.includes('[PRINT_REQ:')) {
+              try {
+                console.log(`[CloudSync] Remote Print Request detected for order #${updated.order_number}!`);
+                const localOrder = db.prepare('SELECT * FROM orders WHERE cloud_order_id = ? OR order_number = ?').get(String(updated.id), updated.order_number) as any;
+                if (localOrder) {
+                  const localItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(localOrder.id);
+                  localOrder.items = localItems;
+
+                  if (noteStr.includes('[PRINT_REQ: KOT]') || noteStr.includes('[PRINT_REQ: BOTH]')) {
+                    console.log(`[CloudSync] Remote printing KOT for order #${updated.order_number}...`);
+                    await printKOT(localOrder, localItems, 'Kitchen (Mobile)');
+                  }
+                  if (noteStr.includes('[PRINT_REQ: BILL]') || noteStr.includes('[PRINT_REQ: BOTH]')) {
+                    console.log(`[CloudSync] Remote printing Customer Bill for order #${updated.order_number}...`);
+                    const bill = {
+                      order_id: localOrder.id,
+                      subtotal: localOrder.subtotal,
+                      total: localOrder.total,
+                      bill_number: `B-${localOrder.order_number}`,
+                      payment_status: 'paid',
+                      payment_method: localOrder.payment_method || 'cash',
+                      items: localItems,
+                      order: localOrder,
+                    };
+                    await printReceipt(localOrder, bill, undefined, 'customer');
+                  }
+
+                  // Clear the print request tag from cloud so it doesn't loop
+                  const cleanedNotes = noteStr.replace(/\[PRINT_REQ:\s*(?:KOT|BILL|BOTH)\]\s*/gi, '').trim();
+                  await client.from('orders').update({ notes: cleanedNotes }).eq('id', updated.id);
+                }
+              } catch (printErr: any) {
+                console.error('[CloudSync] Remote print execution error:', printErr.message);
+              }
+            }
           } catch (e) {
             console.error('[CloudSync] Error updating local order status from cloud:', e);
           }

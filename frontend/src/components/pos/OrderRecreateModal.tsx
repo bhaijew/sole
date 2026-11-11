@@ -63,6 +63,7 @@ export default function OrderRecreateModal({
     setCustomerPhone: setCartCustPhone,
     setDeliveryAddress: setCartDeliveryAddr,
     setDeliveryFee: setCartDeliveryFee,
+    setRecreatingOrder,
   } = useCartStore();
 
   const [mode, setMode] = useState<'new' | 'update'>('update');
@@ -293,6 +294,7 @@ export default function OrderRecreateModal({
 
   // Load into POS Cart & Navigate
   const handleLoadIntoPosCart = () => {
+    if (!order) return;
     if (items.length === 0) {
       toast.error('No items to load');
       return;
@@ -319,8 +321,9 @@ export default function OrderRecreateModal({
     setCartCustPhone(customerPhone);
     setCartDeliveryAddr(deliveryAddress);
     setCartDeliveryFee(orderType === 'delivery' ? deliveryFee : 0);
+    setRecreatingOrder(order.id, order.order_number);
 
-    toast.success('Loaded into POS Cart! Complete payment at checkout.');
+    toast.success(`Loaded Order #${order.order_number} into POS Cart! Add/modify items and confirm to update.`);
     onClose();
     router.push('/pos');
   };
