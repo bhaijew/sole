@@ -37,32 +37,43 @@ export default function POSPage() {
   const { printBill, printKot } = usePrinterStore();
 
   useEffect(() => {
-    const fetchData = async () => {
+    let isMounted = true;
+    let isFetching = false;
+
+    const fetchData = async (isInitial = false) => {
+      if (isFetching) return;
+      isFetching = true;
       try {
         const [catRes, prodRes] = await Promise.all([
           api.get('/categories?active=1'),
           api.get('/products?active=1'),
         ]);
+        if (!isMounted) return;
         setCategories((catRes.data.categories as Category[]) || []);
         setProducts((prodRes.data.products as Product[]) || []);
-      } catch {
-        toast.error('Failed to load menu data');
+      } catch (err) {
+        console.warn('Menu fetch failed:', err);
+        // Only show toast error on initial page load if no products are loaded yet
+        if (isInitial) {
+          toast.error('Failed to load menu data');
+        }
+      } finally {
+        isFetching = false;
       }
     };
 
-    fetchData();
+    fetchData(true);
 
-    // Listen for live real-time sync events from cloud
-    const handleLiveSync = () => {
-      fetchData();
+    // Only listen for menu updates (price/item changes from cloud), NOT order syncs
+    const handleMenuSync = () => {
+      fetchData(false);
     };
 
-    window.addEventListener('flo:menu-synced', handleLiveSync);
-    window.addEventListener('flo:order-synced', handleLiveSync);
+    window.addEventListener('flo:menu-synced', handleMenuSync);
 
     return () => {
-      window.removeEventListener('flo:menu-synced', handleLiveSync);
-      window.removeEventListener('flo:order-synced', handleLiveSync);
+      isMounted = false;
+      window.removeEventListener('flo:menu-synced', handleMenuSync);
     };
   }, []);
 
