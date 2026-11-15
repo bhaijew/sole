@@ -269,8 +269,8 @@ function runIncrementalMigrations(fromVersion: number): void {
       db.exec(`ALTER TABLE orders ADD COLUMN is_synced INTEGER DEFAULT 0`);
     }
 
-    insert('supabase_url', 'https://uadrrjrlhfttithjmdye.supabase.co');
-    insert('supabase_key', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhZHJyanJsaGZ0dGl0aGptZHllIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MDYwNTg2OCwiZXhwIjoyMTA2MTgxODY4fQ.NuC74GhFlUEiaRR2BXPooYj7iahzrXXKCxMQYDUnfIg');
+    insert('supabase_url', 'https://api.solewhat.store');
+    insert('supabase_key', 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5NDY0NDQ2MCwiZXhwIjoyMTA2MTgxODY4fQ._XJCDg3ziLno1PZHc_FVafmFaIf8L_LgvvOb3L6fWUQ');
     insert('cloud_sync_enabled', '1');
     insert('cloud_auto_print_kot', '1');
     insert('cloud_last_sync', '');
@@ -891,8 +891,8 @@ function seedData(): void {
   insert('loyalty_expiry_days', '365');
   insert('cloud_server_url',    '');
   insert('cloud_connected',     'false');
-  insert('supabase_url',        'https://uadrrjrlhfttithjmdye.supabase.co');
-  insert('supabase_key',        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhZHJyanJsaGZ0dGl0aGptZHllIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MDYwNTg2OCwiZXhwIjoyMTA2MTgxODY4fQ.NuC74GhFlUEiaRR2BXPooYj7iahzrXXKCxMQYDUnfIg');
+  insert('supabase_url',        'https://api.solewhat.store');
+  insert('supabase_key',        'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5NDY0NDQ2MCwiZXhwIjoyMTA2MTgxODY4fQ._XJCDg3ziLno1PZHc_FVafmFaIf8L_LgvvOb3L6fWUQ');
   insert('cloud_sync_enabled',  '1');
   insert('cloud_auto_print_kot','1');
   insert('cloud_auto_print_bill','1');

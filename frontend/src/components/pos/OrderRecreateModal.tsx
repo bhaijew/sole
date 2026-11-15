@@ -76,7 +76,7 @@ export default function OrderRecreateModal({
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'online' | 'paid'>('cash');
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [printKot, setPrintKot] = useState(true);
-  const [printReceipt, setPrintReceipt] = useState(true);
+  const [printReceipt, setPrintReceipt] = useState(false);
 
   // Available products for adding new items
   const [availableProducts, setAvailableProducts] = useState<any[]>([]);
@@ -124,7 +124,7 @@ export default function OrderRecreateModal({
     setPaymentMethod(((order as any).payment_method as any) || 'cash');
     setSpecialInstructions(order.special_instructions || '');
     setPrintKot(true);
-    setPrintReceipt(true);
+    setPrintReceipt(false);
     setSelectedProductId('');
     setSelectedVariation(null);
     setAddQty(1);
@@ -380,11 +380,11 @@ export default function OrderRecreateModal({
         : payload.items;
 
       if (printKot && printReceipt && createdOrder.id) {
-        api.post('/printers/print-order', { orderId: createdOrder.id, printType: 'both', items: itemsToPrint }).catch(() => {});
+        api.post('/printers/print-order', { orderId: createdOrder.id, printType: 'both', copyType: 'customer', items: itemsToPrint }).catch(() => {});
       } else if (printKot && createdOrder.id) {
         api.post('/printers/print-order', { orderId: createdOrder.id, printType: 'kot', items: itemsToPrint }).catch(() => {});
       } else if (printReceipt && createdOrder.id) {
-        api.post('/printers/print-order', { orderId: createdOrder.id, printType: 'bill', items: itemsToPrint }).catch(() => {});
+        api.post('/printers/print-order', { orderId: createdOrder.id, printType: 'bill', copyType: 'customer', items: itemsToPrint }).catch(() => {});
       }
 
       if (onOrderRecreated) {

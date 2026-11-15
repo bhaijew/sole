@@ -42,8 +42,8 @@ function setSetting(key: string, value: string): void {
  * Initialize or get active Supabase client
  */
 export function getSupabaseClient(): SupabaseClient | null {
-  const url = getSetting('supabase_url', 'https://uadrrjrlhfttithjmdye.supabase.co');
-  const key = getSetting('supabase_key', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhZHJyanJsaGZ0dGl0aGptZHllIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MDYwNTg2OCwiZXhwIjoyMTA2MTgxODY4fQ.NuC74GhFlUEiaRR2BXPooYj7iahzrXXKCxMQYDUnfIg');
+  const url = getSetting('supabase_url', 'https://api.solewhat.store');
+  const key = getSetting('supabase_key', 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5NDY0NDQ2MCwiZXhwIjoyMTA2MTgxODY4fQ._XJCDg3ziLno1PZHc_FVafmFaIf8L_LgvvOb3L6fWUQ');
 
   if (!url || !key) {
     console.warn('[CloudSync] Missing supabase_url or supabase_key in settings');
@@ -2194,7 +2194,7 @@ export function getCloudSyncStatus(): {
   currentShopSlug: string;
   terminalCode: string;
 } {
-  const url = getSetting('supabase_url', 'https://uadrrjrlhfttithjmdye.supabase.co');
+  const url = getSetting('supabase_url', 'https://api.solewhat.store');
   const syncEnabled = getSetting('cloud_sync_enabled', '1') === '1';
   const autoPrintKot = getSetting('cloud_auto_print_kot', '1') === '1';
   const autoPrintBill = getSetting('cloud_auto_print_bill', '1') === '1';
@@ -2453,7 +2453,13 @@ export async function initCloudSync(): Promise<void> {
  * (either from Pizza Admin /admin/verify or from FloDesktop POS /verify).
  */
 const AUTO_PRINT_MAX_AGE_MINUTES = 90;
-const autoPrintedOrderKeys = new Set<string>();
+export const autoPrintedOrderKeys = new Set<string>();
+
+export function markOrderAsPrinted(orderKey?: string | number | null) {
+  if (orderKey) {
+    autoPrintedOrderKeys.add(String(orderKey));
+  }
+}
 
 export async function triggerVerifiedOrderPrints(localOrderId: number, cloudOrder?: any): Promise<boolean> {
   const db = getDatabase();
@@ -2498,12 +2504,19 @@ export async function triggerVerifiedOrderPrints(localOrderId: number, cloudOrde
     }
 
     // Never auto-print the same order twice in one session
-    const printKey = String(cloudOrder?.id || localOrder.cloud_order_id || `local-${localOrderId}`);
-    if (cloudOrder && autoPrintedOrderKeys.has(printKey)) {
-      console.warn(`[CloudSync] Skip auto-print ${orderNumber}: already auto-printed`);
+    const keysToCheck = [
+      cloudOrder?.id ? String(cloudOrder.id) : null,
+      localOrder.cloud_order_id ? String(localOrder.cloud_order_id) : null,
+      localOrder.order_number ? String(localOrder.order_number) : null,
+      String(localOrderId),
+      `local-${localOrderId}`,
+    ].filter(Boolean) as string[];
+
+    if (keysToCheck.some((k) => autoPrintedOrderKeys.has(k))) {
+      console.warn(`[CloudSync] Skip auto-print ${orderNumber}: already auto-printed or printed locally`);
       return false;
     }
-    autoPrintedOrderKeys.add(printKey);
+    keysToCheck.forEach((k) => autoPrintedOrderKeys.add(k));
 
     const autoPrintBill = getSetting('cloud_auto_print_bill', '1') === '1';
     const autoPrintKot = getSetting('cloud_auto_print_kot', '1') === '1';

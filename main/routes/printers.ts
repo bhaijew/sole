@@ -825,6 +825,14 @@ router.post('/print-order', async (req: Request, res: Response) => {
 
     const overallSuccess = printType === 'both' ? (billSuccess || kotSuccess) : (billSuccess || kotSuccess);
     if (overallSuccess) {
+      // Mark order as printed in cloud-sync so Realtime echo does not duplicate-print
+      try {
+        const { markOrderAsPrinted } = await import('../services/cloud-sync');
+        markOrderAsPrinted(order.id);
+        if (order.order_number) markOrderAsPrinted(order.order_number);
+        if (order.cloud_order_id) markOrderAsPrinted(order.cloud_order_id);
+      } catch {}
+
       res.json({
         success: true,
         billSuccess,
