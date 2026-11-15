@@ -6,6 +6,7 @@ import AuthGuard from '@/components/layout/AuthGuard';
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
 import { Separator } from '@/components/ui/separator';
 import CashierBadge from '@/components/pos/CashierBadge';
+import UpdateNotificationBanner from '@/components/layout/UpdateNotificationBanner';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -15,7 +16,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <AuthGuard>
       <SidebarProvider defaultOpen={false}>
         <AppSidebar />
-        <SidebarInset className="h-screen overflow-hidden">
+        <SidebarInset className="h-screen overflow-hidden flex flex-col">
+          <UpdateNotificationBanner />
           {!isPos && (
             <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b px-4 bg-white dark:bg-slate-900">
               <div className="flex items-center gap-2">
