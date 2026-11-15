@@ -98,7 +98,7 @@ export default function SettingsPage() {
     syncEnabled: true,
     autoPrintKot: true,
     autoPrintBill: true,
-    supabaseUrl: 'https://uadrrjrlhfttithjmdye.supabase.co',
+    supabaseUrl: 'https://api.solewhat.store',
     lastSync: '',
     operatingMode: 'integrated' as 'integrated' | 'standalone',
     isPizzaIntegrated: true,

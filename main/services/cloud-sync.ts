@@ -42,8 +42,17 @@ function setSetting(key: string, value: string): void {
  * Initialize or get active Supabase client
  */
 export function getSupabaseClient(): SupabaseClient | null {
-  const url = getSetting('supabase_url', 'https://api.solewhat.store');
-  const key = getSetting('supabase_key', 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5NDY0NDQ2MCwiZXhwIjoyMTA2MTgxODY4fQ._XJCDg3ziLno1PZHc_FVafmFaIf8L_LgvvOb3L6fWUQ');
+  let url = getSetting('supabase_url', 'https://api.solewhat.store');
+  let key = getSetting('supabase_key', 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5NDY0NDQ2MCwiZXhwIjoyMTA2MTgxODY4fQ._XJCDg3ziLno1PZHc_FVafmFaIf8L_LgvvOb3L6fWUQ');
+
+  if (!url || url.includes('supabase.co') || url.includes('uadrrjrlhfttithjmdye')) {
+    url = 'https://api.solewhat.store';
+    setSetting('supabase_url', url);
+  }
+  if (!key || key.includes('uadrrjrlhfttithjmdye') || key.includes('NuC74GhFlUEiaRR2BXPooYj7iahzrXXKCxMQYDUnfIg')) {
+    key = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5NDY0NDQ2MCwiZXhwIjoyMTA2MTgxODY4fQ._XJCDg3ziLno1PZHc_FVafmFaIf8L_LgvvOb3L6fWUQ';
+    setSetting('supabase_key', key);
+  }
 
   if (!url || !key) {
     console.warn('[CloudSync] Missing supabase_url or supabase_key in settings');

@@ -178,6 +178,17 @@ function runMigrations(): void {
   try {
     db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('cloud_auto_print_bill', '1')").run();
     db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('cloud_auto_print_kot', '1')").run();
+    // Forcibly migrate any legacy/dead Supabase cloud credentials to production api.solewhat.store
+    db.prepare(`
+      UPDATE settings 
+      SET value = 'https://api.solewhat.store' 
+      WHERE key = 'supabase_url' AND (value LIKE '%supabase.co%' OR value LIKE '%uadrrjrlhfttithjmdye%')
+    `).run();
+    db.prepare(`
+      UPDATE settings 
+      SET value = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5NDY0NDQ2MCwiZXhwIjoyMTA2MTgxODY4fQ._XJCDg3ziLno1PZHc_FVafmFaIf8L_LgvvOb3L6fWUQ' 
+      WHERE key = 'supabase_key' AND (value LIKE '%uadrrjrlhfttithjmdye%' OR value LIKE '%NuC74GhFlUEiaRR2BXPooYj7iahzrXXKCxMQYDUnfIg%')
+    `).run();
   } catch {}
 
   // High-performance database indexing for fast lookups & cloud sync

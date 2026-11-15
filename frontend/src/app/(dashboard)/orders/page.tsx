@@ -44,9 +44,9 @@ type StatusFilter = 'all' | 'pending' | 'preparing' | 'ready' | 'completed' | 'c
 type ViewMode = 'grid' | 'table';
 type DateFilter = 'today' | 'all';
 
-const SUPABASE_REST_URL = 'https://uadrrjrlhfttithjmdye.supabase.co/rest/v1/orders?select=*&order=id.desc&limit=40';
-const SUPABASE_BASE_URL = 'https://uadrrjrlhfttithjmdye.supabase.co/rest/v1/orders';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhZHJyanJsaGZ0dGl0aGptZHllIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MDYwNTg2OCwiZXhwIjoyMTA2MTgxODY4fQ.NuC74GhFlUEiaRR2BXPooYj7iahzrXXKCxMQYDUnfIg';
+const SUPABASE_REST_URL = 'https://api.solewhat.store/rest/v1/orders?select=*&order=id.desc&limit=40';
+const SUPABASE_BASE_URL = 'https://api.solewhat.store/rest/v1/orders';
+const SUPABASE_ANON_KEY = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5NDY0NDQ2MCwiZXhwIjoyMTA2MTgxODY4fQ._XJCDg3ziLno1PZHc_FVafmFaIf8L_LgvvOb3L6fWUQ';
 
 export default function OrdersPage() {
   const { currentTenant } = useAuthStore();
