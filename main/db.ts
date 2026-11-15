@@ -186,8 +186,8 @@ function runMigrations(): void {
     `).run();
     db.prepare(`
       UPDATE settings 
-      SET value = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5NDY0NDQ2MCwiZXhwIjoyMTA2MTgxODY4fQ._XJCDg3ziLno1PZHc_FVafmFaIf8L_LgvvOb3L6fWUQ' 
-      WHERE key = 'supabase_key' AND (value LIKE '%uadrrjrlhfttithjmdye%' OR value LIKE '%NuC74GhFlUEiaRR2BXPooYj7iahzrXXKCxMQYDUnfIg%')
+      SET value = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5NDY0NDQ2MCwiZXhwIjo0OTUwMzE4MDYwLCJyb2xlIjoic2VydmljZV9yb2xlIn0._XJCDg3ziLno1PZHc_FVafmFaIf8L_LgvvOb3L6fWUQ' 
+      WHERE key = 'supabase_key' AND (value LIKE '%uadrrjrlhfttithjmdye%' OR value LIKE '%NuC74GhFlUEiaRR2BXPooYj7iahzrXXKCxMQYDUnfIg%' OR value LIKE '%2106181868%' OR value NOT LIKE '%4950318060%')
     `).run();
   } catch {}
 
@@ -281,7 +281,7 @@ function runIncrementalMigrations(fromVersion: number): void {
     }
 
     insert('supabase_url', 'https://api.solewhat.store');
-    insert('supabase_key', 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5NDY0NDQ2MCwiZXhwIjoyMTA2MTgxODY4fQ._XJCDg3ziLno1PZHc_FVafmFaIf8L_LgvvOb3L6fWUQ');
+    insert('supabase_key', 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5NDY0NDQ2MCwiZXhwIjo0OTUwMzE4MDYwLCJyb2xlIjoic2VydmljZV9yb2xlIn0._XJCDg3ziLno1PZHc_FVafmFaIf8L_LgvvOb3L6fWUQ');
     insert('cloud_sync_enabled', '1');
     insert('cloud_auto_print_kot', '1');
     insert('cloud_last_sync', '');
@@ -903,7 +903,7 @@ function seedData(): void {
   insert('cloud_server_url',    '');
   insert('cloud_connected',     'false');
   insert('supabase_url',        'https://api.solewhat.store');
-  insert('supabase_key',        'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5NDY0NDQ2MCwiZXhwIjoyMTA2MTgxODY4fQ._XJCDg3ziLno1PZHc_FVafmFaIf8L_LgvvOb3L6fWUQ');
+  insert('supabase_key',        'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5NDY0NDQ2MCwiZXhwIjo0OTUwMzE4MDYwLCJyb2xlIjoic2VydmljZV9yb2xlIn0._XJCDg3ziLno1PZHc_FVafmFaIf8L_LgvvOb3L6fWUQ');
   insert('cloud_sync_enabled',  '1');
   insert('cloud_auto_print_kot','1');
   insert('cloud_auto_print_bill','1');
@@ -913,8 +913,23 @@ function seedData(): void {
   insert('receipt_copies',      'customer');
   insert('kitchen_printer_id',  '');
 
-  // Note: All POS staff accounts are synchronized from Pizza Management Super Admin (Supabase pos_staff)
+  // Purge legacy dummy accounts
   db.exec("DELETE FROM users WHERE id IN ('user-1', 'user-2', 'user-3', 'user-4') OR email LIKE '%@flo.local';");
+
+  // Default initial staff accounts for Pizza Mafia (Shop 7) & Demo (Shop 11) to guarantee instant offline/fresh login
+  const defaultStaff: [string, string, string, string, string, number][] = [
+    ['cloud_staff_aced2422-73b2-47f7-b4c4-32977b237a14', 'Sheri shah (Owner)', 'sheri@pizzamafia.pk', '7875', 'owner', 7],
+    ['cloud_staff_b6dfba60-846d-423f-99d8-1fbd441e45d2', 'nasir shah', 'nasir@pizzamafia.pk', '1122', 'manager', 7],
+    ['cloud_staff_68c0d1e6-fb11-4d63-8aa8-06acdc5f7ad2', 'Syed Zeeshan haider (Owner)', 'zeeshan@demo.pk', '1234', 'owner', 11],
+    ['cloud_staff_45986cbf-0fe9-4b4e-8a7c-bf0d666b8ae3', 'Admin Kashif', 'kashif@pos.local', '1234', 'manager', 7],
+  ];
+  for (const [id, name, email, pin, role, shopId] of defaultStaff) {
+    const pwd = bcrypt.hashSync(pin, 10);
+    db.prepare(`
+      INSERT OR IGNORE INTO users (id, name, email, password, role, pin, is_active, shop_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 1, ?, datetime('now'), datetime('now'))
+    `).run(id, name, email, pwd, role, pin, shopId);
+  }
 
   // Default printer (will be detected on first run)
   db.prepare(`

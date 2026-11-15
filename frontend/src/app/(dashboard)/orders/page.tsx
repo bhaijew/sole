@@ -46,7 +46,7 @@ type DateFilter = 'today' | 'all';
 
 const SUPABASE_REST_URL = 'https://api.solewhat.store/rest/v1/orders?select=*&order=id.desc&limit=40';
 const SUPABASE_BASE_URL = 'https://api.solewhat.store/rest/v1/orders';
-const SUPABASE_ANON_KEY = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5NDY0NDQ2MCwiZXhwIjoyMTA2MTgxODY4fQ._XJCDg3ziLno1PZHc_FVafmFaIf8L_LgvvOb3L6fWUQ';
+const SUPABASE_ANON_KEY = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5NDY0NDQ2MCwiZXhwIjo0OTUwMzE4MDYwLCJyb2xlIjoic2VydmljZV9yb2xlIn0._XJCDg3ziLno1PZHc_FVafmFaIf8L_LgvvOb3L6fWUQ';
 
 export default function OrdersPage() {
   const { currentTenant } = useAuthStore();

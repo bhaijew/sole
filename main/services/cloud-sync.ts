@@ -43,14 +43,14 @@ function setSetting(key: string, value: string): void {
  */
 export function getSupabaseClient(): SupabaseClient | null {
   let url = getSetting('supabase_url', 'https://api.solewhat.store');
-  let key = getSetting('supabase_key', 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5NDY0NDQ2MCwiZXhwIjoyMTA2MTgxODY4fQ._XJCDg3ziLno1PZHc_FVafmFaIf8L_LgvvOb3L6fWUQ');
+  let key = getSetting('supabase_key', 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5NDY0NDQ2MCwiZXhwIjo0OTUwMzE4MDYwLCJyb2xlIjoic2VydmljZV9yb2xlIn0._XJCDg3ziLno1PZHc_FVafmFaIf8L_LgvvOb3L6fWUQ');
 
   if (!url || url.includes('supabase.co') || url.includes('uadrrjrlhfttithjmdye')) {
     url = 'https://api.solewhat.store';
     setSetting('supabase_url', url);
   }
-  if (!key || key.includes('uadrrjrlhfttithjmdye') || key.includes('NuC74GhFlUEiaRR2BXPooYj7iahzrXXKCxMQYDUnfIg')) {
-    key = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5NDY0NDQ2MCwiZXhwIjoyMTA2MTgxODY4fQ._XJCDg3ziLno1PZHc_FVafmFaIf8L_LgvvOb3L6fWUQ';
+  if (!key || key.includes('uadrrjrlhfttithjmdye') || key.includes('NuC74GhFlUEiaRR2BXPooYj7iahzrXXKCxMQYDUnfIg') || key.includes('2106181868') || !key.includes('4950318060')) {
+    key = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5NDY0NDQ2MCwiZXhwIjo0OTUwMzE4MDYwLCJyb2xlIjoic2VydmljZV9yb2xlIn0._XJCDg3ziLno1PZHc_FVafmFaIf8L_LgvvOb3L6fWUQ';
     setSetting('supabase_key', key);
   }
 
