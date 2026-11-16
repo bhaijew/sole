@@ -1560,9 +1560,18 @@ async function printViaUSBWindows(data: Buffer, printerName?: string): Promise<b
         targetPrinter = dbPrinter.name.trim();
       } else {
         const detected = detectWindowsPrinters();
-        const defaultP = detected.find(p => p.isDefault) || detected.find(p => p.make !== 'Unknown') || detected[0];
-        if (defaultP) {
-          targetPrinter = defaultP.name.trim();
+        // Exclude virtual/document printers (PDF, OneNote, XPS, Fax) so raw spooler never sends ESC/POS data to them
+        const physicalPrinters = detected.filter(p => {
+          const l = p.name.toLowerCase();
+          return !l.includes('pdf') && !l.includes('onenote') && !l.includes('xps') && !l.includes('fax') && !l.includes('document writer') && !l.includes('root print queue');
+        });
+        const thermalP = physicalPrinters.find(p => p.make !== 'Unknown') ||
+                         physicalPrinters.find(p => p.isDefault) ||
+                         physicalPrinters[0] ||
+                         detected.find(p => p.isDefault) ||
+                         detected[0];
+        if (thermalP) {
+          targetPrinter = thermalP.name.trim();
         }
       }
     }
