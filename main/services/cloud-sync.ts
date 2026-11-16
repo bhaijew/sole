@@ -1255,14 +1255,25 @@ export async function handleIncomingCloudOrder(
 
     // Resolve or create customer record
     let customerId: string | null = null;
-    if (cloudOrder.customer_name || cloudOrder.customer_phone) {
-      const phone = cloudOrder.customer_phone ? String(cloudOrder.customer_phone).trim() : '';
-      const name = cloudOrder.customer_name ? String(cloudOrder.customer_name).trim() : 'Online Customer';
+    const rawCustName = (cloudOrder.customer_name || '').trim();
+    const rawCustPhone = (cloudOrder.customer_phone || '').trim();
+    const isGenericName = !rawCustName || [
+      'online customer',
+      'walk-in customer',
+      'walk-in',
+      'counter customer',
+      'cash customer',
+      'guest'
+    ].includes(rawCustName.toLowerCase());
+
+    // Only associate or create a customer record if there is a real phone or a unique non-generic name
+    if (rawCustPhone || (!isGenericName && rawCustName)) {
+      const phone = rawCustPhone;
+      const name = rawCustName || (isFromPos ? 'Walk-in Customer' : 'Online Customer');
       let custRow: any = null;
       if (phone) {
         custRow = db.prepare('SELECT id FROM customers WHERE phone = ?').get(phone);
       }
-      const isGenericName = !name || name.toLowerCase() === 'online customer' || name.toLowerCase() === 'guest';
       if (!custRow && name && !isGenericName) {
         custRow = db.prepare('SELECT id FROM customers WHERE name = ?').get(name);
       }

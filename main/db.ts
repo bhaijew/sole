@@ -189,6 +189,13 @@ function runMigrations(): void {
       SET value = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5NDY0NDQ2MCwiZXhwIjo0OTUwMzE4MDYwLCJyb2xlIjoic2VydmljZV9yb2xlIn0._XJCDg3ziLno1PZHc_FVafmFaIf8L_LgvvOb3L6fWUQ' 
       WHERE key = 'supabase_key' AND (value LIKE '%uadrrjrlhfttithjmdye%' OR value LIKE '%NuC74GhFlUEiaRR2BXPooYj7iahzrXXKCxMQYDUnfIg%' OR value LIKE '%2106181868%' OR value NOT LIKE '%4950318060%')
     `).run();
+    // Clean up any historical hardcoded phone assigned erroneously to generic walk-in customer profiles
+    db.prepare(`
+      UPDATE customers 
+      SET phone = NULL 
+      WHERE LOWER(TRIM(name)) IN ('walk-in customer', 'walk-in', 'counter customer', 'cash customer', 'guest')
+        AND phone = '03334837615'
+    `).run();
   } catch {}
 
   // High-performance database indexing for fast lookups & cloud sync

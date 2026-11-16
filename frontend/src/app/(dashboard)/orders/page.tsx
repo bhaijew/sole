@@ -1000,7 +1000,8 @@ export default function OrdersPage() {
           {filteredOrders.map((order) => {
             const isOnline = ((order as any).order_source === 'online' || order.type === 'online') && (order as any).order_source !== 'pos' && !String((order as any).notes || '').includes('POS');
             const customerName = order.customer?.name || order.customer_name || (order.special_instructions?.match(/Customer:\s*([^|]+)/)?.[1]?.trim());
-            const customerPhone = order.customer?.phone || order.customer_phone || (order.special_instructions?.match(/Phone:\s*([^|]+)/)?.[1]?.trim());
+            const isGenericCust = !customerName || ['walk-in customer', 'walk-in', 'counter customer', 'cash customer', 'guest'].includes(customerName.toLowerCase().trim());
+            const customerPhone = order.customer_phone || (!isGenericCust ? order.customer?.phone : '') || (order.special_instructions?.match(/Phone:\s*([^|]+)/)?.[1]?.trim());
 
             return (
               <div

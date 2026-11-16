@@ -74,8 +74,12 @@ router.get('/', async (req: Request, res: Response) => {
       const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson);
       const tableRow = order.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id) as any : null;
       const table = tableRow ? { ...tableRow, name: tableRow.number } : null;
-      let customer = order.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) : null;
-      if (!customer && (order.customer_name || order.customer_phone)) {
+      let customer = order.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) as any : null;
+      const isGeneric = !order.customer_name || ['walk-in customer', 'walk-in', 'counter customer', 'cash customer', 'guest'].includes(String(order.customer_name).toLowerCase().trim());
+      if (isGeneric && !order.customer_phone) {
+        // Generic orders without a phone number must NEVER inherit arbitrary customer phone numbers!
+        customer = { name: order.customer_name || 'Walk-in Customer', phone: '' };
+      } else if (!customer && (order.customer_name || order.customer_phone)) {
         customer = { name: order.customer_name || '', phone: order.customer_phone || '' };
       }
       const bill = db.prepare('SELECT * FROM bills WHERE order_id = ?').get(order.id) as any;
