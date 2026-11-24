@@ -1470,14 +1470,16 @@ export async function handleIncomingCloudOrder(
     }
     broadcastCloudEvent('order-synced', { orderNumber, localOrderId });
 
-    // 3. Verification & Auto-Print Logic
+    // 3. Auto-Print on Branch Match (App / Admin / Online Orders)
     const isUnverifiedOnline = !isFromPos && (cloudOrder.is_verified === false || cloudOrder.is_verified === 0 || String(cloudOrder.notes || '').includes('AWAITING_VERIFICATION'));
 
     if (isUnverifiedOnline) {
-      console.log(`[CloudSync] Order ${orderNumber} is AWAITING VERIFICATION from Admin / POS. Holding auto-print until verified.`);
       broadcastCloudEvent('order-awaiting-verification', { orderNumber, total, localOrderId, customerName: cloudOrder.customer_name });
-    } else if (!suppressAutoPrint) {
-      // Verified order: Auto-print Customer Bill + Kitchen KOT
+    }
+
+    if (!suppressAutoPrint) {
+      // Auto-print immediately when order arrives for this branch (App / Admin / Customer)
+      console.log(`[CloudSync] Order ${orderNumber} received for branch #${cloudOrder.shop_id || currentShopId}. Auto-printing slip and KOT...`);
       await triggerVerifiedOrderPrints(localOrderId, cloudOrder);
     }
 
